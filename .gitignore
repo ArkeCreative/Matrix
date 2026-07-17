@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node (only used transiently for parse checks / tooling)
+node_modules/
+npm-debug.log*
+
+# Local scratch / build artifacts
+/tmp/
+*.log
+
+# Secrets — never commit the Supabase service_role key or any admin creds
+.env
+.env.*
+service-role*.txt
