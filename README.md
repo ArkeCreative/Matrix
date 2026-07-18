@@ -52,5 +52,12 @@ status colours (green / amber / red) are kept as independent semantic colours.
 
 - **Stage A** — consolidated baseline schema deployed to Supabase. ✓
 - **Stage B** — identity & branding rebrand. ✓
-- **Stage C** — organisations & users (roster reseed). Pending.
-- **Stage D** — repository & deployment. In progress.
+- **Stage C** — dev/test org (`dawlish`) seeded: 13 users + sample projects, meetings, actions. ✓
+- **Stage D** — repository & deployment (GitHub Pages). In progress.
+
+## Deployment
+
+Served as a static site from GitHub Pages (branch `main`, root). `.nojekyll`
+disables Jekyll so the single-file app is served verbatim. The published URL
+is `https://arkecreative.github.io/Matrix/`. Every merge to `main` redeploys
+automatically (allow ~1 minute plus CDN cache).
