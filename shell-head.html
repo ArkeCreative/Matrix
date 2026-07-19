@@ -6,15 +6,23 @@
 <title>arke [matrix]</title>
 <meta name="description" content="arke [matrix] — internal project management for Arke Creative. Design-led commercial fit-out.">
 <style>
+  /* Brand typeface — Gilroy (real .otf, shipped in /fonts). Medium (500) not
+     supplied by the foundry, so it maps to Regular. Century Gothic / Futura /
+     system-ui remain as fallbacks only. */
+  @font-face { font-family: 'Gilroy'; src: url('fonts/Gilroy-Light.otf') format('opentype'); font-weight: 300; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Gilroy'; src: url('fonts/Gilroy-Regular.otf') format('opentype'); font-weight: 400; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Gilroy'; src: url('fonts/Gilroy-Regular.otf') format('opentype'); font-weight: 500; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Gilroy'; src: url('fonts/Gilroy-SemiBold.otf') format('opentype'); font-weight: 600; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Gilroy'; src: url('fonts/Gilroy-Bold.otf') format('opentype'); font-weight: 700; font-style: normal; font-display: swap; }
   :root {
-    --font-ui: 'Century Gothic', system-ui, -apple-system, sans-serif;
+    --font-ui: 'Gilroy', 'Century Gothic', 'Futura', system-ui, -apple-system, sans-serif;
     --font-mono: ui-monospace, Menlo, monospace;
     --ink: #1C1F1E;
     --carmine: #8C002A;
     --chalk: #F4F3F1;
   }
   html, body { margin: 0; padding: 0; }
-  body { font-family: var(--font-ui); background: #F4F3F1; color: #2A2E2C; }
+  body { font-family: var(--font-ui); background: #F6F6F4; color: #2A2E2C; }
   #root { min-height: 100vh; }
   input:focus, textarea:focus, select:focus, button:focus { outline: 2px solid #8C002A; outline-offset: -1px; }
   .am-splash {
@@ -25,7 +33,7 @@
   }
   .am-splash.hide { opacity: 0; pointer-events: none; }
   .am-splash-mark {
-    font-family: 'Century Gothic', system-ui, sans-serif;
+    font-family: var(--font-ui);
     color: #E8ECEA; font-weight: 300; text-transform: lowercase;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   }
