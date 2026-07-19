@@ -33,6 +33,9 @@ const C = {
     onChromeDim: 'rgba(255,255,255,0.72)',  // secondary text on carmine
     onChromeMute: 'rgba(255,255,255,0.45)', // muted text on carmine
     onChromeFaint: 'rgba(255,255,255,0.14)',// hairlines / inputs on carmine
+    // ---- Charcoal (neutral dark chrome — project-card rails) ----
+    charcoal: '#20242A',       // rail / dark panel background (neutral, lets carmine be the accent)
+    charcoalDark: '#161A1F',   // hover / press on charcoal
     // ---- Neutrals (light content area) ----
     ink: '#1C1F1E',            // dark headings / structural text
     text: '#2A2E2C',
@@ -51,17 +54,19 @@ const C = {
     redStatusLight: '#FDECEA',
 };
 // ----- STATUSES -----
-// Status palette — teal-derived progression with caution/confirm accents
-// Lead → Pitching use cord-soft tints; Tender uses caution amber; Won uses
-// confirm green; Contract flips to dark Grip; On-site is full Cord teal.
-// Lost / Handed Over are neutral — closed pipeline.
+// Pipeline progression — neutral tints deepening into prussian as a project
+// matures. Deliberately carmine-free (carmine is now the single brand accent)
+// and independent of the RAG health colours (green/amber/red), so "what stage"
+// never competes with "how healthy". Lead/Pitching are cool light neutrals;
+// Tender/Won deepen; Contract/On-site land on prussian (light text on dark).
+// Lost / Handed Over are flat neutral grey — closed pipeline.
 const STATUSES = [
-    { value: 'lead', label: 'Lead', bg: '#F4E6EA', fg: '#8C002A', short: 'Lead' },
-    { value: 'pitching', label: 'Pitching', bg: '#E8CCD4', fg: '#6E0021', short: 'Pitching' },
-    { value: 'tender', label: 'Tender', bg: '#FEF3C7', fg: '#9A5E08', short: 'Tender' },
-    { value: 'won', label: 'Won', bg: '#E8F5EE', fg: '#1F5C43', short: 'Won' },
-    { value: 'contract', label: 'Contract', bg: '#183B4F', fg: '#E8ECEA', short: 'Contract' },
-    { value: 'on-site', label: 'On-site', bg: '#8C002A', fg: '#ffffff', short: 'On-site' },
+    { value: 'lead', label: 'Lead', bg: '#ECEEF0', fg: '#5A6B73', short: 'Lead' },
+    { value: 'pitching', label: 'Pitching', bg: '#D8E2E7', fg: '#3C5560', short: 'Pitching' },
+    { value: 'tender', label: 'Tender', bg: '#BCCFD7', fg: '#22454F', short: 'Tender' },
+    { value: 'won', label: 'Won', bg: '#8FAEBA', fg: '#0E2E39', short: 'Won' },
+    { value: 'contract', label: 'Contract', bg: '#255264', fg: '#E3EDF1', short: 'Contract' },
+    { value: 'on-site', label: 'On-site', bg: '#183B4F', fg: '#EAF2F5', short: 'On-site' },
     { value: 'lost', label: 'Lost', bg: '#E2E0DD', fg: '#9BA3A0', short: 'Lost' },
     { value: 'handed-over', label: 'Handed Over', bg: '#E2E0DD', fg: '#6B7270', short: 'Handed' },
 ];
@@ -1355,7 +1360,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
         { label: 'PM', user: resolveTeamMember(project.project_manager_user_id), field: 'project_manager_user_id' },
         { label: 'Furn', user: resolveTeamMember(project.furniture_consultant_user_id), field: 'furniture_consultant_user_id' },
     ];
-    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { background: C.carmine, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.onChrome}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(255,255,255,0.07)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.12) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), 
+    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { background: C.charcoal, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.onChrome}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(255,255,255,0.07)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.12) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), 
     // Expand-to-dashboard icon, top-right of dark panel.
     onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(255,255,255,0.14)' : 'transparent', border: `1px solid ${darkHover ? C.onChrome : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.onChrome, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.onChrome } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
             if (e.target.value !== project.name)
@@ -2118,7 +2123,7 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
     const priorityStyle = {
         urgent: { bg: C.redStatus, fg: '#fff', label: 'Urgent' },
         high: { bg: '#C47D11', fg: '#fff', label: 'High' },
-        normal: { bg: C.amberLight, fg: C.amber, label: 'Normal' },
+        normal: { bg: C.fog, fg: '#5A6B73', label: 'Normal' },
         low: { bg: C.bg, fg: C.muted, label: 'Low' },
     }[priority] || { bg: C.bg, fg: C.muted, label: priority };
     // Overdue: full red left panel like project identity panel
