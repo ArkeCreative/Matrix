@@ -103,18 +103,33 @@ const C = {
     onChromeDim: 'rgba(255,255,255,0.72)',  // secondary text on carmine
     onChromeMute: 'rgba(255,255,255,0.45)', // muted text on carmine
     onChromeFaint: 'rgba(255,255,255,0.14)',// hairlines / inputs on carmine
-    // ---- Charcoal (neutral dark chrome — project-card rails) ----
-    charcoal: '#20242A',       // rail / dark panel background (neutral, lets carmine be the accent)
-    charcoalDark: '#161A1F',   // hover / press on charcoal
+    // ---- Carmine ramp (restyle spec) ----
+    carmine40: '#D199AA',
+    carmine60: '#BA6680',
+    // ---- Prussian ramp (restyle spec — pipeline / status graduation) ----
+    prussian80: '#466272',
+    prussian60: '#748995',
+    prussian40: '#A3B1B9',
+    prussian20: '#D1D8DC',
+    prussian10: '#E8ECEE',
     // ---- Neutrals (light content area) ----
+    ink0: '#0A0A0A',           // true brand ink — headings on paper
     ink: '#1C1F1E',            // dark headings / structural text
     text: '#2A2E2C',
     muted: '#6B7270',
-    line: '#E2E0DD',
+    line: '#E2E2DF',           // hairline borders (brand --line)
     bg: '#F4F3F1',             // warm light grey page background
     white: '#FFFFFF',
     fog: '#E8ECEA',
     mist: '#9BA3A0',
+    // ---- Greyscale (restyle spec) ----
+    g700: '#3D3D3D',
+    g500: '#767676',
+    g300: '#B5B5B5',
+    g200: '#D6D6D6',
+    g100: '#ECECEC',
+    g50: '#F6F6F4',            // page background (paper reskin)
+    warn: '#A5741C',           // "n open" badges / due-soon (muted brand warning)
     // ---- Status / traffic lights (RAG — deliberately unchanged) ----
     green: '#2D7A5F',
     greenLight: '#E8F5EE',
@@ -123,22 +138,28 @@ const C = {
     redStatus: '#B83A2E',
     redStatusLight: '#FDECEA',
 };
+// Brand type stack (restyle spec §1). Gilroy is the licensed brand face but is
+// not shipped with this app, so it falls back to Century Gothic — the declared
+// system face — then Futura / system-ui. Renders identically where Gilroy is
+// absent, and picks it up automatically where a client has it installed.
+const FONT = "'Gilroy', 'Century Gothic', 'Futura', system-ui, sans-serif";
 // ----- STATUSES -----
-// Pipeline progression — neutral tints deepening into prussian as a project
-// matures. Deliberately carmine-free (carmine is now the single brand accent)
-// and independent of the RAG health colours (green/amber/red), so "what stage"
-// never competes with "how healthy". Lead/Pitching are cool light neutrals;
-// Tender/Won deepen; Contract/On-site land on prussian (light text on dark).
-// Lost / Handed Over are flat neutral grey — closed pipeline.
+// Prussian graduation (restyle spec §3/§7): the pipeline and the row status
+// chip share one ramp, so a row's colour tells you exactly where it sits —
+// LEAD light (prussian-10) deepening to ON-SITE full prussian ("arrived").
+// `fg` = chip text + pipeline count colour; `pipeLabel` = pipeline label
+// colour (dimmer on the light steps). Carmine stays the brand accent; RAG
+// (green/amber/red) is reserved for health/time. LOST/HANDED are ghosted:
+// transparent fill + dashed border.
 const STATUSES = [
-    { value: 'lead', label: 'Lead', bg: '#ECEEF0', fg: '#5A6B73', short: 'Lead' },
-    { value: 'pitching', label: 'Pitching', bg: '#D8E2E7', fg: '#3C5560', short: 'Pitching' },
-    { value: 'tender', label: 'Tender', bg: '#BCCFD7', fg: '#22454F', short: 'Tender' },
-    { value: 'won', label: 'Won', bg: '#8FAEBA', fg: '#0E2E39', short: 'Won' },
-    { value: 'contract', label: 'Contract', bg: '#255264', fg: '#E3EDF1', short: 'Contract' },
-    { value: 'on-site', label: 'On-site', bg: '#183B4F', fg: '#EAF2F5', short: 'On-site' },
-    { value: 'lost', label: 'Lost', bg: '#E2E0DD', fg: '#9BA3A0', short: 'Lost' },
-    { value: 'handed-over', label: 'Handed Over', bg: '#E2E0DD', fg: '#6B7270', short: 'Handed' },
+    { value: 'lead', label: 'Lead', short: 'Lead', bg: '#E8ECEE', fg: '#183B4F', pipeLabel: '#466272' },
+    { value: 'pitching', label: 'Pitching', short: 'Pitching', bg: '#D1D8DC', fg: '#183B4F', pipeLabel: '#466272' },
+    { value: 'tender', label: 'Tender', short: 'Tender', bg: '#A3B1B9', fg: '#0F2733', pipeLabel: '#0F2733' },
+    { value: 'won', label: 'Won', short: 'Won', bg: '#748995', fg: '#FFFFFF', pipeLabel: '#FFFFFF' },
+    { value: 'contract', label: 'Contract', short: 'Contract', bg: '#466272', fg: '#FFFFFF', pipeLabel: '#FFFFFF' },
+    { value: 'on-site', label: 'On-site', short: 'On-site', bg: '#183B4F', fg: '#FFFFFF', pipeLabel: '#FFFFFF' },
+    { value: 'lost', label: 'Lost', short: 'Lost', bg: 'transparent', fg: '#767676', pipeLabel: '#767676', ghost: true },
+    { value: 'handed-over', label: 'Handed Over', short: 'Handed', bg: 'transparent', fg: '#767676', pipeLabel: '#767676', ghost: true },
 ];
 // Status groups by meeting type
 const PRE_CON_STATUSES = ['lead', 'pitching', 'tender', 'won', 'contract'];
@@ -1272,7 +1293,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.carmine, borderBottom: `2px solid ${C.carmineDark}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'Century Gothic', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3 } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'Century Gothic', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3 } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
@@ -1359,19 +1380,28 @@ function timeAgo(dateStr) {
 // VIEW TAB (header navigation)
 // ============================================================
 function ViewTab({ label, active, onClick }) {
-    return (React.createElement("button", { onClick: onClick, style: {
-            padding: '6px 14px',
-            background: active ? 'rgba(255,255,255,0.10)' : 'transparent',
-            color: active ? C.onChrome : 'rgba(232,234,232,0.4)',
+    return (React.createElement("button", { onClick: onClick,
+        onMouseEnter: e => { if (!active) {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+            e.currentTarget.style.color = '#fff';
+        } },
+        onMouseLeave: e => { if (!active) {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'rgba(255,255,255,0.75)';
+        } },
+        style: {
+            padding: '10px 16px',
+            background: active ? '#fff' : 'transparent',
+            color: active ? C.carmine : 'rgba(255,255,255,0.75)',
             border: 'none',
-            borderBottom: active ? `2px solid ${C.onChrome}` : '2px solid transparent',
-            borderRadius: 3,
+            borderRadius: 2,
             cursor: 'pointer',
-            fontSize: 10,
-            fontWeight: 600,
-            fontFamily: "'Century Gothic', system-ui, sans-serif",
+            fontSize: 12,
+            fontWeight: active ? 600 : 500,
+            fontFamily: FONT,
             textTransform: 'uppercase',
-            letterSpacing: '0.12em',
+            letterSpacing: '0.16em',
+            transition: 'all 160ms ease-out',
         } }, label));
 }
 // ============================================================
@@ -1379,31 +1409,29 @@ function ViewTab({ label, active, onClick }) {
 // ============================================================
 function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard, updateProjectField, saveStatus, search, setSearch, statusFilter, setStatusFilter, ownerFilter, setOwnerFilter, statusCounts, distinctOwners, onNewProject }) {
     const hiddenCount = (statusCounts.lost || 0) + (statusCounts['handed-over'] || 0);
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '12px 32px', borderBottom: '2px solid ' + C.carmineDark } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' } }, React.createElement("span", { style: { fontSize: 9, color: 'rgba(255,255,255,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginRight: 8 } }, "Pipeline"), STATUSES.filter(s => !HIDDEN_STATUSES.includes(s.value)).map(s => {
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '16px 28px 22px', borderTop: '1px solid rgba(255,255,255,0.15)' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', alignItems: 'stretch', gap: 10, flexWrap: 'wrap' } }, React.createElement("span", { style: { alignSelf: 'center', fontSize: 10, color: 'rgba(255,255,255,0.75)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', marginRight: 14, fontFamily: FONT } }, "Pipeline"), STATUSES.filter(s => !HIDDEN_STATUSES.includes(s.value)).map(s => {
         const active = statusFilter === s.value;
         const count = statusCounts[s.value] || 0;
-        return (React.createElement("button", { key: s.value, onClick: () => setStatusFilter(active ? 'active' : s.value), style: {
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                padding: '5px 12px', minWidth: 58,
-                background: active ? '#FFC107' : s.bg,
-                border: active ? `2px solid #FFC107` : '2px solid transparent',
-                borderRadius: 3, cursor: 'pointer',
-                fontFamily: "'Century Gothic', system-ui, sans-serif",
-                gap: 1, opacity: count === 0 ? 0.45 : 1,
-            } }, React.createElement("span", { style: { fontSize: 17, fontWeight: 700, lineHeight: 1, color: active ? '#1C1C1C' : s.fg } }, count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: active ? '#1C1C1C' : s.fg, opacity: active ? 1 : 0.85 } }, s.short)));
-    }), React.createElement("div", { style: { width: 1, height: 36, background: 'rgba(255,255,255,0.25)', margin: '0 6px' } }), STATUSES.filter(s => HIDDEN_STATUSES.includes(s.value)).map(s => {
+        const onSite = s.value === 'on-site';
+        return React.createElement("button", { key: s.value, onClick: () => setStatusFilter(active ? 'active' : s.value), onMouseEnter: e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.28)'; }, onMouseLeave: e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = onSite ? '0 2px 8px rgba(0,0,0,0.25)' : 'none'; }, style: {
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+                width: 78, padding: '11px 8px 10px',
+                background: s.bg, border: 'none', borderRadius: 2, cursor: 'pointer',
+                fontFamily: FONT, boxShadow: onSite ? '0 2px 8px rgba(0,0,0,0.25)' : 'none',
+                outline: active ? '2px solid #fff' : '2px solid transparent', outlineOffset: 2,
+                transition: 'all 160ms ease-out',
+            } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, lineHeight: 1, color: s.fg } }, count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', color: s.pipeLabel } }, s.short));
+    }), React.createElement("div", { style: { width: 1, background: 'rgba(255,255,255,0.3)', margin: '0 8px' } }), STATUSES.filter(s => HIDDEN_STATUSES.includes(s.value)).map(s => {
         const active = statusFilter === s.value;
         const count = statusCounts[s.value] || 0;
-        return (React.createElement("button", { key: s.value, onClick: () => setStatusFilter(active ? 'active' : s.value), style: {
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                padding: '5px 10px', minWidth: 50,
-                background: active ? '#FFC107' : s.bg,
-                border: active ? `2px solid #FFC107` : '2px solid transparent',
-                borderRadius: 3, cursor: 'pointer',
-                fontFamily: "'Century Gothic', system-ui, sans-serif",
-                gap: 1, opacity: count === 0 ? 0.4 : 0.75,
-            } }, React.createElement("span", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1, color: active ? C.carmine : s.fg } }, count), React.createElement("span", { style: { fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: active ? C.carmine : s.fg, opacity: 0.8 } }, s.short)));
-    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '10px 32px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 10, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("span", { style: { fontSize: 11, color: C.muted } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), isSenior && (React.createElement("button", { onClick: onNewProject, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 'auto' }) }, "+ New project")))), React.createElement("div", { style: { position: 'sticky', top: 54, zIndex: 8, background: '#F7F5F5', padding: '6px 32px 0' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex' } }, React.createElement("div", { style: { width: 220, flexShrink: 0, paddingLeft: 4, paddingBottom: 4, borderBottom: `2px solid ${C.carmine}` } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.carmine, fontFamily: "'Century Gothic', system-ui, sans-serif" } }, "Project information")), React.createElement("div", { style: { flex: 1, paddingLeft: 18, paddingBottom: 4, borderBottom: `2px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.muted, fontFamily: "'Century Gothic', system-ui, sans-serif" } }, "Headlines")))), React.createElement("main", { style: { padding: '12px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 48, textAlign: 'center', color: C.muted } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (React.createElement(MasterResourceTracker, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
+        return React.createElement("button", { key: s.value, onClick: () => setStatusFilter(active ? 'active' : s.value), onMouseEnter: e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderStyle = 'solid'; }, onMouseLeave: e => { e.currentTarget.style.background = active ? 'rgba(255,255,255,0.08)' : 'transparent'; e.currentTarget.style.borderStyle = active ? 'solid' : 'dashed'; }, style: {
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+                width: 78, padding: '11px 8px 10px',
+                background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                border: '1px dashed rgba(255,255,255,0.35)', borderStyle: active ? 'solid' : 'dashed',
+                borderRadius: 2, cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out',
+            } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, lineHeight: 1, color: 'rgba(255,255,255,0.5)' } }, count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'rgba(255,255,255,0.5)' } }, s.short));
+    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 28px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 14, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), isSenior && (React.createElement("button", { onClick: onNewProject, onMouseEnter: e => e.currentTarget.style.background = C.carmineDark, onMouseLeave: e => e.currentTarget.style.background = C.carmine, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 'auto' }) }, "+ New project")))), React.createElement("div", { style: { position: 'sticky', top: 64, zIndex: 8, background: C.g50, padding: '10px 28px 0' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex' } }, React.createElement("div", { style: { width: 300, flexShrink: 0, paddingBottom: 8, borderBottom: `2px solid ${C.carmine}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.carmine, fontFamily: FONT } }, "Project information")), React.createElement("div", { style: { flex: 1, paddingLeft: 28, paddingBottom: 8, borderBottom: `1px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Headlines")))), React.createElement("main", { style: { padding: '16px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: 48, textAlign: 'center', color: C.g500, fontFamily: FONT } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (React.createElement(MasterResourceTracker, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
 }
 // ============================================================
 // MASTER RESOURCE TRACKER (the table)
@@ -1430,48 +1458,44 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
         { label: 'PM', user: resolveTeamMember(project.project_manager_user_id), field: 'project_manager_user_id' },
         { label: 'Furn', user: resolveTeamMember(project.furniture_consultant_user_id), field: 'furniture_consultant_user_id' },
     ];
-    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { background: C.charcoal, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.onChrome}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(255,255,255,0.07)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.12) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), 
-    // Expand-to-dashboard icon, top-right of dark panel.
-    onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(255,255,255,0.14)' : 'transparent', border: `1px solid ${darkHover ? C.onChrome : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.onChrome, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.onChrome } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
+    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '300px 1fr', gap: 28, alignItems: 'start' } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { position: 'relative', background: C.white, border: `1px solid ${C.line}`, borderLeft: `4px solid ${C.carmine}`, borderRadius: 2, padding: '22px 22px 20px', boxShadow: darkHover ? '0 4px 14px rgba(24,59,79,0.14)' : '0 1px 2px rgba(24,59,79,0.06)', transform: darkHover ? 'translateY(-1px)' : 'none', transition: 'all 200ms ease-out' } }, onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine; const p = e.currentTarget.querySelector('svg path'); if (p) p.setAttribute('stroke', C.carmine); }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.g200; const p = e.currentTarget.querySelector('svg path'); if (p) p.setAttribute('stroke', C.g500); }, style: { position: 'absolute', top: 18, right: 18, width: 26, height: 26, background: 'transparent', border: `1px solid ${C.g200}`, borderRadius: 2, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontFamily: 'inherit', transition: 'all 160ms ease-out' } }, React.createElement("svg", { width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.g500, strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round" }))), React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
             if (e.target.value !== project.name)
                 updateField('name', e.target.value);
         }, placeholder: "Project name", rows: 2, style: {
-            display: 'block', width: '100%', background: 'transparent', border: 'none',
-            fontSize: 15, fontWeight: 600, color: C.fog, fontFamily: 'inherit',
-            padding: 0, margin: 0, boxSizing: 'border-box', outline: 'none',
-            resize: 'none', overflow: 'hidden', lineHeight: 1.3,
-        }, onFocus: e => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderRadius = '2px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: 'rgba(232,234,232,0.55)', fontFamily: "ui-monospace, Menlo, monospace" } }, "#"), React.createElement("input", { defaultValue: project.project_number || '', onBlur: (e) => {
+            display: 'block', width: '100%', paddingRight: 30, background: 'transparent', border: 'none',
+            fontSize: 21, fontWeight: 700, color: C.ink0, fontFamily: FONT, letterSpacing: '-0.02em',
+            margin: 0, boxSizing: 'border-box', outline: 'none',
+            resize: 'none', overflow: 'hidden', lineHeight: 1.15,
+        }, onFocus: e => { e.target.style.background = C.g50; e.target.style.borderRadius = '2px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 12px' } }, React.createElement("div", { style: { width: 22, height: 3, background: '#000' } }), React.createElement("div", { style: { flex: 1, height: 1, background: C.line } })), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', color: C.carmine, fontFamily: FONT } }, "Project #"), React.createElement("input", { defaultValue: project.project_number || '', onBlur: (e) => {
             if (e.target.value !== project.project_number)
                 updateField('project_number', e.target.value);
-        }, placeholder: "Number", style: {
+        }, placeholder: "0000", style: {
             background: 'transparent', border: 'none',
-            fontSize: 12, fontWeight: 500, color: 'rgba(232,234,232,0.7)', fontFamily: "ui-monospace, Menlo, monospace",
-            padding: 0, margin: 0, width: 80, outline: 'none',
-        }, onFocus: e => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderRadius = '2px'; e.target.style.padding = '1px 4px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; e.target.style.padding = '0'; } }), React.createElement(SaveIndicator, { status: saveStatus, light: true })), React.createElement("input", { defaultValue: project.address || '', onBlur: (e) => {
+            fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.carmine, fontFamily: FONT,
+            padding: 0, margin: 0, width: 72, outline: 'none',
+        }, onFocus: e => { e.target.style.background = C.g50; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement(SaveIndicator, { status: saveStatus })), React.createElement("input", { defaultValue: project.address || '', onBlur: (e) => {
             if (e.target.value !== project.address)
                 updateField('address', e.target.value);
         }, placeholder: "Address", style: {
             display: 'block', width: '100%', background: 'transparent', border: 'none',
-            fontSize: 10.5, color: 'rgba(232,234,232,0.62)', fontFamily: 'inherit',
-            padding: 0, marginTop: 6, boxSizing: 'border-box', outline: 'none',
-        }, onFocus: e => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderRadius = '2px'; e.target.style.padding = '2px 4px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; e.target.style.padding = '0'; } }), project.address && React.createElement("a", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.address)}`, target: "_blank", rel: "noopener noreferrer", style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.onChrome, textDecoration: 'none', marginTop: 4, opacity: 0.85 } }, "\u2197 View on map")), React.createElement("div", { style: { marginTop: 12, position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(232,234,232,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid rgba(255,255,255,0.1)' } }, "Project Team"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 } }, teamMembers.map(({ label, user, field }) => {
+            fontSize: 13, fontWeight: 300, color: C.g700, fontFamily: FONT,
+            padding: 0, marginTop: 8, boxSizing: 'border-box', outline: 'none',
+        }, onFocus: e => { e.target.style.background = C.g50; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), project.address && React.createElement("a", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.address)}`, target: "_blank", rel: "noopener noreferrer", onMouseEnter: e => { e.currentTarget.style.color = C.carmineDark; e.currentTarget.style.borderBottomColor = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.color = C.carmine; e.currentTarget.style.borderBottomColor = C.carmine40; }, style: { display: 'inline-block', fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.carmine, textDecoration: 'none', borderBottom: `1px solid ${C.carmine40}`, paddingBottom: 2, marginTop: 10, fontFamily: FONT } }, "\u2197 View on map"), React.createElement("div", { style: { marginTop: 18 } }, React.createElement("div", { style: { fontSize: 9, color: C.g500, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', marginBottom: 8, fontFamily: FONT } }, "Project team"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 } }, teamMembers.map(({ label, user, field }) => {
         const value = user ? user.initials : '';
-        return (React.createElement("div", { key: field, title: user ? `${user.display_name}${user.department ? ' \u00B7 ' + user.department : ''}` : 'Unassigned', style: {
+        return React.createElement("div", { key: field, title: user ? `${user.display_name}${user.department ? ' \u00B7 ' + user.department : ''}` : 'Unassigned', style: {
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                padding: '4px 4px', borderRadius: 2,
-                background: value ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
-                border: value ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(255,255,255,0.06)',
-            } }, React.createElement("span", { style: { fontSize: 6.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: value ? 'rgba(255,255,255,0.92)' : 'rgba(232,234,232,0.4)', lineHeight: 1 } }, label), React.createElement("span", { style: {
-                fontSize: 12, fontWeight: 700, textAlign: 'center', width: '100%',
-                color: value ? C.onChrome : 'rgba(232,234,232,0.3)', fontFamily: 'inherit',
+                padding: '6px 5px', borderRadius: 2, background: C.prussian10,
+            } }, React.createElement("span", { style: { fontSize: 7.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.prussian80, lineHeight: 1 } }, label), React.createElement("span", { style: {
+                fontSize: 13, fontWeight: 600, textAlign: 'center', width: '100%',
+                color: value ? C.prussian : C.prussian40, fontFamily: FONT,
                 lineHeight: 1.2,
-            } }, value || '\u2014')));
-    })))), React.createElement("div", { style: { background: C.white, padding: '14px 16px', position: 'relative' } }, React.createElement("div", { style: { position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, fontFamily: "'Century Gothic', system-ui, sans-serif" } }, "Status:"), isSenior
+            } }, value || '\u2014'));
+    })))),React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: '20px 22px', position: 'relative', boxShadow: '0 1px 2px rgba(24,59,79,0.06)' } }, React.createElement("div", { style: { position: 'absolute', top: 18, right: 22, display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Status"), isSenior
         ? React.createElement(StatusSelect, { value: project.status, onChange: v => updateField('status', v) })
         : (() => {
             const st = statusLookup[project.status] || { label: project.status || '—', bg: '#EEE', fg: C.muted };
-            return React.createElement("span", { style: { display: 'inline-block', padding: '5px 8px', borderRadius: 3, background: st.bg, color: st.fg, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', fontFamily: "'Century Gothic', system-ui, sans-serif" } }, st.label);
-        })()), React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 10, paddingRight: 120 } }, addedDate && React.createElement("span", null, "Added ", addedDate), lastUpdater && React.createElement("span", null, " \u00B7 edited by ", React.createElement("strong", { style: { color: C.text } }, lastUpdater.display_name), " ", formatRelative(project.updated_at))), (() => {
+            return React.createElement("span", { style: { display: 'inline-block', padding: '8px 14px', borderRadius: 2, background: st.bg, color: st.fg, border: st.ghost ? `1px dashed ${C.g300}` : 'none', fontSize: 12, fontWeight: 600, letterSpacing: '0.02em', fontFamily: FONT } }, st.label);
+        })()), React.createElement("div", { style: { fontSize: 13, fontWeight: 300, color: C.g500, marginBottom: 14, paddingRight: 140, fontFamily: FONT } }, addedDate && React.createElement("span", null, "Added ", addedDate), lastUpdater && React.createElement("span", null, " \u00B7 edited by ", React.createElement("strong", { style: { color: C.ink0, fontWeight: 600 } }, lastUpdater.display_name), " ", formatRelative(project.updated_at))), (() => {
         const today = new Date().toISOString().slice(0, 10);
         // Map note columns to project team user_id fields
         const cols = [
@@ -1516,9 +1540,9 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
                 console.error(e);
             }
         };
-        return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 } }, cols.map((col, i) => (React.createElement("div", { key: col.label }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3, minHeight: 20 } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: colActions[i].length > 0 ? C.carmine : C.muted } }, col.label), colActions[i].length > 0 && (React.createElement(ActionIndicatorBadge, { actions: colActions[i], users: users, columnLabel: col.label, onActionToggle: handleActionToggle, onNavigate: onNavigate })), colFlags[i].length > 0 && (React.createElement("button", { onClick: () => { const f = colFlags[i][0]; if (f && f.from_meeting_id && onOpenMeeting)
+        return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginTop: 16 } }, cols.map((col, i) => (React.createElement("div", { key: col.label }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, minHeight: 20 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, col.label), colActions[i].length > 0 && (React.createElement(ActionIndicatorBadge, { actions: colActions[i], users: users, columnLabel: col.label, onActionToggle: handleActionToggle, onNavigate: onNavigate })), colFlags[i].length > 0 && (React.createElement("button", { onClick: () => { const f = colFlags[i][0]; if (f && f.from_meeting_id && onOpenMeeting)
                 onOpenMeeting(f.from_meeting_id); }, title: `${colFlags[i].length} open flag${colFlags[i].length !== 1 ? 's' : ''} raised by ${col.label} for another team — click to view the meeting`, style: { display: 'inline-flex', alignItems: 'center', gap: 2, padding: '1px 6px', borderRadius: 10, border: `1px solid ${C.carmineMid}`, background: C.carmineSoft, color: C.carmine, fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: "'Century Gothic', system-ui, sans-serif", lineHeight: 1.4 }, onMouseEnter: e => e.currentTarget.style.background = C.carmineMid, onMouseLeave: e => e.currentTarget.style.background = C.carmineSoft }, `\u2691 ${colFlags[i].length}`))), React.createElement(NoteCell, { label: "", value: col.value, placeholder: "No notes yet" }))))));
-    })(), (keyDates && keyDates.length > 0) || isSenior ? (React.createElement("div", { style: { marginTop: 10 } }, isSenior && currentUser ? (React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange, compact: true })) : (React.createElement(ContributorKeyDates, { keyDates: keyDates || [], project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: onActionsChange })))) : null, (latestNote === null || latestNote === void 0 ? void 0 : latestNote.meeting_date) && (React.createElement("div", { style: { fontSize: 10, color: C.muted, fontStyle: 'italic', marginTop: 8 } }, "Last updated ", formatMeetingDate(latestNote.meeting_date))))));
+    })(), (keyDates && keyDates.length > 0) || isSenior ? (React.createElement("div", { style: { marginTop: 10 } }, isSenior && currentUser ? (React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange, compact: true })) : (React.createElement(ContributorKeyDates, { keyDates: keyDates || [], project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: onActionsChange })))) : null, (latestNote === null || latestNote === void 0 ? void 0 : latestNote.meeting_date) && (React.createElement("div", { style: { fontSize: 12, fontWeight: 300, color: C.g500, fontStyle: 'italic', marginTop: 12, fontFamily: FONT } }, "Last updated ", formatMeetingDate(latestNote.meeting_date))))));
 }
 // ============================================================
 // CONTRIBUTOR KEY DATES — read-only chips with toggle for closed
@@ -1609,11 +1633,11 @@ function ActionIndicatorBadge({ actions, users, columnLabel, onActionToggle, onN
         onClick: togglePopover(ref),
         style: {
             display: 'inline-flex', alignItems: 'center', gap: 3,
-            padding: '1px 6px', borderRadius: 10, border: 'none',
-            background: isOverdue ? C.redStatus : C.amber,
-            color: C.white, fontSize: 9, fontWeight: 700,
-            cursor: 'pointer', marginLeft: 4,
-            fontFamily: "'Century Gothic', system-ui, sans-serif",
+            padding: '3px 7px', borderRadius: 9, border: 'none',
+            background: isOverdue ? C.redStatus : C.warn,
+            color: C.white, fontSize: 9, fontWeight: 600,
+            cursor: 'pointer', marginLeft: 4, textTransform: 'uppercase',
+            fontFamily: FONT,
             letterSpacing: '0.04em',
         },
         title: `${count} ${isOverdue ? 'overdue' : 'open'} — click to view`
@@ -1661,39 +1685,44 @@ function CellInput({ value, onChange, placeholder, style, type = 'text', maxLeng
 function NoteCell({ label, value, placeholder }) {
     const hasValue = !!(value && value.trim());
     return (React.createElement("div", null, label ? (React.createElement("div", { style: {
-            fontSize: 8, fontWeight: 700, textTransform: 'uppercase',
-            letterSpacing: '0.08em', marginBottom: 4,
-            color: hasValue ? C.carmine : '#BDBDBD',
-        } }, label)) : null, React.createElement("div", { style: {
-            padding: '7px 9px',
-            background: hasValue ? C.white : C.bg,
-            border: hasValue ? `1px solid ${C.carmineMid}` : `1px dashed ${C.line}`,
-            borderLeft: `3px solid ${hasValue ? C.carmine : 'transparent'}`,
-            borderRadius: 3,
-            fontSize: 12,
-            color: hasValue ? C.text : '#BDBDBD',
-            minHeight: 44,
+            fontSize: 10, fontWeight: 500, textTransform: 'uppercase',
+            letterSpacing: '0.16em', marginBottom: 6, fontFamily: FONT,
+            color: C.g500,
+        } }, label)) : null, React.createElement("div", { onMouseEnter: hasValue ? undefined : e => e.currentTarget.style.borderColor = C.carmine40, onMouseLeave: hasValue ? undefined : e => e.currentTarget.style.borderColor = C.g200, style: {
+            padding: 12,
+            background: hasValue ? C.white : 'transparent',
+            border: hasValue ? `1px solid ${C.line}` : `1px dashed ${C.g200}`,
+            borderLeft: hasValue ? `3px solid ${C.carmine}` : `1px dashed ${C.g200}`,
+            borderRadius: 2,
+            fontSize: 13,
+            fontWeight: 300,
+            fontFamily: FONT,
+            color: hasValue ? C.ink0 : C.g300,
+            minHeight: 56,
+            boxSizing: 'border-box',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
             fontStyle: hasValue ? 'normal' : 'italic',
+            cursor: 'text',
             lineHeight: 1.5,
+            transition: 'border-color 160ms ease-out',
         } }, value || placeholder)));
 }
 function StatusSelect({ value, onChange }) {
     const status = statusLookup[value];
     return (React.createElement("select", { value: value || '', onChange: (e) => onChange(e.target.value), style: {
-            width: '100%',
-            padding: '5px 8px',
-            border: `1px solid transparent`,
-            borderRadius: 3,
-            background: status ? status.bg : C.bg,
-            color: status ? status.fg : C.muted,
-            fontSize: 11,
-            fontWeight: 700,
-            fontFamily: "'Century Gothic', system-ui, sans-serif",
+            padding: '10px 16px',
+            border: status && status.ghost ? `1px dashed ${C.g300}` : '1px solid transparent',
+            borderRadius: 2,
+            background: status ? status.bg : C.g100,
+            color: status ? status.fg : C.g500,
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: FONT,
             cursor: 'pointer',
             textAlign: 'center',
-            letterSpacing: '0.04em',
+            letterSpacing: '0.02em',
+            transition: 'all 160ms ease-out',
         } }, React.createElement("option", { value: "" }, "\u2014"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))));
 }
 function SaveIndicator({ status, light }) {
@@ -3604,7 +3633,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     const openDates = keyDates.filter(kd => !isAutoComplete(kd));
     const closedDates = keyDates.filter(kd => isAutoComplete(kd));
     const [showClosed, setShowClosed] = React.useState(false);
-    return (React.createElement("div", { style: { marginBottom: compact ? 8 : 20, paddingBottom: compact ? 8 : 20, borderBottom: compact ? 'none' : `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.ink, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Key Dates ", keyDates.length > 0 && `(${openDates.length} open${closedDates.length > 0 ? ` · ${closedDates.length} closed` : ''})`), isSenior && !showForm && (React.createElement("button", { onClick: () => setShowForm(true), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '3px 9px' }) }, "+ Add date"))), openDates.length > 0 && (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: closedDates.length > 0 ? 8 : 0 } }, openDates.map(kd => {
+    return (React.createElement("div", { style: { marginBottom: compact ? 8 : 20, paddingBottom: compact ? 8 : 20, borderBottom: compact ? 'none' : `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 11, color: C.g700, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.16em', fontFamily: FONT } }, "Key dates ", keyDates.length > 0 && React.createElement("span", { style: { color: C.g300 } }, `(${openDates.length} open${closedDates.length > 0 ? ` · ${closedDates.length} closed` : ''})`)), isSenior && !showForm && (React.createElement("button", { onClick: () => setShowForm(true), onMouseEnter: e => { e.currentTarget.style.background = C.carmine; e.currentTarget.style.color = '#fff'; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.carmine; }, style: { background: 'transparent', color: C.carmine, border: `1px solid ${C.carmine}`, borderRadius: 2, padding: '9px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out' } }, "+ Add date"))), openDates.length > 0 && (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: closedDates.length > 0 ? 8 : 0 } }, openDates.map(kd => {
         const urg = keyDateUrgency(kd.target_date);
         if (editingId === kd.id) {
             return (React.createElement("div", { key: kd.id, style: { display: 'flex', gap: 6, alignItems: 'center', background: C.white, border: `1px solid ${C.carmine}`, borderRadius: 3, padding: '6px 10px' } }, React.createElement("input", { value: editData.event_name || '', onChange: e => setEditData(p => (Object.assign(Object.assign({}, p), { event_name: e.target.value }))), placeholder: "Event name", style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 12, padding: '4px 8px', flex: 1, minWidth: 180 }) }), React.createElement("input", { type: "date", value: editData.target_date || '', onChange: e => setEditData(p => (Object.assign(Object.assign({}, p), { target_date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 12, padding: '2px 6px' }) }), React.createElement("button", { onClick: () => handleSaveEdit(kd.id), disabled: saving, style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, padding: '3px 8px' }) }, "Save"), React.createElement("button", { onClick: () => setEditingId(null), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '3px 8px' }) }, "Cancel")));
@@ -4248,14 +4277,16 @@ function Field({ label, children }) {
 function inputStyle() {
     return {
         width: '100%',
-        padding: '8px 10px',
+        padding: '11px 14px',
         border: `1px solid ${C.line}`,
-        borderRadius: 4,
-        fontSize: 13,
-        fontFamily: 'inherit',
+        borderRadius: 2,
+        fontSize: 14,
+        fontWeight: 400,
+        fontFamily: FONT,
         background: C.white,
-        color: C.text,
+        color: C.ink0,
         boxSizing: 'border-box',
+        transition: 'border-color 160ms ease-out',
     };
 }
 function labelStyle() {
@@ -4271,31 +4302,33 @@ function labelStyle() {
 }
 function btnPrimary() {
     return {
-        padding: '9px 18px',
+        padding: '13px 20px',
         background: C.carmine,
         color: C.white,
         border: 'none',
-        borderRadius: 3,
+        borderRadius: 2,
         cursor: 'pointer',
         fontSize: 12,
-        fontWeight: 700,
-        fontFamily: 'inherit',
-        letterSpacing: '0.04em',
+        fontWeight: 600,
+        fontFamily: FONT,
+        letterSpacing: '0.14em',
         textTransform: 'uppercase',
+        transition: 'all 160ms ease-out',
     };
 }
 function btnSecondary() {
     return {
-        padding: '7px 14px',
+        padding: '9px 14px',
         background: C.white,
         color: C.prussian,
         border: `1px solid ${C.prussian}`,
-        borderRadius: 3,
+        borderRadius: 2,
         cursor: 'pointer',
         fontSize: 12,
         fontWeight: 600,
-        fontFamily: 'inherit',
+        fontFamily: FONT,
         letterSpacing: '0.03em',
+        transition: 'all 160ms ease-out',
     };
 }
 // ============================================================
