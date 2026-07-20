@@ -145,6 +145,9 @@ const C = {
     amberLight: '#FEF3C7',
     redStatus: '#B83A2E',
     redStatusLight: '#FDECEA',
+    // ---- Success (meetings restyle — "actions clear") ----
+    success: '#1E6B45',
+    successBg: '#E7F0EA',
 };
 // Brand type stack (restyle spec §1). Gilroy is the licensed brand face but is
 // not shipped with this app, so it falls back to Century Gothic — the declared
@@ -364,7 +367,7 @@ function weeksBetween(a, b) {
 const WEEKS_BEFORE = 1;
 const WEEKS_TOTAL = 26; // 1 past + current + 24 ahead
 const WEEK_W = 72; // px per week column
-const LEFT_W = 470; // px for the frozen left panel
+const LEFT_W = 320; // px for the frozen left panel
 // ── SiteManagerCell — local state so dropdown reflects selection immediately ──
 function SiteManagerCell({ projectId, value, onClick, onUpdate }) {
     const [local, setLocal] = useState(value || '');
@@ -392,6 +395,7 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
     const [saving, setSaving] = useState(false);
     const [addKdProjectId, setAddKdProjectId] = useState(null);
     const [kdForm, setKdForm] = useState({ type: 'site-start', date: '' });
+    const [showKeyDates, setShowKeyDates] = useState(false);
     const scrollRef = useRef(null);
     const containerRef = useRef(null);
     const today = new Date();
@@ -559,8 +563,12 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
         return list;
     }, [trackerProjects, users]);
     // ── Row height constant ──────────────────────────────────────
-    const ROW_H = 54;
-    const HEADER_H = 34;
+    const ROW_H = 64;
+    const HEADER_H = 58;
+    // PM bar colours — prussian ramp only (restyle spec §2), assigned by legend order.
+    const PM_BAR_RAMP = [C.prussian, C.prussian40, C.prussian80, C.prussian60, C.prussianDark];
+    const pmBarColour = {};
+    pmList.forEach((pm, i) => { pmBarColour[pm.initials] = PM_BAR_RAMP[i % PM_BAR_RAMP.length]; });
     // ── Compute row data upfront so left + right panels stay in sync ──
     const rowData = useMemo(() => {
         const userById = {};
@@ -589,88 +597,23 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
             const rowBg = rowIdx % 2 === 0 ? C.white : '#FAFAFA';
             const siteManager = project.site_manager || '';
             const projectStatus = statusLookup[project.status] || { label: project.status || '—', bg: '#EEE', fg: C.muted };
-            return { project, pm, pmColour, secured, startWeek, endWeek, durationWeeks, projWeek, projCompletion, pcDate, milestones, rowBg, siteManager, projectStatus };
+            return { project, pm, pmColour, secured, startWeek, endWeek, durationWeeks, projWeek, projCompletion, pcDate, milestones, rowBg, siteManager, projectStatus, siteStart, barEndDateStr };
         });
     }, [sortedTrackerProjects, kdByProject, weeks, users]);
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 20px', borderTop: '1px solid rgba(255,255,255,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontSize: 22, color: C.white, fontWeight: 700, letterSpacing: '-0.01em' } }, "Live Project Tracker"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, trackerProjects.length, " project", trackerProjects.length !== 1 ? 's' : '', " \u00B7 Contract & On-site \u00B7 w/c ", fmtWeek(currentWeekStart))), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } }, pmList.map(pm => (React.createElement("div", { key: pm.initials, style: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.12)', borderRadius: 3, padding: '4px 10px' } }, React.createElement("div", { style: { width: 10, height: 10, borderRadius: 2, background: pm.colour } }), React.createElement("span", { style: { fontSize: 11, color: C.white, fontWeight: 600 } }, pm.name)))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.12)', borderRadius: 3, padding: '4px 10px' } }, React.createElement("div", { style: { width: 10, height: 10, borderRadius: 2, background: '#333' } }), React.createElement("span", { style: { fontSize: 11, color: C.white, fontWeight: 600 } }, "Unallocated")))), React.createElement("div", { style: { display: 'flex', flex: 1 }, ref: containerRef }, React.createElement("div", { style: { width: LEFT_W, flexShrink: 0, borderRight: `2px solid ${C.line}`, background: C.white, zIndex: 5 } }, React.createElement("div", { style: { height: HEADER_H, display: 'grid', gridTemplateColumns: '1fr 80px 44px 96px 44px 80px', alignItems: 'center', padding: '0 10px', background: C.white, borderBottom: `2px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.carmine } }, "Project"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Status"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Sec."), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Site Mgr"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "PM"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Duration")), trackerProjects.length === 0 ? (React.createElement("div", { style: { padding: '32px 12px', color: C.muted, fontSize: 12 } }, "No projects on site or contract.")) : rowData.map(({ project, pm, pmColour, secured, durationWeeks, rowBg, siteManager, projectStatus }) => (React.createElement("div", { key: project.id, style: { height: ROW_H, display: 'grid', gridTemplateColumns: '1fr 80px 44px 96px 44px 80px', alignItems: 'center', padding: '0 10px', gap: 4, borderBottom: `1px solid ${C.line}`, background: rowBg, cursor: canPM ? 'pointer' : 'default', boxSizing: 'border-box' }, onClick: () => canPM && openEdit(project), title: canPM ? 'Click to edit dates & PM' : '' }, React.createElement("div", { style: { overflow: 'hidden' } }, React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: C.carmine, lineHeight: 1.25, wordBreak: 'break-word', overflowWrap: 'anywhere' } }, project.name), React.createElement("div", { style: { fontSize: 10, color: C.muted } }, "#", project.project_number)), React.createElement("div", { style: { textAlign: 'center' } }, React.createElement("span", { style: { display: 'inline-block', padding: '3px 6px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: projectStatus.bg, color: projectStatus.fg, whiteSpace: 'nowrap', maxWidth: 78, overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '0.02em' } }, projectStatus.label)), React.createElement("div", { style: { textAlign: 'center' } }, React.createElement("span", { style: { display: 'inline-block', padding: '3px 6px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: secured ? C.greenLight : '#EEE', color: secured ? C.green : C.muted } }, secured ? 'Y' : 'N')), React.createElement("div", { style: { textAlign: 'center' } }, canPM ? (React.createElement(SiteManagerCell, { projectId: project.id, value: siteManager, onClick: e => e.stopPropagation(), onUpdate: onProjectUpdate })) : (React.createElement("span", { style: { fontSize: 9, color: C.text } }, siteManager || '—'))), React.createElement("div", { style: { textAlign: 'center' } }, pm
-        ? React.createElement("span", { style: { display: 'inline-block', padding: '3px 7px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: pmColour, color: C.white } }, pm)
-        : React.createElement("span", { style: { fontSize: 11, color: C.muted } }, "\u2014")), React.createElement("div", { style: { textAlign: 'center', fontSize: 11, color: C.text, fontWeight: 600 } }, durationWeeks ? `${durationWeeks}w` : '—'))))), React.createElement("div", { style: { flex: 1, overflowX: 'auto', overflowY: 'hidden' }, ref: scrollRef }, React.createElement("div", { style: { width: weeksTotal * WEEK_W, minWidth: weeksTotal * WEEK_W } }, React.createElement("div", { style: { display: 'flex', height: HEADER_H, borderBottom: `2px solid ${C.line}`, background: C.white } }, weeks.map((w, i) => {
-        const isCurr = i === WEEKS_BEFORE;
-        const isPast = w < currentWeekStart;
-        return (React.createElement("div", { key: i, style: {
-                width: WEEK_W, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: isCurr ? 700 : 400,
-                color: isCurr ? C.carmine : isPast ? C.muted : C.text,
-                background: isCurr ? C.carmineSoft : 'transparent',
-                borderLeft: `1px solid ${isCurr ? C.carmineMid : C.line}`,
-            } }, fmtWeek(w)));
-    })), trackerProjects.length === 0 ? (React.createElement("div", { style: { height: ROW_H, display: 'flex', alignItems: 'center', padding: '0 24px', color: C.muted, fontSize: 12 } }, "Set projects to Contract or On-site status to see them here.")) : rowData.map(({ project, pm, pmColour, secured, startWeek, endWeek, durationWeeks, projWeek, projCompletion, pcDate, milestones, rowBg, siteManager, projectStatus }) => (React.createElement("div", { key: project.id, style: { height: ROW_H, position: 'relative', display: 'flex', borderBottom: `1px solid ${C.line}`, background: rowBg, boxSizing: 'border-box' } }, weeks.map((w, i) => {
-        const isCurr = i === WEEKS_BEFORE;
-        const inBar = startWeek !== null && endWeek !== null && i >= startWeek && i <= endWeek;
-        const isBarStart = i === startWeek;
-        const isBarEnd = i === endWeek;
-        let cellBg = isCurr ? 'rgba(140,0,42,0.04)' : 'transparent';
-        if (inBar) {
-            cellBg = secured
-                ? (pmColour || '#333')
-                : pmColour
-                    ? `repeating-linear-gradient(45deg,${pmColour}66,${pmColour}66 5px,${pmColour}22 5px,${pmColour}22 12px)`
-                    : 'repeating-linear-gradient(45deg,#33333366,#33333366 5px,#33333322 5px,#33333322 12px)';
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 22px', borderTop: '1px solid rgba(255,255,255,0.15)' } }, React.createElement("div", { style: { fontFamily: FONT, fontSize: 28, color: C.white, fontWeight: 700, letterSpacing: '-0.02em' } }, "Live Project Tracker"), React.createElement("div", { style: { fontSize: 13, fontWeight: 300, color: 'rgba(255,255,255,0.75)', marginTop: 5, fontFamily: FONT } }, trackerProjects.length, " project", trackerProjects.length !== 1 ? 's' : '', " · Contract & On-site · w/c ", fmtWeek(currentWeekStart))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 22 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', color: C.g500, fontFamily: FONT } }, "Timeline"), React.createElement("button", { onClick: () => setShowKeyDates(v => !v), style: { display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: FONT, padding: 0 } }, React.createElement("span", { style: { position: 'relative', width: 34, height: 18, borderRadius: 9, background: showKeyDates ? C.carmine : C.g300, transition: 'background 160ms ease-out', flexShrink: 0 } }, React.createElement("span", { style: { position: 'absolute', top: 2, left: showKeyDates ? 18 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.25)', transition: 'left 160ms ease-out' } })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: C.ink0, fontFamily: FONT } }, "Show key dates")), React.createElement("div", { style: { marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' } }, pmList.map(pm => React.createElement("div", { key: pm.initials, style: { display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { width: 14, height: 8, borderRadius: 1, background: pmBarColour[pm.initials] || C.prussian, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.g500, fontFamily: FONT } }, pm.name))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { width: 14, height: 8, borderRadius: 1, background: '#fff', border: `1.5px dashed ${C.prussian60}`, flexShrink: 0, boxSizing: 'border-box' } }), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.g500, fontFamily: FONT } }, "Unallocated")))), React.createElement("div", { style: { display: 'flex', flex: 1 }, ref: containerRef }, React.createElement("div", { style: { width: LEFT_W, flexShrink: 0, borderRight: `1px solid ${C.line}`, background: C.white, zIndex: 5 } }, React.createElement("div", { style: { height: HEADER_H, display: 'flex', alignItems: 'flex-end', padding: '0 20px 9px', borderBottom: `1px solid ${C.line}`, boxSizing: 'border-box' } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', color: C.g500, fontFamily: FONT } }, "Project")), trackerProjects.length === 0 ? React.createElement("div", { style: { padding: '32px 20px', color: C.g500, fontSize: 13, fontFamily: FONT } }, "No projects on site or contract.") : rowData.map(({ project, projectStatus, pm }, ri) => React.createElement("div", { key: project.id, onClick: () => canPM && openEdit(project), style: { height: ROW_H, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px', borderBottom: `1px solid ${C.line}`, background: ri % 2 === 1 ? C.g50 : C.white, cursor: canPM ? 'pointer' : 'default', boxSizing: 'border-box' }, title: canPM ? 'Click to edit dates & PM' : '' }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink0, fontFamily: FONT, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, project.name), React.createElement("div", { style: { fontSize: 10, fontWeight: 500, letterSpacing: '0.14em', color: C.g500, fontFamily: FONT, marginTop: 2 } }, "# ", project.project_number)), React.createElement("span", { style: { display: 'inline-block', padding: '7px 11px', borderRadius: 2, fontSize: 11, fontWeight: 600, background: projectStatus.bg, color: projectStatus.fg, fontFamily: FONT, whiteSpace: 'nowrap', flexShrink: 0 } }, projectStatus.label), React.createElement("div", { style: { width: 26, height: 26, borderRadius: 2, background: C.g100, color: pm ? C.g700 : C.g500, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, fontFamily: FONT, flexShrink: 0 } }, pm || "—")))), React.createElement("div", { style: { flex: 1, overflowX: 'auto', overflowY: 'hidden' }, ref: scrollRef }, React.createElement("div", { style: { width: weeksTotal * WEEK_W, minWidth: weeksTotal * WEEK_W, position: 'relative' } }, React.createElement("div", { style: { height: HEADER_H, boxSizing: 'border-box' } }, React.createElement("div", { style: { height: 30, display: 'flex' } }, weeks.map((w, i) => { const monthStart = i === 0 || w.getMonth() !== weeks[i - 1].getMonth(); return React.createElement("div", { key: i, style: { width: WEEK_W, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 10, boxSizing: 'border-box', borderLeft: monthStart ? `1px solid ${C.line}` : 'none' } }, monthStart ? React.createElement("span", { style: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.ink0, fontFamily: FONT } }, w.toLocaleDateString('en-GB', { month: 'short' })) : null); })), React.createElement("div", { style: { height: 28, display: 'flex', borderBottom: `1px solid ${C.line}` } }, weeks.map((w, i) => { const isCurr = i === WEEKS_BEFORE; return React.createElement("div", { key: i, style: { width: WEEK_W, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: isCurr ? 500 : 400, color: isCurr ? C.carmine : C.g500, background: isCurr ? C.carmineSoft : 'transparent', fontFamily: FONT } }, w.getDate()); }))), trackerProjects.length === 0 ? React.createElement("div", { style: { height: ROW_H, display: 'flex', alignItems: 'center', padding: '0 24px', color: C.g500, fontSize: 13, fontFamily: FONT } }, "Set projects to Contract or On-site status to see them here.") : React.createElement("div", { style: { position: 'relative' } }, rowData.map(({ project, pm, startWeek, endWeek, siteStart, barEndDateStr, projWeek, projCompletion, pcDate, milestones }, ri) => {
+        const hasBar = startWeek !== null && endWeek !== null;
+        const bl = hasBar ? Math.max(0, startWeek) : 0;
+        const brw = hasBar ? (Math.min(endWeek, weeksTotal - 1) - bl + 1) : 0;
+        const barCol = pm ? (pmBarColour[pm] || C.prussian80) : null;
+        const marks = [];
+        if (showKeyDates) {
+            if (startWeek !== null && siteStart) marks.push({ w: startWeek, label: 'SITE START', d: siteStart });
+            if (endWeek !== null && barEndDateStr) marks.push({ w: endWeek, label: pcDate ? 'PC' : 'PROJ', d: barEndDateStr });
+            (milestones || []).forEach(ms => { marks.push({ w: weeksBetween(weeks[0], getWeekStart(new Date(ms.target_date + 'T00:00:00'))), label: (ms.event_name || '').toUpperCase(), d: ms.target_date }); });
         }
-        return (React.createElement("div", { key: i, style: {
-                width: WEEK_W, flexShrink: 0, height: '100%',
-                background: cellBg,
-                borderLeft: `1px solid ${isCurr ? C.carmineMid : C.line}`,
-                borderRadius: isBarStart && isBarEnd ? 3 : isBarStart ? '3px 0 0 3px' : isBarEnd ? '0 3px 3px 0' : 0,
-                position: 'relative',
-            } }, projWeek === i && inBar && (React.createElement("div", { onMouseEnter: e => setTooltip({ text: `Projected completion
-${formatMeetingDate(projCompletion)}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: { position: 'absolute', top: '15%', bottom: '15%', right: 5, width: 3, background: 'rgba(255,255,255,0.9)', borderRadius: 2, cursor: 'help', zIndex: 2 } })), milestones.filter(ms => {
-            const mw = weeksBetween(weeks[0], getWeekStart(new Date(ms.target_date + 'T00:00:00')));
-            return mw === i;
-        }).map(ms => (React.createElement("div", { key: ms.id, onMouseEnter: e => setTooltip({ text: `${ms.event_name}
-${formatMeetingDate(ms.target_date)}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: {
-                position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%,-50%) rotate(45deg)',
-                width: 9, height: 9,
-                background: inBar ? C.white : C.amber,
-                border: `2px solid ${inBar ? 'rgba(0,0,0,0.25)' : C.amber}`,
-                cursor: 'help', zIndex: 3,
-            } })))));
-    }), !!(pcDate) && endWeek !== null && endWeek >= 0 && endWeek < weeks.length && (React.createElement("div", { onMouseEnter: e => setTooltip({ text: `PC Date (Contracted)\n${formatMeetingDate(pcDate)}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: {
-            position: 'absolute',
-            left: (endWeek + 1) * WEEK_W - 10,
-            top: '50%', transform: 'translateY(-50%)',
-            width: 0, height: 0,
-            borderTop: '8px solid transparent',
-            borderBottom: '8px solid transparent',
-            borderLeft: '12px solid rgba(255,255,255,0.95)',
-            filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.5))',
-            cursor: 'help', zIndex: 5,
-        } })), startWeek !== null && endWeek !== null && durationWeeks && durationWeeks >= 2 && (() => {
-        const visStart = Math.max(0, startWeek);
-        const visEnd = Math.min(endWeek, weeks.length - 1);
-        const visWidth = (visEnd - visStart + 1) * WEEK_W - 8;
-        if (visWidth < 40)
-            return null;
-        return (React.createElement("div", { style: {
-                position: 'absolute',
-                left: visStart * WEEK_W + 2,
-                top: '50%', transform: 'translateY(-50%)',
-                fontSize: 10, fontWeight: 600,
-                color: secured ? 'rgba(255,255,255,0.95)' : (pmColour || C.text),
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap', overflow: 'hidden',
-                maxWidth: visWidth,
-                textShadow: secured ? '0 1px 2px rgba(0,0,0,0.35)' : 'none',
-                zIndex: 1,
-            } }, project.name));
-    })(), !pm && startWeek !== null && endWeek !== null && (React.createElement("div", { style: {
-            position: 'absolute',
-            left: Math.max(0, startWeek) * WEEK_W,
-            width: (Math.min(endWeek + 1, weeks.length) - Math.max(0, startWeek)) * WEEK_W,
-            top: 8, bottom: 8, borderRadius: 3,
-            background: '#222', pointerEvents: 'none', zIndex: 1,
-        } })))))))), addKdProjectId && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
+        return React.createElement("div", { key: project.id, style: { height: ROW_H, position: 'relative', borderBottom: `1px solid ${C.line}`, boxSizing: 'border-box', background: ri % 2 === 1 ? C.g50 : C.white, backgroundImage: `repeating-linear-gradient(to right, transparent, transparent ${WEEK_W - 1}px, ${C.g100} ${WEEK_W - 1}px, ${C.g100} ${WEEK_W}px)` } }, hasBar && brw > 0 && React.createElement("div", { onMouseEnter: e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(24,59,79,0.35)'; }, onMouseLeave: e => { e.currentTarget.style.boxShadow = 'none'; }, title: project.name, style: { position: 'absolute', left: bl * WEEK_W + 2, width: brw * WEEK_W - 4, top: 26, height: 12, borderRadius: 2, background: barCol || '#fff', border: barCol ? 'none' : `1.5px dashed ${C.prussian60}`, boxSizing: 'border-box', transition: 'box-shadow 160ms ease-out', zIndex: 2 } }), marks.map((m, mi) => (m.w >= 0 && m.w < weeksTotal) ? React.createElement(React.Fragment, { key: mi }, React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 7, top: 19, width: 14, height: 14, background: C.ink0, borderRadius: 2, transform: 'rotate(45deg)', zIndex: 3 } }), React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 40, width: 80, top: 44, textAlign: 'center', fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap', overflow: 'hidden' } }, m.label, " · ", new Date(m.d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase())) : null));
+    }), (() => { const todayX = ((today - weeks[0]) / 86400000) / 7 * WEEK_W; if (todayX < 0 || todayX > weeksTotal * WEEK_W) return null; return React.createElement("div", { style: { position: 'absolute', left: todayX, top: 0, bottom: 0, width: 2, background: C.carmine, zIndex: 6, pointerEvents: 'none' } }, React.createElement("div", { style: { position: 'absolute', top: 0, left: 4, background: C.carmine, color: '#fff', fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '3px 6px', borderRadius: 2, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Today")); })())))), 
+addKdProjectId && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
         _a.name), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Type"), React.createElement("select", { value: kdForm.type, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { type: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => React.createElement("option", { key: t.value, value: t.value }, t.label)))), React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Date"), React.createElement("input", { type: "date", value: kdForm.date, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } }, React.createElement("button", { onClick: () => setAddKdProjectId(null), style: btnSecondary() }, "Cancel"), React.createElement("button", { onClick: saveKd, disabled: saving || !kdForm.date, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: (!kdForm.date || saving) ? 0.5 : 1 }) }, "Save"))))), editProject && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 100 }, onClick: () => setEditProject(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: {
             position: 'absolute', left: 0, top: 0, bottom: 0, width: 380,
             background: C.white, boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
@@ -1498,7 +1441,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
                 color: value ? C.prussian : C.prussian40, fontFamily: FONT,
                 lineHeight: 1.2,
             } }, value || '\u2014'));
-    })))),React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: '20px 22px', position: 'relative', boxShadow: '0 1px 2px rgba(24,59,79,0.06)' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 14 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Status"), isSenior
+    })))),React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderLeft: `4px solid ${C.prussian}`, borderRadius: 2, padding: '20px 22px', position: 'relative', boxShadow: '0 1px 2px rgba(24,59,79,0.06)' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 14 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Status"), isSenior
         ? React.createElement(StatusSelect, { value: project.status, onChange: v => updateField('status', v) })
         : (() => {
             const st = statusLookup[project.status] || { label: project.status || '—', bg: '#EEE', fg: C.muted };
@@ -2108,10 +2051,10 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         return (React.createElement("main", { style: { padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 4, maxWidth: 500, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load actions: ", error)));
     // Pill definitions — always show all so they're always clickable
     const filterPills = [
-        { key: 'overdue', label: 'Overdue', count: overdueActions.length, accent: C.redStatus, tint: 'rgba(184,58,46,0.18)' },
-        { key: 'due-soon', label: 'Due soon', count: dueSoonActions.length, accent: C.warn, tint: 'rgba(165,116,28,0.20)' },
-        { key: 'open', label: 'Open', count: otherOpenActions.length, accent: C.onChrome, tint: 'rgba(255,255,255,0.14)' },
-        { key: 'closed', label: 'Closed', count: closedActions.length, accent: C.green, tint: 'rgba(45,122,95,0.18)' },
+        { key: 'overdue', label: 'Overdue', count: overdueActions.length, bg: C.warn, fg: '#fff', labelFg: '#fff' },
+        { key: 'due-soon', label: 'Due soon', count: dueSoonActions.length, bg: C.prussian20, fg: C.prussian, labelFg: C.prussian80 },
+        { key: 'open', label: 'Open', count: otherOpenActions.length, bg: C.prussian20, fg: C.prussian, labelFg: C.prussian80 },
+        { key: 'closed', label: 'Closed', count: closedActions.length, ghost: true },
     ];
     // Relation-group renderer: returns the ActionSections for one side
     // (owned or collaborator) with an optional eyebrow heading.
@@ -2126,28 +2069,31 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         const headingColour = isCollab ? C.carmine : C.carmine;
         // Within the all-view, render the same status subgroupings.
         const tertiary = React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
-            b.overdue.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.redStatus, actions: b.overdue, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
+            b.overdue.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.carmine, actions: b.overdue, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
             b.dueSoon.length > 0 && (React.createElement(ActionSection, { title: "Due this week", accentColour: C.warn, actions: b.dueSoon, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
-            b.other.length > 0 && (React.createElement(ActionSection, { title: b.overdue.length === 0 && b.dueSoon.length === 0 ? 'Open actions' : 'Upcoming', accentColour: headingColour, actions: b.other, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })));
-        return React.createElement("div", { key: kind, style: { display: 'flex', flexDirection: 'column', gap: 12 } },
-            React.createElement("div", { style: { borderTop: `2px solid ${headingColour}`, paddingTop: 10 } },
-                React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
-                    React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 14, fontWeight: 700, color: headingColour, textTransform: 'uppercase', letterSpacing: '0.1em' } }, heading),
-                    React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, headingHint))),
+            b.other.length > 0 && (React.createElement(ActionSection, { title: b.overdue.length === 0 && b.dueSoon.length === 0 ? 'Open actions' : 'Upcoming', accentColour: C.g500, actions: b.other, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })));
+        return React.createElement("div", { key: kind, style: { display: 'flex', flexDirection: 'column' } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } },
+                    React.createElement("div", { style: { width: 22, height: 3, background: '#000', flexShrink: 0 } }),
+                    React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 13, fontWeight: 600, color: C.ink0, textTransform: 'uppercase', letterSpacing: '0.18em' } }, heading),
+                    React.createElement("span", { style: { fontSize: 13, fontWeight: 300, color: C.g500, fontStyle: 'italic', fontFamily: FONT } }, headingHint)),
+                React.createElement("div", { style: { height: 1, background: C.line, margin: '10px 0 18px' } })),
             tertiary);
     };
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 20px', borderTop: '1px solid rgba(255,255,255,0.15)' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontSize: 22, color: C.white, fontWeight: 700, letterSpacing: '-0.01em' } }, "My Actions"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, profile.display_name, " \u00B7 ", owned.open.length, " open", owned.overdue.length > 0 ? ` · ${owned.overdue.length} overdue` : '', collab.open.length > 0 ? ` · ${collab.open.length} collaborating` : '')), React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, filterPills.map(p => {
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 20px', borderTop: '1px solid rgba(255,255,255,0.15)' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontSize: 28, color: C.white, fontWeight: 700, letterSpacing: '-0.02em' } }, "My Actions"), React.createElement("div", { style: { fontSize: 13, fontWeight: 300, color: 'rgba(255,255,255,0.75)', marginTop: 5, fontFamily: FONT } }, profile.display_name, " \u00B7 ", owned.open.length, " open", owned.overdue.length > 0 ? ` · ${owned.overdue.length} overdue` : '', collab.open.length > 0 ? ` · ${collab.open.length} collaborating` : '')), React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } }, filterPills.map(p => {
         const active = actionFilter === p.key;
-        const hasCount = p.count > 0;
-        return (React.createElement("button", { key: p.key, onClick: () => setActionFilter(active ? 'all' : p.key), style: {
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                padding: '4px 12px', borderRadius: 4, gap: 1, minWidth: 54, cursor: 'pointer',
-                background: hasCount ? p.tint : 'rgba(255,255,255,0.06)',
-                border: active ? `2px solid ${p.accent}` : '2px solid transparent',
-                boxShadow: active ? `0 0 0 1px ${p.accent}` : 'none',
-                transition: 'border-color 0.12s, box-shadow 0.12s',
-            } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: hasCount ? p.accent : 'rgba(232,234,232,0.4)', lineHeight: 1 } }, p.count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: hasCount ? 'rgba(232,234,232,0.85)' : 'rgba(232,234,232,0.4)' } }, p.label)));
-    })))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } }, React.createElement(QueriesPanel, { needsMyAnswer: needsMyAnswer, awaitingMine: awaitingMine, actionLookup: actionLookup, projectLookup: projectLookup, users: users, onAnswer: answerQuery, onWithdraw: withdrawQuery }), (() => {
+        return (React.createElement("button", { key: p.key, onClick: () => setActionFilter(active ? 'all' : p.key), onMouseEnter: e => { if (p.ghost) { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderStyle = 'solid'; } else { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.28)'; } }, onMouseLeave: e => { if (p.ghost) { e.currentTarget.style.background = active ? 'rgba(255,255,255,0.08)' : 'transparent'; e.currentTarget.style.borderStyle = active ? 'solid' : 'dashed'; } else { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; } }, style: {
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+                width: 78, padding: p.ghost ? '10px 8px 9px' : '11px 8px 10px',
+                background: p.ghost ? (active ? 'rgba(255,255,255,0.08)' : 'transparent') : p.bg,
+                border: p.ghost ? '1px dashed rgba(255,255,255,0.35)' : 'none',
+                borderStyle: p.ghost ? (active ? 'solid' : 'dashed') : undefined,
+                borderRadius: 2, cursor: 'pointer', fontFamily: FONT,
+                outline: (active && !p.ghost) ? '2px solid #fff' : '2px solid transparent', outlineOffset: 2,
+                transition: 'all 160ms ease-out',
+            } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, lineHeight: 1, fontFamily: FONT, color: p.ghost ? 'rgba(255,255,255,0.5)' : p.fg } }, p.count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', fontFamily: FONT, color: p.ghost ? 'rgba(255,255,255,0.5)' : p.labelFg } }, p.label)));
+    })))), React.createElement("main", { style: { padding: '24px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, React.createElement(QueriesPanel, { needsMyAnswer: needsMyAnswer, awaitingMine: awaitingMine, actionLookup: actionLookup, projectLookup: projectLookup, users: users, onAnswer: answerQuery, onWithdraw: withdrawQuery }), (() => {
         const show = actionFilter;
         // Within a filter view, render owned section and collab section
         // (skipping each if empty) so the visual structure mirrors the
@@ -2162,13 +2108,13 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
                 collabSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 collaborating (${collabSet.length})`, accentColour: C.carmine, actions: collabSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: dimmed, showOwnerNameAs: 'collaborator' }));
         };
         if (show === 'overdue')
-            return renderFiltered('overdue', 'Overdue', C.redStatus, false);
+            return renderFiltered('overdue', 'Overdue', C.carmine, false);
         if (show === 'due-soon')
             return renderFiltered('dueSoon', 'Due this week', C.warn, false);
         if (show === 'open')
-            return renderFiltered('other', 'Open', C.carmine, false);
+            return renderFiltered('other', 'Open', C.g500, false);
         if (show === 'closed')
-            return renderFiltered('closed', 'Closed', C.muted, true);
+            return renderFiltered('closed', 'Closed', C.g500, true);
         return null; // fall through to 'all' render
     })(), actionFilter === 'all' && actions.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 } }, "No actions assigned to you yet"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Actions raised in meetings and assigned to you will appear here."))) : actionFilter === 'all' ? (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 28 } },
         renderRelationGroup('owned', owned),
@@ -2180,7 +2126,7 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
 // ACTION SECTION — grouped block within My Actions
 // ============================================================
 function ActionSection({ title, accentColour, actions, projectLookup, meetings, today, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs, queryCtx }) {
-    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 } }, React.createElement("div", { style: { width: 3, height: 16, background: accentColour, borderRadius: 2, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColour, fontFamily: FONT } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users, showOwnerNameAs: showOwnerNameAs, queryCtx: queryCtx }))))));
+    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } }, React.createElement("div", { style: { width: 3, height: 14, background: accentColour, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: accentColour, fontFamily: FONT } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column' } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users, showOwnerNameAs: showOwnerNameAs, queryCtx: queryCtx }))))));
 }
 // ============================================================
 // MY ACTION CARD — single action row
@@ -2229,61 +2175,34 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
     // Priority colours — matching the arke [matrix] status palette
     const priorityStyle = {
         urgent: { bg: C.redStatus, fg: '#fff', label: 'Urgent' },
-        high: { bg: '#C47D11', fg: '#fff', label: 'High' },
-        normal: { bg: C.fog, fg: '#5A6B73', label: 'Normal' },
-        low: { bg: C.bg, fg: C.muted, label: 'Low' },
-    }[priority] || { bg: C.bg, fg: C.muted, label: priority };
-    // Overdue: full red left panel like project identity panel
-    // High/Urgent: amber/red accent
-    const cardBorderLeft = isOverdue ? C.redStatus : isClosed ? C.line : accentColour;
-    return (React.createElement("div", { style: {
-            display: 'flex', flexDirection: 'column',
-            borderRadius: 2,
-            overflow: 'hidden',
-            border: `1px solid ${isOverdue ? C.redStatus : isClosed ? C.line : C.line}`,
-            borderLeft: isOverdue ? `4px solid ${C.redStatus}` : `3px solid ${isClosed ? C.line : accentColour}`,
-            boxShadow: '0 1px 2px rgba(24,59,79,0.06)',
-            opacity: dimmed ? 0.6 : 1,
-        } }, React.createElement("div", { style: {
-            display: 'grid',
-            gridTemplateColumns: '40px 1fr auto',
-            gap: 12,
-            alignItems: 'start',
-            background: isOverdue ? '#FFF5F5' : C.white,
-            padding: '14px 16px',
-        } }, React.createElement("div", { style: { paddingTop: 2 } }, React.createElement("button", { onClick: handleToggle, disabled: toggling || isCollaboratorView, title: isCollaboratorView ? `Only ${ownerLabel} (the owner) can close this action` : (isClosed ? 'Mark as open' : 'Mark as done'), style: {
-            width: 30, height: 30, borderRadius: '50%',
-            border: `2px solid ${isCollaboratorView ? C.mist : (isClosed ? C.green : isOverdue ? C.redStatus : accentColour)}`,
-            background: isCollaboratorView ? C.bg : (isClosed ? C.green : 'transparent'),
-            opacity: isCollaboratorView ? 0.6 : 1,
-            cursor: isCollaboratorView ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-        } }, isCollaboratorView ? React.createElement("span", { style: { color: C.mist, fontSize: 14, lineHeight: 1 } }, "\u{1F512}") : (isClosed && React.createElement("span", { style: { color: C.white, fontSize: 14, fontWeight: 700, lineHeight: 1 } }, "\u2713")))), React.createElement("div", null, isOverdue && (React.createElement("div", { style: {
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: C.redStatus, color: C.white,
-            padding: '2px 10px', borderRadius: 3, marginBottom: 8,
-            fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
-            fontFamily: FONT,
-        } }, "\u26A0 Overdue \u00B7 ", formatMeetingDateLong(action.due_date))), React.createElement("div", { style: {
-            fontSize: 14, fontWeight: isClosed ? 400 : 600,
-            color: isClosed ? C.muted : isOverdue ? C.redStatus : C.text,
-            textDecoration: isClosed ? 'line-through' : 'none',
-            lineHeight: 1.4, marginBottom: 6,
-        } }, action.description), isCollaboratorView && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: C.carmineSoft, border: `1px solid ${C.carmineMid}`, borderRadius: 3 } },
-            React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.carmine } }, "Owner"),
-            React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: C.text } }, ownerLabel),
-            React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic', marginLeft: 'auto' } }, "Only the owner can close")), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } }, priority !== 'normal' && (React.createElement("span", { style: {
-            background: priorityStyle.bg, color: priorityStyle.fg,
-            padding: '2px 8px', borderRadius: 3,
-            fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-            fontFamily: FONT,
-        } }, priorityStyle.label)), project && (React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: C.carmine } }, project.name, project.project_number && React.createElement("span", { style: { color: C.muted, fontWeight: 400 } }, " #", project.project_number))), meetingCfg && meeting && (React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: {
-            background: C.carmineSoft, border: `1px solid ${C.carmineMid}`,
-            borderRadius: 3, padding: '2px 8px', cursor: 'pointer',
-            fontSize: 10, fontWeight: 600, color: C.carmine,
-            fontFamily: FONT,
-            textTransform: 'uppercase', letterSpacing: '0.06em',
-        } }, meetingCfg.short, " \u00B7 ", formatMeetingDate(meeting.meeting_date), " \u2192")))), React.createElement("div", { style: { textAlign: 'right', paddingTop: 2, minWidth: 80 } }, !isOverdue && action.due_date ? (React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: isClosed ? C.muted : C.text } }, formatMeetingDateLong(action.due_date))) : !isOverdue ? (React.createElement("span", { style: { fontSize: 11, color: C.muted } }, "No date")) : null)), isClosed && action.completed_note && (React.createElement("div", { style: { padding: '6px 14px 10px', fontSize: 11, color: C.green, fontStyle: 'italic', borderTop: `1px solid ${C.greenLight}`, background: '#F0FBF4' } }, "\u2713 ", action.completed_note, (() => {
+        high: { bg: C.warn, fg: '#fff', label: 'High' },
+        medium: { bg: C.prussian60, fg: '#fff', label: 'Medium' },
+        normal: { bg: C.fog, fg: C.g500, label: 'Normal' },
+        low: { bg: C.prussian10, fg: C.prussian, label: 'Low' },
+    }[priority] || { bg: C.fog, fg: C.g500, label: priority };
+    // ----- Restyle (arke-matrix-actions-restyle §4/§5) -----
+    const collab = isCollaboratorView;
+    const daysUntil = action.due_date ? Math.round((new Date(action.due_date + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000) : null;
+    const dueThisWeek = !isClosed && !isOverdue && daysUntil !== null && daysUntil <= 7;
+    // Left edge encodes urgency: overdue=carmine, due-this-week=warn, else neutral. Collaborating cards always carmine.
+    const edgeColour = collab ? C.carmine : (isClosed ? C.line : isOverdue ? C.carmine : dueThisWeek ? C.warn : C.line);
+    const restShadow = '0 1px 2px rgba(24,59,79,0.06)';
+    const hoverShadow = '0 4px 14px rgba(24,59,79,0.14)';
+    const queryFooterBg = collab ? 'rgba(255,255,255,0.6)' : C.g50;
+    const queryFooterBorder = collab ? C.carmineMid : C.line;
+    const linkHover = e => { e.currentTarget.style.color = C.carmineDark; e.currentTarget.style.borderBottomColor = C.carmine; };
+    const linkLeave = e => { e.currentTarget.style.color = C.carmine; e.currentTarget.style.borderBottomColor = C.carmine40; };
+    return (React.createElement("div", { onMouseEnter: e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = hoverShadow; }, onMouseLeave: e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = restShadow; }, style: {
+            display: 'flex', flexDirection: 'column', borderRadius: 2, overflow: 'hidden',
+            background: collab ? C.carmineSoft : C.white,
+            border: `1px solid ${collab ? C.carmine40 : C.line}`,
+            borderLeft: `4px solid ${edgeColour}`,
+            boxShadow: restShadow, transition: 'transform 200ms ease-out, box-shadow 200ms ease-out',
+            opacity: dimmed ? 0.6 : 1, marginBottom: 14,
+        } }, React.createElement("div", { style: { display: 'flex', gap: 16, padding: '20px 22px', alignItems: 'flex-start' } }, collab
+        ? React.createElement("div", { title: `Only ${ownerLabel} (the owner) can close this action`, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${C.g300}`, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }, React.createElement("span", { style: { fontSize: 11, color: C.g500, lineHeight: 1 } }, "\u{1F512}"))
+        : React.createElement("button", { onClick: handleToggle, disabled: toggling, title: isClosed ? 'Mark as open' : 'Mark as done', onMouseEnter: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; } }, onMouseLeave: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.g300; e.currentTarget.style.background = 'transparent'; } }, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isClosed ? C.green : C.g300}`, background: isClosed ? C.green : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, padding: 0, transition: 'all 160ms ease-out' } }, isClosed && React.createElement("span", { style: { color: C.white, fontSize: 13, fontWeight: 700, lineHeight: 1 } }, "✓")), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, isOverdue && React.createElement("div", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, background: C.carmine, color: '#fff', padding: '5px 10px', borderRadius: 2, marginBottom: 10, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: FONT } }, "⚠ Overdue · ", formatMeetingDateLong(action.due_date)), React.createElement("div", { style: { fontSize: 17, fontWeight: 600, color: isClosed ? C.g500 : C.ink0, textDecoration: isClosed ? 'line-through' : 'none', lineHeight: 1.25, fontFamily: FONT } }, action.description), collab && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 14px', background: C.white, border: `1px solid ${C.carmineMid}`, borderRadius: 2 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Owner"), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: C.ink0, fontFamily: FONT } }, ownerLabel), React.createElement("span", { style: { fontSize: 12, color: C.g500, fontStyle: 'italic', marginLeft: 'auto', fontFamily: FONT } }, "Only the owner can close")), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 12 } }, priority !== 'normal' && React.createElement("span", { style: { background: priorityStyle.bg, color: priorityStyle.fg, padding: '4px 8px', borderRadius: 2, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, priorityStyle.label), project && React.createElement("span", { onMouseEnter: linkHover, onMouseLeave: linkLeave, style: { fontSize: 13, fontWeight: 600, color: C.carmine, borderBottom: `1px solid ${C.carmine40}`, paddingBottom: 1, fontFamily: FONT } }, project.name), project && project.project_number && React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, "#", project.project_number), meetingCfg && meeting && React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.carmine, fontFamily: FONT, padding: 0, textDecoration: 'underline' } }, meetingCfg.short, " · ", formatMeetingDate(meeting.meeting_date), " →"))), !collab && !isOverdue && React.createElement("div", { style: { textAlign: 'right', flexShrink: 0, minWidth: 90 } }, action.due_date ? React.createElement("div", { style: { fontSize: 14, fontWeight: 400, color: isClosed ? C.g500 : C.ink0, whiteSpace: 'nowrap', fontFamily: FONT } }, formatMeetingDateLong(action.due_date)) : React.createElement("span", { style: { fontSize: 13, color: C.g500, fontFamily: FONT } }, "No date"))), 
+isClosed && action.completed_note && (React.createElement("div", { style: { padding: '6px 14px 10px', fontSize: 11, color: C.green, fontStyle: 'italic', borderTop: `1px solid ${C.greenLight}`, background: '#F0FBF4' } }, "\u2713 ", action.completed_note, (() => {
         const closer = users && action.completed_by ? users.find(u => u.id === action.completed_by) : null;
         const datePart = action.completed_at ? formatMeetingDate(action.completed_at.slice(0, 10)) : '';
         const byPart = closer ? `by ${closer.display_name}` : '';
@@ -2292,12 +2211,12 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
     })())), showCloseForm && (React.createElement("div", { style: { background: C.greenLight, border: `1px solid ${C.green}`, borderTop: 'none', padding: 12 } }, React.createElement("div", { style: { fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 6 } }, "Close-out note required \u00B7 Completed: ", new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("input", { value: closeNote, onChange: e => setCloseNote(e.target.value), placeholder: "What was done to resolve this?", style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), autoFocus: true, onKeyDown: e => {
             if (e.key === 'Enter' && closeNote.trim())
                 handleConfirmClose();
-        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { padding: '8px 14px', borderTop: `1px solid ${C.line}`, background: C.bg } }, openQuery
+        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { padding: '11px 22px', borderTop: `1px solid ${queryFooterBorder}`, background: queryFooterBg } }, openQuery
         ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
             React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? C.amber : C.carmine, background: openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? '#FFF6E6' : C.carmineSoft, border: `1px solid ${openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? C.amber : C.carmineMid}`, padding: '2px 8px', borderRadius: 3 } }, "\u2753 Open query"),
             React.createElement("span", { style: { fontSize: 11, color: C.muted } }, openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? `from ${queryNameOf(openQuery.raised_by)} \u00B7 needs your answer` : `routed to ${queryNameOf(openQuery.target_user_id)}`))
         : !showRaise
-            ? React.createElement("button", { onClick: () => setShowRaise(true), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: C.carmine, padding: 0, textDecoration: 'underline', fontFamily: FONT } }, "\u2753 Raise a query")
+            ? React.createElement("button", { onClick: () => setShowRaise(true), onMouseEnter: linkHover, onMouseLeave: linkLeave, style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, color: C.carmine, padding: 0, borderBottom: `1px solid ${C.carmine40}`, fontFamily: FONT } }, "\u2753 Raise a query")
             : React.createElement(RaiseQueryForm, { users: (queryCtx && queryCtx.users) || users, currentUser: queryCtx && queryCtx.currentUser, onSubmit: async (text, targetId) => { await queryCtx.onRaiseQuery(action, text, targetId); setShowRaise(false); }, onCancel: () => setShowRaise(false) }))));
 }
 // ============================================================
@@ -2674,14 +2593,14 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
         const cfg = MEETING_TYPES[t] || { short: t };
         const count = groupedMeetings[t].length;
         const active = typeFilter === t;
-        return (React.createElement("button", { key: t, onClick: () => setTypeFilter(active ? null : t), style: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '5px 12px', background: active ? C.white : 'rgba(255,255,255,0.12)', borderRadius: 3, gap: 1, minWidth: 56, border: 'none', cursor: 'pointer' } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: active ? C.carmine : C.white, lineHeight: 1 } }, count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: active ? C.carmine : 'rgba(255,255,255,0.65)' } }, cfg.short)));
-    })), React.createElement("div", { style: { position: 'relative' }, ref: menuRef }, React.createElement("button", { onClick: () => setShowTypeMenu(v => !v), disabled: busy, style: {
-            padding: '8px 16px', background: C.white, color: C.carmine,
-            border: 'none', borderRadius: 3, cursor: 'pointer',
-            fontSize: 11, fontWeight: 700, fontFamily: FONT,
-            textTransform: 'uppercase', letterSpacing: '0.06em',
-            display: 'flex', alignItems: 'center', gap: 6,
-            opacity: busy ? 0.6 : 1,
+        return (React.createElement("button", { key: t, onClick: () => setTypeFilter(active ? null : t), onMouseEnter: e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.28)'; }, onMouseLeave: e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }, style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, width: 78, padding: '11px 8px 10px', background: C.prussian20, borderRadius: 2, border: 'none', cursor: 'pointer', fontFamily: FONT, outline: active ? '2px solid #fff' : '2px solid transparent', outlineOffset: 2, transition: 'all 160ms ease-out' } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, color: C.prussian, lineHeight: 1, fontFamily: FONT } }, count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', color: C.prussian80, fontFamily: FONT } }, cfg.short)));
+    })), React.createElement("div", { style: { position: 'relative' }, ref: menuRef }, React.createElement("button", { onClick: () => setShowTypeMenu(v => !v), disabled: busy, onMouseEnter: e => { if (!busy) e.currentTarget.style.background = C.carmineSoft; }, onMouseLeave: e => { e.currentTarget.style.background = C.white; }, style: {
+            padding: '13px 20px', background: C.white, color: C.carmine,
+            border: 'none', borderRadius: 2, cursor: 'pointer',
+            fontSize: 12, fontWeight: 600, fontFamily: FONT,
+            textTransform: 'uppercase', letterSpacing: '0.14em',
+            display: 'flex', alignItems: 'center', gap: 10,
+            opacity: busy ? 0.6 : 1, transition: 'all 160ms ease-out',
         } }, busy ? 'Creating…' : '+ New meeting', React.createElement("span", { style: { fontSize: 9 } }, "\u25BC")), showTypeMenu && (React.createElement("div", { style: {
             position: 'absolute', top: '100%', right: 0, marginTop: 4,
             background: C.white, border: `1px solid ${C.line}`,
@@ -2708,7 +2627,7 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
             return new Date(b.created_at) - new Date(a.created_at);
         });
         // Latest is index 0 — everything else is superseded
-        return (React.createElement("div", { key: typeKey, style: { borderRadius: 2, overflow: 'hidden', border: `1px solid ${C.line}`, borderLeft: `4px solid ${C.carmine}`, boxShadow: '0 1px 2px rgba(24,59,79,0.06)' } }, React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement("div", { style: { width: 22, height: 3, background: '#000', flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 14, fontWeight: 700, color: C.ink0, letterSpacing: '-0.01em', fontFamily: FONT } }, cfg.label)), React.createElement("span", { style: { fontSize: 10, color: C.g500, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, sorted.length, " meeting", sorted.length !== 1 ? 's' : '')), sorted.map((m, idx) => {
+        return (React.createElement("div", { key: typeKey, style: { borderRadius: 2, overflow: 'hidden', border: `1px solid ${C.line}`, borderLeft: `4px solid ${C.carmine}`, boxShadow: '0 1px 2px rgba(24,59,79,0.06)' } }, React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement("div", { style: { width: 22, height: 3, background: '#000', flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 18, fontWeight: 700, color: C.ink0, letterSpacing: '-0.02em', fontFamily: FONT } }, cfg.label)), React.createElement("span", { style: { fontSize: 10, color: C.g500, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', fontFamily: FONT } }, sorted.length, " meeting", sorted.length !== 1 ? 's' : '')), sorted.map((m, idx) => {
             const chair = users.find(u => u.id === m.chair_user_id);
             const isLatest = idx === 0;
             const isLast = idx === sorted.length - 1;
@@ -2717,27 +2636,28 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
             return (React.createElement("div", { key: m.id, onClick: () => onOpen(m.id), style: {
                     display: 'grid', gridTemplateColumns: '1fr auto auto',
                     gap: 14, alignItems: 'center',
-                    padding: '12px 18px',
+                    padding: '16px 22px',
                     borderBottom: isLast ? 'none' : `1px solid ${C.line}`,
-                    background: C.white,
+                    background: isLatest ? C.white : C.g50,
                     cursor: 'pointer',
-                    opacity: isLatest ? 1 : 0.5,
-                }, onMouseEnter: e => e.currentTarget.style.opacity = '1', onMouseLeave: e => e.currentTarget.style.opacity = isLatest ? '1' : '0.5' }, React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, React.createElement("span", { style: { fontSize: 14, fontWeight: isLatest ? 600 : 400, color: C.text } }, formatMeetingDateLong(m.meeting_date), sameDaySiblings && m.created_at && (React.createElement("span", { style: { fontSize: 11, color: C.muted, fontWeight: 400 } }, " \u00B7 ", new Date(m.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })))), !isLatest && (React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: FONT } }, "Superseded")), (() => {
+                    opacity: isLatest ? 1 : 0.65,
+                    transition: 'background 160ms ease-out',
+                }, onMouseEnter: e => { if (isLatest) e.currentTarget.style.background = C.g50; }, onMouseLeave: e => { if (isLatest) e.currentTarget.style.background = C.white; } }, React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 600, color: isLatest ? C.ink0 : C.g500, fontFamily: FONT } }, formatMeetingDateLong(m.meeting_date), sameDaySiblings && m.created_at && (React.createElement("span", { style: { fontSize: 12, color: C.g500, fontWeight: 300 } }, " \u00B7 ", new Date(m.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })))), !isLatest && (React.createElement("span", { style: { fontSize: 9, fontWeight: 500, color: C.g500, textTransform: 'uppercase', letterSpacing: '0.14em', fontFamily: FONT, padding: '4px 8px', borderRadius: 2, border: `1px dashed ${C.g300}` } }, "Superseded")), (() => {
                 const today = new Date().toISOString().slice(0, 10);
                 const mActs = (projectActions || []).filter(a => a.meeting_id === m.id);
                 const over = mActs.filter(a => a.due_date && a.due_date < today).length;
                 const openCount = mActs.length;
                 if (over > 0)
-                    return (React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 10, background: C.redStatus, color: C.white, fontSize: 9, fontWeight: 700, fontFamily: FONT } }, `\u26A0 ${over} overdue`));
+                    return (React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 9, background: C.redStatus, color: C.white, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT } }, `\u26A0 ${over} overdue`));
                 if (openCount > 0)
-                    return (React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 10, background: C.amber, color: C.white, fontSize: 9, fontWeight: 700, fontFamily: FONT } }, `\u25CF ${openCount} open action${openCount !== 1 ? 's' : ''}`));
-                return (React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 10, background: C.greenLight, color: C.green, fontSize: 9, fontWeight: 700, fontFamily: FONT } }, "\u2713 actions clear"));
+                    return (React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 9, background: C.warn, color: C.white, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT } }, `\u25CF ${openCount} open action${openCount !== 1 ? 's' : ''}`));
+                return (React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 9, background: C.successBg, color: C.success, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT } }, "\u2713 actions clear"));
             })(), (() => {
                 const mFlags = (projectFlags || []).filter(f => f.from_meeting_id === m.id);
                 if (mFlags.length === 0)
                     return null;
-                return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 10, background: C.carmineSoft, color: C.carmine, fontSize: 9, fontWeight: 700, fontFamily: FONT, border: `1px solid ${C.carmineMid}`, marginLeft: 4 } }, `\u2691 ${mFlags.length} open flag${mFlags.length !== 1 ? 's' : ''}`);
-            })()), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 } }, chair && React.createElement("span", { style: { fontSize: 11, color: C.muted } }, chair.display_name), (() => {
+                return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 9, background: C.carmineSoft, color: C.carmine, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT, marginLeft: 4 } }, `\u2691 ${mFlags.length} open flag${mFlags.length !== 1 ? 's' : ''}`);
+            })()), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 } }, chair && React.createElement("span", { style: { fontSize: 13, fontWeight: 300, color: C.g500, fontFamily: FONT } }, chair.display_name), (() => {
                 // "X of Y projects updated" — a project counts as updated
                 // if it has an action OR a note OR a reviewed-no-change
                 // marker recorded in this meeting.
@@ -2753,9 +2673,9 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
                 if (entryTouched)
                     entryTouched.forEach(pid => touched.add(pid));
                 const updated = relevant.filter(p => touched.has(p.id)).length;
-                return React.createElement("span", { style: { fontSize: 10, color: updated >= relevant.length ? C.green : C.muted, fontWeight: 600 } }, `${updated} of ${relevant.length} projects updated`);
-            })())), React.createElement("div", null, m.status === 'in-progress' ? (React.createElement("span", { style: { background: C.amberLight, color: C.amber, padding: '3px 10px', borderRadius: 3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT } }, "In progress")) : (React.createElement("span", { style: { background: C.greenLight, color: C.green, padding: '3px 10px', borderRadius: 3, fontSize: 10, fontWeight: 700, fontFamily: FONT, letterSpacing: '0.04em' } }, "Closed"))), isSenior && React.createElement("button", { onClick: (e) => { e.stopPropagation(); if (window.confirm(`Delete this ${cfg.label}? This cannot be undone.`))
-                    onDelete(m.id); }, title: "Delete meeting", style: { background: 'transparent', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 14, padding: '4px 6px', opacity: 0.5, lineHeight: 1 }, onMouseEnter: e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = C.redStatus; }, onMouseLeave: e => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = C.muted; } }, "\uD83D\uDDD1")));
+                return React.createElement("span", { style: { fontSize: 13, color: updated >= relevant.length ? C.success : C.g500, fontWeight: 300, fontFamily: FONT } }, `· ${updated} of ${relevant.length} projects updated`);
+            })())), React.createElement("div", null, m.status === 'in-progress' ? (React.createElement("span", { style: { background: C.warn, color: '#fff', padding: '9px 14px', borderRadius: 2, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: FONT } }, "In progress")) : (React.createElement("span", { onMouseEnter: isLatest ? (e => e.currentTarget.style.background = C.prussian20) : undefined, onMouseLeave: isLatest ? (e => e.currentTarget.style.background = C.prussian10) : undefined, style: { background: isLatest ? C.prussian10 : C.g100, color: isLatest ? C.prussian : C.g500, padding: '9px 14px', borderRadius: 2, fontSize: 12, fontWeight: 600, fontFamily: FONT, letterSpacing: '0.02em', transition: 'background 160ms ease-out' } }, "Closed"))), isSenior && React.createElement("button", { onClick: (e) => { e.stopPropagation(); if (window.confirm(`Delete this ${cfg.label}? This cannot be undone.`))
+                    onDelete(m.id); }, title: "Delete meeting", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine40; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = C.g300; }, style: { width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: 2, cursor: 'pointer', color: C.g300, fontSize: 13, padding: 0, lineHeight: 1, transition: 'all 160ms ease-out' } }, "\uD83D\uDDD1")));
         })));
     })))))));
 }
@@ -3783,7 +3703,7 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
                 fontStyle: displayValue ? 'normal' : 'italic',
                 minHeight: 36, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             } }, displayValue || 'No notes created yet')));
-    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser, openQuery: (queriesByAction && queriesByAction[a.id]) || null, onRaiseQuery: onRaiseQuery, onAnswerQuery: onAnswerQuery })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
+    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser, openQuery: (queriesByAction && queriesByAction[a.id]) || null, onRaiseQuery: onRaiseQuery, onAnswerQuery: onAnswerQuery })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
         const outgoing = (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType);
         return React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (outgoing.length > 0 || showHandoffForm) ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Flagged for other teams (", outgoing.length, ")"), !isReadOnly && !showHandoffForm && (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.carmineMid}`, color: C.carmine, borderRadius: 3, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: FONT, display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")));
     })(), showHandoffForm && (React.createElement("div", { style: { background: C.carmineSoft, border: `1px solid ${C.carmineMid}`, borderRadius: 4, padding: 14, marginBottom: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.carmine : C.line}`, background: handoffDept === o.value ? C.carmine : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: FONT } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
@@ -3931,7 +3851,7 @@ function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, co
     })()))), !isReadOnly && (React.createElement("button", { onClick: () => onDelete(action.id), style: { background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 15, padding: '0 2px', lineHeight: 1, flexShrink: 0, marginTop: 1 }, title: "Delete action", onMouseEnter: e => e.currentTarget.style.color = C.redStatus, onMouseLeave: e => e.currentTarget.style.color = C.mist }, "\u00D7"))), showCloseForm && (React.createElement("div", { style: { marginTop: 8, background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 3, padding: 10 } }, React.createElement("div", { style: { fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 6 } }, "Close-out note required \u00B7 ", new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("input", { value: closeNote, onChange: e => setCloseNote(e.target.value), placeholder: "What was done?", style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), autoFocus: true, onKeyDown: e => {
             if (e.key === 'Enter' && closeNote.trim())
                 handleConfirmClose();
-        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { marginTop: 8, padding: '8px 10px', borderRadius: 3, background: openQuery ? (isQueryTarget ? '#FFF6E6' : C.carmineSoft) : C.bg, border: `1px solid ${openQuery ? (isQueryTarget ? C.amber : C.carmineMid) : C.line}` } }, openQuery
+        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { marginTop: 8, padding: '8px 10px', borderRadius: 2, background: openQuery ? (isQueryTarget ? '#FFF6E6' : C.carmineSoft) : C.white, border: `1px solid ${openQuery ? (isQueryTarget ? C.amber : C.carmineMid) : C.line}` } }, openQuery
         ? React.createElement(React.Fragment, null,
             React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap', marginBottom: 3 } },
                 React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: isQueryTarget ? C.amber : C.carmine, flexShrink: 0 } }, "\u2753 Query"),
