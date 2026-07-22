@@ -1490,7 +1490,13 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
         dEnd = new Date(Math.max(...pts.map(d => d.getTime())));
         if (dStart.getTime() === dEnd.getTime()) dEnd = new Date(dStart.getTime() + 7 * 86400000);
     }
-    const span = Math.max(1, dEnd - dStart);
+    // Inset the domain a little each side so edge markers — and their labels —
+    // never clip the widget edge, even when there's little/no pre-construction gap.
+    let span = Math.max(1, dEnd - dStart);
+    const dpad = span * 0.06;
+    dStart = new Date(dStart.getTime() - dpad);
+    dEnd = new Date(dEnd.getTime() + dpad);
+    span = Math.max(1, dEnd - dStart);
     const pct = (dt) => Math.max(0, Math.min(100, ((dt - dStart) / span) * 100));
     const tPct = (today >= dStart && today <= dEnd) ? pct(today) : (today < dStart ? 0 : 100);
     const showDashedFuture = hypothetical && tPct < 100;
@@ -1644,24 +1650,16 @@ function lucide(name, size, color, sw) {
     return React.createElement('svg', S, kids);
 }
 // List/Full view status pill palette (from the design STAGE_META — light pill + dot + text).
-const LIST_STAGE_PILL = {
-    'lead': { dot: '#A3B1B9', bg: '#EEF1F2', fg: '#3D3D3D' },
-    'pitching': { dot: '#748995', bg: '#EAEEF0', fg: '#3D3D3D' },
-    'tender': { dot: '#466272', bg: '#E6EBED', fg: '#2C3E48' },
-    'won': { dot: '#183B4F', bg: '#E3E9EC', fg: '#183B4F' },
-    'contract': { dot: '#183B4F', bg: '#DFE6EA', fg: '#183B4F' },
-    'on-site': { dot: '#8C002A', bg: '#F4E6EA', fg: '#8C002A' },
-    'lost': { dot: '#767676', bg: '#F1F1F1', fg: '#767676' },
-    'handed-over': { dot: '#1F6B4A', bg: '#E6EFEA', fg: '#1F6B4A' },
-};
 const SHADOW_MD = '0 4px 12px rgba(24,59,79,.08), 0 2px 4px rgba(24,59,79,.06)';
 const SHADOW_LG = '0 18px 48px rgba(24,59,79,.14)';
 const EASE = 'cubic-bezier(.2,.6,.2,1)';
-// Shared identity fields (number, name, address, secured, status, ⤢) used by both views.
+// Status pill for the list/full views: the established stage colour scheme
+// (solid prussian ramp), keeping the pill's dot + label shape and proportions.
+// Ghost stages (lost / handed-over) render as an outlined chip.
 function stagePillFor(project) {
-    const base = statusLookup[project.status] || { label: project.status || '—' };
-    const p = LIST_STAGE_PILL[project.status] || { dot: C.g500, bg: C.g100, fg: C.g700 };
-    return { label: base.label || project.status || '—', dot: p.dot, bg: p.bg, fg: p.fg };
+    const s = statusLookup[project.status] || { label: project.status || '—', bg: C.g100, fg: C.g700 };
+    const ghost = s.ghost || s.bg === 'transparent';
+    return { label: s.label || project.status || '—', bg: ghost ? 'transparent' : s.bg, fg: s.fg, dot: s.fg, border: ghost ? `1px solid ${C.g300}` : 'none' };
 }
 function securedBits(project) {
     return { label: project.secured ? 'Secured' : 'Unsecured', dot: project.secured ? C.success : C.g300, fg: project.secured ? C.success : C.g500 };
@@ -1711,7 +1709,7 @@ function ProjectListTable({ projects, users, latestNotes, keyDates, projectActio
                 React.createElement("span", { style: { fontSize: 13, color: floorColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, floor),
                 React.createElement("span", { style: { fontSize: 12, color: C.g500, whiteSpace: 'nowrap' } }, upd),
                 React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 9 } }, React.createElement("span", { style: { width: 10, height: 10, borderRadius: '50%', background: sec.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: sec.fg } }, sec.label)),
-                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, background: stage.bg, padding: '6px 13px', borderRadius: 9999, width: 'fit-content' } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: stage.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontWeight: 600, fontSize: 13, color: stage.fg, whiteSpace: 'nowrap' } }, stage.label)),
+                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, background: stage.bg, border: stage.border, padding: '6px 13px', borderRadius: 9999, width: 'fit-content', boxSizing: 'border-box' } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: stage.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontWeight: 600, fontSize: 13, color: stage.fg, whiteSpace: 'nowrap' } }, stage.label)),
                 openPageButton(project, onOpenProjectDashboard)),
             isOpen && React.createElement("div", { style: { borderTop: `2px solid ${C.carmine}`, background: '#fff', padding: '24px 24px 28px' } }, React.createElement(ProjectDetailInline, { project: project, users: users, latestNote: latestNotes[project.id], keyDates: keyDates[project.id] || [], projectActions: projectActions, projectFlags: projectFlags, currentUser: currentUser, isSenior: isSenior, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange })));
     });
@@ -1733,7 +1731,7 @@ function ProjectFullCards({ projects, users, latestNotes, keyDates, projectActio
                 React.createElement("div", { style: { width: 1, height: 44, background: C.line } }),
                 React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontWeight: 700, fontSize: 21, color: C.ink0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, project.name || 'Untitled'), React.createElement("div", { style: { fontSize: 15, color: C.g500, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, project.address || '—')),
                 React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 9 } }, React.createElement("span", { style: { width: 10, height: 10, borderRadius: '50%', background: sec.dot } }), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: sec.fg } }, sec.label)),
-                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 9, background: stage.bg, padding: '8px 15px', borderRadius: 9999 } }, React.createElement("span", { style: { width: 9, height: 9, borderRadius: '50%', background: stage.dot } }), React.createElement("span", { style: { fontWeight: 600, fontSize: 14, color: stage.fg } }, stage.label)),
+                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 9, background: stage.bg, border: stage.border, padding: '8px 15px', borderRadius: 9999, boxSizing: 'border-box' } }, React.createElement("span", { style: { width: 9, height: 9, borderRadius: '50%', background: stage.dot } }), React.createElement("span", { style: { fontWeight: 600, fontSize: 14, color: stage.fg } }, stage.label)),
                 openPageButton(project, onOpenProjectDashboard)),
             React.createElement("div", { style: { padding: '24px 24px 28px' } }, React.createElement(ProjectDetailInline, { project: project, users: users, latestNote: latestNotes[project.id], keyDates: keyDates[project.id] || [], projectActions: projectActions, projectFlags: projectFlags, currentUser: currentUser, isSenior: isSenior, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange })));
     }));
