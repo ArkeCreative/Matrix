@@ -610,12 +610,13 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
         // as a projected (open, dashed) bar in the same colour.
         const outline = barCol || C.prussian60;
         const marks = [];
+        // Site Start / PC diamonds always show; key-date circles only when toggled on.
+        if (startWeek !== null && siteStart) marks.push({ w: startWeek, label: 'SITE START', d: siteStart, kind: 'diamond' });
+        if (endWeek !== null && barEndDateStr) marks.push({ w: endWeek, label: pcDate ? 'PC' : 'PROJ', d: barEndDateStr, kind: 'diamond' });
         if (showKeyDates) {
-            if (startWeek !== null && siteStart) marks.push({ w: startWeek, label: 'SITE START', d: siteStart, kind: 'diamond' });
-            if (endWeek !== null && barEndDateStr) marks.push({ w: endWeek, label: pcDate ? 'PC' : 'PROJ', d: barEndDateStr, kind: 'diamond' });
             (milestones || []).forEach(ms => { const mdt = new Date(ms.target_date + 'T00:00:00'); marks.push({ w: weeksBetween(weeks[0], getWeekStart(mdt)), label: (ms.event_name || '').toUpperCase(), d: ms.target_date, kind: 'circle', overdue: mdt < today }); });
-            // Left-anchor labels at their diamond and push colliding ones onto
-            // lower tiers so they never overlap or clip (matches taller ROW_H).
+            // Left-anchor labels at their marker and push colliding ones onto lower
+            // tiers so they never overlap or clip (matches the taller ROW_H).
             marks.sort((a, b) => a.w - b.w);
             const tierRightX = [];
             marks.forEach(m => {
@@ -628,24 +629,28 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
                 tierRightX[t] = x + estW;
             });
         }
-        // Programme grammar (matches ProgrammeTimeline): secured = solid committed
-        // bar; unsecured = anticipated (dashed) bar + hollow diamonds + ANTICIPATED
-        // pill. A subtle deeper overlay marks the confirmed portion elapsed to today.
+        // Programme grammar on the shared week axis (matches ProgrammeTimeline):
+        // grey base line + PM-colour progress fill to today for secured projects;
+        // a dashed anticipated line + ANTICIPATED pill for unsecured. Black diamonds
+        // for Site Start / PC (hollow when anticipated) and circle key dates.
+        const axisY = 32;
         const barLeftPx = bl * WEEK_W + 2;
         const barWidthPx = Math.max(0, brw * WEEK_W - 4);
         const barRightPx = barLeftPx + barWidthPx;
         const todayPx = (((today - weeks[0]) / 86400000) / 7) * WEEK_W;
-        const barCol2 = barCol || C.prussian60;
-        const elapsedW = secured ? Math.max(0, Math.min(barRightPx, todayPx) - barLeftPx) : 0;
+        const fillCol = barCol || C.prussian;
+        const fillW = Math.max(0, Math.min(barRightPx, todayPx) - barLeftPx);
         return React.createElement("div", { key: project.id, style: { height: ROW_H, position: 'relative', borderBottom: `1px solid ${C.line}`, boxSizing: 'border-box', background: ri % 2 === 1 ? C.g50 : C.white, backgroundImage: `repeating-linear-gradient(to right, transparent, transparent ${WEEK_W - 1}px, ${C.g100} ${WEEK_W - 1}px, ${C.g100} ${WEEK_W}px)` } },
-            hasBar && brw > 0 && React.createElement("div", { title: project.name, style: { position: 'absolute', left: barLeftPx, width: barWidthPx, top: 26, height: 12, borderRadius: 2, background: secured ? barCol2 : '#fff', border: secured ? 'none' : `1.5px dashed ${barCol2}`, boxSizing: 'border-box', zIndex: 2 } }),
-            hasBar && brw > 0 && secured && elapsedW > 0 && React.createElement("div", { style: { position: 'absolute', left: barLeftPx, width: elapsedW, top: 26, height: 12, borderRadius: elapsedW >= barWidthPx ? 2 : '2px 0 0 2px', background: 'rgba(0,0,0,0.28)', boxSizing: 'border-box', zIndex: 2, pointerEvents: 'none' } }),
-            !secured && hasBar && brw > 0 && React.createElement("span", { style: { position: 'absolute', left: barLeftPx, top: 6, fontSize: 8, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.prussian, border: `1px solid ${C.prussian40}`, borderRadius: 9999, padding: '1px 6px', background: '#fff', fontFamily: FONT, whiteSpace: 'nowrap', zIndex: 3 } }, "Anticipated"),
+            hasBar && brw > 0 && (secured
+                ? React.createElement("div", { title: project.name, style: { position: 'absolute', left: barLeftPx, width: barWidthPx, top: axisY - 1.5, height: 3, background: C.g200, borderRadius: 2, zIndex: 2 } })
+                : React.createElement("div", { title: project.name, style: { position: 'absolute', left: barLeftPx, width: barWidthPx, top: axisY, height: 0, borderTop: `2px dashed ${C.g500}`, zIndex: 2 } })),
+            hasBar && brw > 0 && secured && fillW > 0 && React.createElement("div", { style: { position: 'absolute', left: barLeftPx, width: fillW, top: axisY - 2.5, height: 5, background: fillCol, borderRadius: 3, zIndex: 2 } }),
+            !secured && hasBar && brw > 0 && React.createElement("span", { style: { position: 'absolute', left: barLeftPx, top: 8, fontSize: 8, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.carmine, border: `1px solid ${C.carmine}`, borderRadius: 9999, padding: '1px 6px', background: '#fff', fontFamily: FONT, whiteSpace: 'nowrap', zIndex: 5 } }, "Anticipated"),
             marks.map((m, mi) => (m.w >= 0 && m.w < weeksTotal) ? React.createElement(React.Fragment, { key: mi },
                 m.kind === 'circle'
-                    ? React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 6, top: 26, width: 12, height: 12, borderRadius: '50%', background: m.overdue ? C.carmine : '#fff', border: `2px solid ${C.carmine}`, boxSizing: 'border-box', zIndex: 3 } })
-                    : React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 7, top: 25, width: 14, height: 14, background: secured ? C.ink0 : '#fff', border: secured ? 'none' : `2px solid ${C.ink0}`, borderRadius: 2, transform: 'rotate(45deg)', boxSizing: 'border-box', zIndex: 3 } }),
-                React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 6, top: 42 + (m.tier || 0) * 14, fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap', zIndex: 4 } }, m.text)) : null));
+                    ? React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 7, top: axisY - 7, width: 14, height: 14, borderRadius: '50%', background: m.overdue ? C.carmine : '#fff', border: `2px solid ${C.carmine}`, boxSizing: 'border-box', zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, m.overdue ? lucide('x', 9, '#fff', 3) : null)
+                    : React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 7, top: axisY - 7, width: 14, height: 14, background: secured ? C.ink0 : '#fff', border: secured ? 'none' : `2px solid ${C.ink0}`, borderRadius: 2, transform: 'rotate(45deg)', boxSizing: 'border-box', zIndex: 4 } }),
+                m.text && React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 6, top: axisY + 12 + (m.tier || 0) * 14, fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap', zIndex: 4 } }, m.text)) : null));
     }), (() => { const todayX = ((today - weeks[0]) / 86400000) / 7 * WEEK_W; if (todayX < 0 || todayX > weeksTotal * WEEK_W) return null; return React.createElement("div", { style: { position: 'absolute', left: todayX, top: 0, bottom: 0, width: 2, background: C.carmine, zIndex: 6, pointerEvents: 'none' } }, React.createElement("div", { style: { position: 'absolute', top: 0, left: 4, background: C.carmine, color: '#fff', fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '3px 6px', borderRadius: 2, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Today")); })())))), 
 addKdProjectId && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
         _a.name), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Type"), React.createElement("select", { value: kdForm.type, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { type: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => React.createElement("option", { key: t.value, value: t.value }, t.label)))), React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Date"), React.createElement("input", { type: "date", value: kdForm.date, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } }, React.createElement("button", { onClick: () => setAddKdProjectId(null), style: btnSecondary() }, "Cancel"), React.createElement("button", { onClick: saveKd, disabled: saving || !kdForm.date, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: (!kdForm.date || saving) ? 0.5 : 1 }) }, "Save"))))), editProject && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 100 }, onClick: () => setEditProject(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: {
@@ -1461,7 +1466,7 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     const align = (l) => l < 12 ? { t: 'translateX(-3px)', a: 'left' } : (l > 88 ? { t: 'translateX(calc(-100% + 3px))', a: 'right' } : { t: 'translateX(-50%)', a: 'center' });
     const [hoverKey, setHoverKey] = React.useState(null);
     const [showKD, setShowKD] = React.useState(true);
-    const [showPre, setShowPre] = React.useState(true);
+    const [showPre, setShowPre] = React.useState(false);
     const [selected, setSelected] = React.useState(null);
     const [editing, setEditing] = React.useState(false);
     const setHover = k => () => setHoverKey(k);
@@ -1477,8 +1482,6 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     const created = project.created_at ? parse(project.created_at) : null;
     const kds = (keyDates || []).filter(k => k.target_date).map(k => ({ id: k.id, label: k.event_name || '', iso: String(k.target_date).slice(0, 10), done: !!k.completed }));
     const emptyState = !start && !end && kds.length === 0;
-    if (emptyState)
-        return React.createElement("div", { style: { border: `1px dashed ${C.g300}`, borderRadius: 2, padding: '14px 18px', background: C.g50, fontSize: 13, color: C.g500, fontStyle: 'italic', fontFamily: FONT } }, "No programme information yet — set a Site Start and Completion, or add key dates.");
     // domain
     let dStart, dEnd;
     if (confirmed) {
@@ -1486,17 +1489,12 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
         if (showPre) { const cands = [created].concat(kds.map(k => parse(k.iso)).filter(d => d < start)).filter(Boolean); if (cands.length) dStart = new Date(Math.min(start.getTime(), ...cands.map(d => d.getTime()))); }
     } else {
         const pts = [created, start, end, today].concat(kds.map(k => parse(k.iso))).filter(Boolean);
-        dStart = new Date(Math.min(...pts.map(d => d.getTime())));
-        dEnd = new Date(Math.max(...pts.map(d => d.getTime())));
+        const base = pts.length ? pts : [today];
+        dStart = new Date(Math.min(...base.map(d => d.getTime())));
+        dEnd = new Date(Math.max(...base.map(d => d.getTime())));
         if (dStart.getTime() === dEnd.getTime()) dEnd = new Date(dStart.getTime() + 7 * 86400000);
     }
-    // Inset the domain a little each side so edge markers — and their labels —
-    // never clip the widget edge, even when there's little/no pre-construction gap.
-    let span = Math.max(1, dEnd - dStart);
-    const dpad = span * 0.06;
-    dStart = new Date(dStart.getTime() - dpad);
-    dEnd = new Date(dEnd.getTime() + dpad);
-    span = Math.max(1, dEnd - dStart);
+    const span = Math.max(1, dEnd - dStart);
     const pct = (dt) => Math.max(0, Math.min(100, ((dt - dStart) / span) * 100));
     const tPct = (today >= dStart && today <= dEnd) ? pct(today) : (today < dStart ? 0 : 100);
     const showDashedFuture = hypothetical && tPct < 100;
@@ -1510,7 +1508,7 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
             nodeBorder: upcoming ? `2px solid ${C.carmine}` : 'none', connColor: completed ? C.prussian : (overdue ? C.carmine : '#98a0a6') };
     });
     const startPct = start ? pct(start) : 0, endPct = end ? pct(end) : 100;
-    const createdShow = !!created && showPre;
+    const createdShow = !!created && (showPre || emptyState);
     const createdPct = created ? pct(created) : 0;
     const sA = align(startPct), eA = align(endPct), cA = align(createdPct);
     const bandShow = confirmed && showPre && startPct > 0.5;
@@ -1553,11 +1551,11 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     ];
     const children = [];
     // header
-    children.push(React.createElement("div", { key: 'hdr', style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 18 } },
+    children.push(React.createElement("div", { key: 'hdr', style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 20 } },
         React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 7 } },
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 12, letterSpacing: '0.16em', color: C.carmine, fontFamily: FONT } }, "PROGRAMME"), hypothetical && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', border: `1.5px solid ${C.carmine}`, color: C.carmine, fontWeight: 600, fontSize: 10, letterSpacing: '0.12em', padding: '3px 9px', borderRadius: 9999, fontFamily: FONT } }, "ANTICIPATED")),
-            React.createElement("div", { style: { minHeight: 20, display: 'flex', alignItems: 'center', gap: 9 } }, hv ? React.createElement(React.Fragment, null, React.createElement("span", { style: { fontWeight: 600, fontSize: 13, color: C.ink0, fontFamily: FONT } }, hv.label), React.createElement("span", { style: { fontSize: 13, color: C.g500 } }, hv.date), React.createElement("span", { style: { fontWeight: 600, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: hv.fg, background: hv.bg, padding: '2px 8px', borderRadius: 9999 } }, hv.status)) : React.createElement("span", { style: { fontSize: 12, fontStyle: 'italic', color: C.g500 } }, "Hover a marker for its detail"))),
-        React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 } }, toggle('Show pre-construction', showPre, () => setShowPre(v => !v)), toggle('Show key dates', showKD, () => setShowKD(v => !v)))));
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 14, letterSpacing: '0.16em', color: C.carmine, fontFamily: FONT } }, "PROGRAMME"), (hypothetical && !emptyState) && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', border: `1.5px solid ${C.carmine}`, color: C.carmine, fontWeight: 600, fontSize: 10, letterSpacing: '0.12em', padding: '3px 9px', borderRadius: 9999, fontFamily: FONT } }, "ANTICIPATED")),
+            React.createElement("div", { style: { minHeight: 20, display: 'flex', alignItems: 'center', gap: 9 } }, hv ? React.createElement(React.Fragment, null, React.createElement("span", { style: { fontWeight: 600, fontSize: 13, color: C.ink0, fontFamily: FONT } }, hv.label), React.createElement("span", { style: { fontSize: 13, color: C.g500 } }, hv.date), React.createElement("span", { style: { fontWeight: 600, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: hv.fg, background: hv.bg, padding: '2px 8px', borderRadius: 9999 } }, hv.status)) : React.createElement("span", { style: { fontSize: 12, fontStyle: 'italic', color: C.g500 } }, emptyState ? "No programme information yet" : "Hover a marker on the timeline for its detail"))),
+        !emptyState && React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 } }, toggle('Show pre-construction', showPre, () => setShowPre(v => !v)), toggle('Show key dates', showKD, () => setShowKD(v => !v)))));
     // track
     const track = [];
     if (editable && selected != null) track.push(React.createElement("div", { key: 'scrim', onClick: () => { setSelected(null); setEditing(false); }, style: { position: 'fixed', inset: 0, zIndex: 13 } }));
@@ -1574,13 +1572,20 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
         const key = 'm' + i; const nodeY = axisY + m.lane * step; const hov = hoverKey === key;
         if (m.lane !== 0) track.push(React.createElement("div", { key: key + 'c', style: { position: 'absolute', top: Math.min(axisY, nodeY), height: Math.abs(nodeY - axisY), left: m.left + '%', width: 2, background: m.connColor, transform: 'translateX(-1px)' } }));
         const canEdit = editable && m.id; const isSel = canEdit && selected === key;
-        track.push(React.createElement("div", { key: key + 'n', onMouseEnter: setHover(key), onMouseLeave: clearHover(key), onClick: canEdit ? () => { setSelected(s => s === key ? null : key); setEditing(false); } : undefined, style: { position: 'absolute', top: nodeY, left: m.left + '%', transform: `translate(-50%,-50%) ${hov ? 'scale(1.18)' : 'scale(1)'}`, width: m.nodeSize, height: m.nodeSize, borderRadius: '50%', background: m.nodeBg, border: m.nodeBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: hov ? `0 0 0 4px ${C.white}, 0 0 0 6px ${C.carmine}` : `0 0 0 4px ${C.white}`, cursor: 'pointer', zIndex: hov ? 8 : 6, transition: 'transform 160ms ease-out, box-shadow 160ms ease-out' } }, m.completed ? React.createElement("span", { style: { color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1 } }, "✓") : (m.overdue ? React.createElement("span", { style: { color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1 } }, "✕") : null)));
+        track.push(React.createElement("div", { key: key + 'n', onMouseEnter: setHover(key), onMouseLeave: clearHover(key), onClick: canEdit ? () => { setSelected(s => s === key ? null : key); setEditing(false); } : undefined, style: { position: 'absolute', top: nodeY, left: m.left + '%', transform: `translate(-50%,-50%) ${hov ? 'scale(1.18)' : 'scale(1)'}`, width: m.nodeSize, height: m.nodeSize, borderRadius: '50%', background: m.nodeBg, border: m.nodeBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: hov ? `0 0 0 4px ${C.white}, 0 0 0 6px ${C.carmine}` : `0 0 0 4px ${C.white}`, cursor: 'pointer', zIndex: hov ? 8 : 6, transition: 'transform 160ms ease-out, box-shadow 160ms ease-out' } }, m.completed ? lucide('check', 10, '#fff', 3) : (m.overdue ? lucide('x', 10, '#fff', 3) : null)));
         if (isSel) track.push(React.createElement("div", { key: key + 'p', style: { position: 'absolute', top: nodeY - 12, left: m.left + '%', transform: 'translate(-50%,-100%)', zIndex: 14, background: C.white, border: `1px solid ${C.line}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(24,59,79,0.18)', padding: '7px 9px', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' } },
             editing ? React.createElement("input", { type: "date", defaultValue: m.iso, onChange: e => updateDate(m.id, e.target.value), style: { border: `1px solid ${C.line}`, borderRadius: 3, padding: '5px 8px', fontWeight: 600, fontSize: 12, color: C.ink0, fontFamily: FONT } }) : React.createElement(React.Fragment, null, React.createElement("span", { style: { fontWeight: 700, fontSize: 12, color: C.ink0, fontFamily: FONT } }, m.label), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, m.dateShort)),
-            React.createElement("button", { onClick: () => setEditing(true), title: "Edit date", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.line}`, background: C.white, borderRadius: 3, color: C.prussian, cursor: 'pointer', fontFamily: 'inherit' } }, "✎"),
-            React.createElement("button", { onClick: () => deleteDate(m.id), title: "Delete date", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.line}`, background: C.white, borderRadius: 3, color: C.carmine, cursor: 'pointer', fontFamily: 'inherit' } }, "✕")));
+            React.createElement("button", { onClick: () => setEditing(true), title: "Edit date", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.line}`, background: C.white, borderRadius: 2, color: C.prussian, cursor: 'pointer', fontFamily: 'inherit' } }, lucide('pencil', 13, 'currentColor', 2)),
+            React.createElement("button", { onClick: () => deleteDate(m.id), title: "Delete date", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.line}`, background: C.white, borderRadius: 2, color: C.carmine, cursor: 'pointer', fontFamily: 'inherit' } }, lucide('x', 14, 'currentColor', 2))));
     });
     children.push(React.createElement("div", { key: 'track', style: { position: 'relative', height: H, margin: '0 14px' } }, track));
+    if (emptyState) children.push(React.createElement("div", { key: 'empty', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, border: `1px dashed ${C.g300}`, borderRadius: 2, padding: '14px 18px', marginTop: 18, background: C.g50 } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+            React.createElement("span", { style: { width: 36, height: 36, borderRadius: '50%', background: C.white, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide('calendar-plus', 18, C.carmine, 2)),
+            React.createElement("div", null, React.createElement("div", { style: { fontWeight: 700, fontSize: 14, color: C.ink0, fontFamily: FONT } }, "No key dates yet"), React.createElement("div", { style: { fontSize: 13, color: C.g500, maxWidth: 520, lineHeight: 1.45, fontFamily: FONT } }, "Add key dates or define a Site Start and Practical Completion to build the programme."))),
+        editable && React.createElement("div", { style: { display: 'flex', gap: 10, flexShrink: 0 } },
+            React.createElement("button", { style: Object.assign(Object.assign({}, btnPrimary()), { display: 'inline-flex', alignItems: 'center', gap: 7 }) }, lucide('plus', 14, '#fff', 2.4), "Add key date"),
+            React.createElement("button", { style: btnSecondary() }, "Define Site Start & PC"))));
     return React.createElement("div", { style: { fontFamily: FONT, color: C.ink0 } }, children);
 }
 
@@ -1645,6 +1650,11 @@ function lucide(name, size, color, sw) {
         'maximize-2': [['polyline', { points: '15 3 21 3 21 9' }], ['polyline', { points: '9 21 3 21 3 15' }], ['line', { x1: 21, y1: 3, x2: 14, y2: 10 }], ['line', { x1: 3, y1: 21, x2: 10, y2: 14 }]],
         'list': [['line', { x1: 8, y1: 6, x2: 21, y2: 6 }], ['line', { x1: 8, y1: 12, x2: 21, y2: 12 }], ['line', { x1: 8, y1: 18, x2: 21, y2: 18 }], ['line', { x1: 3, y1: 6, x2: 3.01, y2: 6 }], ['line', { x1: 3, y1: 12, x2: 3.01, y2: 12 }], ['line', { x1: 3, y1: 18, x2: 3.01, y2: 18 }]],
         'layout-grid': [['rect', { x: 3, y: 3, width: 7, height: 7, rx: 1 }], ['rect', { x: 14, y: 3, width: 7, height: 7, rx: 1 }], ['rect', { x: 14, y: 14, width: 7, height: 7, rx: 1 }], ['rect', { x: 3, y: 14, width: 7, height: 7, rx: 1 }]],
+        'check': [['path', { d: 'M20 6 9 17l-5-5' }]],
+        'x': [['path', { d: 'M18 6 6 18' }], ['path', { d: 'm6 6 12 12' }]],
+        'pencil': [['path', { d: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z' }], ['path', { d: 'm15 5 4 4' }]],
+        'plus': [['path', { d: 'M5 12h14' }], ['path', { d: 'M12 5v14' }]],
+        'calendar-plus': [['path', { d: 'M8 2v4' }], ['path', { d: 'M16 2v4' }], ['rect', { x: 3, y: 4, width: 18, height: 18, rx: 2 }], ['path', { d: 'M3 10h18' }], ['path', { d: 'M10 16h4' }], ['path', { d: 'M12 14v4' }]],
     };
     const kids = (P[name] || []).map((p, i) => React.createElement(p[0], Object.assign({ key: i }, p[1])));
     return React.createElement('svg', S, kids);
