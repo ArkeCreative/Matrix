@@ -1431,6 +1431,137 @@ function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates,
     }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 28px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 14, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement(ToggleSwitch, { on: showUnsecured, onChange: setShowUnsecured }), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Show unsecured")), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), React.createElement("div", { style: { marginLeft: 'auto', display: 'flex', border: `1px solid ${C.g200}`, borderRadius: 2, overflow: 'hidden', flexShrink: 0 } }, ['list', 'full'].map(m => React.createElement("button", { key: m, onClick: () => setViewMode(m), style: { padding: '7px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', border: 'none', cursor: 'pointer', fontFamily: FONT, background: viewMode === m ? C.prussian : C.white, color: viewMode === m ? '#fff' : C.g500 } }, m === 'list' ? 'List' : 'Full'))), isSenior && (React.createElement("button", { onClick: onNewProject, onMouseEnter: e => e.currentTarget.style.background = C.carmineDark, onMouseLeave: e => e.currentTarget.style.background = C.carmine, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 12 }) }, "+ New project")))), viewMode === 'full' && React.createElement("div", { style: { position: 'sticky', top: 64, zIndex: 8, background: C.g50, padding: '10px 28px 0' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex' } }, React.createElement("div", { style: { width: 300, flexShrink: 0, paddingBottom: 8, borderBottom: `2px solid ${C.carmine}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.carmine, fontFamily: FONT } }, "Project information")), React.createElement("div", { style: { flex: 1, paddingLeft: 28, paddingBottom: 8, borderBottom: `1px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Headlines")))), React.createElement("main", { style: { padding: '16px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: 48, textAlign: 'center', color: C.g500, fontFamily: FONT } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (React.createElement(viewMode === 'list' ? ProjectListTable : MasterResourceTracker, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
 }
 // ============================================================
+// PROGRAMME TIMELINE — full lifecycle timeline (handoff "Programme").
+// Pre-con band, month ticks, progress fill, anticipated dashed track,
+// Created/Site-Start/PC diamonds, milestone markers with lane-collision,
+// hover detail line, show-pre-con / show-key-dates toggles, and (when
+// editable) a per-marker popover to edit/delete a key date.
+// ============================================================
+function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDatesChange }) {
+    const parse = (s) => { const a = String(s).slice(0, 10).split('-').map(Number); return new Date(a[0], a[1] - 1, a[2]); };
+    const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const fmt = (dt) => dt.getDate() + ' ' + MN[dt.getMonth()];
+    const align = (l) => l < 12 ? { t: 'translateX(-3px)', a: 'left' } : (l > 88 ? { t: 'translateX(calc(-100% + 3px))', a: 'right' } : { t: 'translateX(-50%)', a: 'center' });
+    const [hoverKey, setHoverKey] = React.useState(null);
+    const [showKD, setShowKD] = React.useState(true);
+    const [showPre, setShowPre] = React.useState(true);
+    const [selected, setSelected] = React.useState(null);
+    const [editing, setEditing] = React.useState(false);
+    const setHover = k => () => setHoverKey(k);
+    const clearHover = k => () => setHoverKey(h => h === k ? null : h);
+    const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = project.site_start_date ? parse(project.site_start_date) : null;
+    const endIso = project.contracted_completion_date || project.projected_completion_date || null;
+    const end = endIso ? parse(endIso) : null;
+    const endLabel = project.contracted_completion_date ? 'PC' : 'Projected';
+    const confirmed = !!(start && end);
+    const secured = project.secured === true;
+    const hypothetical = !secured || !confirmed;
+    const created = project.created_at ? parse(project.created_at) : null;
+    const kds = (keyDates || []).filter(k => k.target_date).map(k => ({ id: k.id, label: k.event_name || '', iso: String(k.target_date).slice(0, 10), done: !!k.completed }));
+    const emptyState = !start && !end && kds.length === 0;
+    if (emptyState)
+        return React.createElement("div", { style: { border: `1px dashed ${C.g300}`, borderRadius: 2, padding: '14px 18px', background: C.g50, fontSize: 13, color: C.g500, fontStyle: 'italic', fontFamily: FONT } }, "No programme information yet — set a Site Start and Completion, or add key dates.");
+    // domain
+    let dStart, dEnd;
+    if (confirmed) {
+        dStart = start; dEnd = end;
+        if (showPre) { const cands = [created].concat(kds.map(k => parse(k.iso)).filter(d => d < start)).filter(Boolean); if (cands.length) dStart = new Date(Math.min(start.getTime(), ...cands.map(d => d.getTime()))); }
+    } else {
+        const pts = [created, start, end, today].concat(kds.map(k => parse(k.iso))).filter(Boolean);
+        dStart = new Date(Math.min(...pts.map(d => d.getTime())));
+        dEnd = new Date(Math.max(...pts.map(d => d.getTime())));
+        if (dStart.getTime() === dEnd.getTime()) dEnd = new Date(dStart.getTime() + 7 * 86400000);
+    }
+    const span = Math.max(1, dEnd - dStart);
+    const pct = (dt) => Math.max(0, Math.min(100, ((dt - dStart) / span) * 100));
+    const tPct = (today >= dStart && today <= dEnd) ? pct(today) : (today < dStart ? 0 : 100);
+    const showDashedFuture = hypothetical && tPct < 100;
+    const norm = s => String(s || '').trim().toLowerCase();
+    const isEnd = (k) => (start && k.iso === String(project.site_start_date).slice(0, 10) && norm(k.label) === 'site start') || (end && k.iso === String(endIso).slice(0, 10) && (norm(k.label) === 'pc' || norm(k.label) === 'projected' || norm(k.label).indexOf('completion') >= 0));
+    const built = kds.filter(k => !isEnd(k)).map(k => { const dt = parse(k.iso); return { k, dt, isPre: start ? dt < start : false }; }).filter(x => x.isPre ? showPre : showKD);
+    const milestones = built.map(({ k, dt }) => {
+        const left = pct(dt); const completed = k.done; const overdue = !completed && dt < today; const upcoming = !completed && !overdue;
+        return { left, completed, overdue, upcoming, label: k.label, dateShort: fmt(dt), id: k.id, iso: k.iso,
+            nodeSize: completed ? 18 : 16, nodeBg: completed ? C.success : (overdue ? C.carmine : '#fff'),
+            nodeBorder: upcoming ? `2px solid ${C.carmine}` : 'none', connColor: completed ? C.prussian : (overdue ? C.carmine : '#98a0a6') };
+    });
+    const startPct = start ? pct(start) : 0, endPct = end ? pct(end) : 100;
+    const createdShow = !!created && showPre;
+    const createdPct = created ? pct(created) : 0;
+    const sA = align(startPct), eA = align(endPct), cA = align(createdPct);
+    const bandShow = confirmed && showPre && startPct > 0.5;
+    // lane collision
+    const TH = 3.6, step = 22;
+    const anchors = [start ? startPct : null, end ? endPct : null, createdShow ? createdPct : null].filter(v => v !== null);
+    const lanes = { 0: anchors.slice() }; const order = [0, -1, 1, -2, 2, -3, 3];
+    let aboveN = 0, belowN = 0;
+    milestones.slice().sort((a, b) => a.left - b.left).forEach(m => {
+        let chosen = order[order.length - 1];
+        for (let oi = 0; oi < order.length; oi++) { const L = order[oi]; if (!(lanes[L] || []).some(x => Math.abs(x - m.left) < TH)) { chosen = L; break; } }
+        (lanes[chosen] = lanes[chosen] || []).push(m.left); m.lane = chosen;
+        if (chosen < 0) aboveN = Math.max(aboveN, -chosen); if (chosen > 0) belowN = Math.max(belowN, chosen);
+    });
+    const topPad = bandShow ? 22 : 14;
+    const axisY = topPad + aboveN * step + 10;
+    const belowStack = belowN > 0 ? (belowN * step + 10) : 0;
+    const endLabelY = axisY + belowStack + 16;
+    const monthLabelY = endLabelY + 34;
+    const hasMs = milestones.length > 0;
+    const H = hasMs ? (monthLabelY + 14) : 76;
+    const marksBottom = hasMs ? (monthLabelY - 6) : (H - 16);
+    // ticks
+    const ticks = []; const cur = new Date(dStart.getFullYear(), dStart.getMonth() + 1, 1);
+    while (cur < dEnd) { ticks.push({ left: pct(cur), label: MN[cur.getMonth()] }); cur.setMonth(cur.getMonth() + 1); }
+    // hover detail
+    let hv = null;
+    if (hoverKey === 'start' && start) hv = { label: 'Site Start', date: fmt(start), status: today >= start ? 'Started' : 'Planned', fg: C.prussian, bg: C.prussian10 };
+    else if (hoverKey === 'end' && end) hv = { label: endLabel, date: fmt(end), status: today >= end ? 'Completed' : 'Target', fg: C.prussian, bg: C.prussian10 };
+    else if (hoverKey === 'created' && created) hv = { label: 'Created on system', date: fmt(created), status: 'Logged', fg: C.g700, bg: '#EDEDEA' };
+    else if (hoverKey && hoverKey[0] === 'm') { const mm = milestones[+hoverKey.slice(1)]; if (mm) hv = { label: mm.label, date: mm.dateShort, status: mm.completed ? 'Completed' : (mm.overdue ? 'Overdue' : 'Upcoming'), fg: mm.completed ? C.success : (mm.overdue ? C.carmine : C.prussian), bg: mm.completed ? '#E6EFEA' : (mm.overdue ? C.carmineSoft : C.prussian10) }; }
+    const diamondBg = hypothetical ? C.white : C.ink0;
+    const diamondBorder = hypothetical ? `2px solid ${C.ink0}` : 'none';
+    const updateDate = (id, iso) => { try { sb.from('project_key_dates').update({ target_date: iso, updated_by: currentUser && currentUser.id }).eq('id', id).then(() => onKeyDatesChange && onKeyDatesChange()); } catch (e) { } setSelected(null); setEditing(false); };
+    const deleteDate = (id) => { try { sb.from('project_key_dates').delete().eq('id', id).then(() => onKeyDatesChange && onKeyDatesChange()); } catch (e) { } setSelected(null); setEditing(false); };
+    const toggle = (label, on, onClick) => React.createElement("div", { style: { display: 'inline-flex', alignItems: 'center', gap: 10 } }, React.createElement("span", { style: { fontSize: 12, color: C.g500, fontFamily: FONT } }, label), React.createElement("div", { onClick: onClick, style: { width: 40, height: 22, borderRadius: 9999, background: on ? C.carmine : C.g300, position: 'relative', cursor: 'pointer', transition: 'background 160ms ease-out' } }, React.createElement("span", { style: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 160ms ease-out', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' } })));
+    const diamond = (key, leftPct, size, bg, border, label, date, labelColor, aln, onEnter, onLeave, scale) => [
+        React.createElement("div", { key: key + 'd', onMouseEnter: onEnter, onMouseLeave: onLeave, style: { position: 'absolute', top: axisY, left: leftPct + '%', transform: `translate(-50%,-50%) rotate(45deg) ${scale}`, width: size, height: size, background: bg, border: border, cursor: 'pointer', zIndex: 5, transition: 'transform 160ms ease-out' } }),
+        React.createElement("div", { key: key + 'l', style: { position: 'absolute', top: endLabelY, left: leftPct + '%', transform: aln.t, textAlign: aln.a } }, React.createElement("div", { style: { fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: labelColor, textTransform: 'uppercase', whiteSpace: 'nowrap', fontFamily: FONT } }, label), React.createElement("div", { style: { fontSize: 11, color: C.g500, whiteSpace: 'nowrap' } }, date)),
+    ];
+    const children = [];
+    // header
+    children.push(React.createElement("div", { key: 'hdr', style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 18 } },
+        React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 7 } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 12, letterSpacing: '0.16em', color: C.carmine, fontFamily: FONT } }, "PROGRAMME"), hypothetical && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', border: `1.5px solid ${C.carmine}`, color: C.carmine, fontWeight: 600, fontSize: 10, letterSpacing: '0.12em', padding: '3px 9px', borderRadius: 9999, fontFamily: FONT } }, "ANTICIPATED")),
+            React.createElement("div", { style: { minHeight: 20, display: 'flex', alignItems: 'center', gap: 9 } }, hv ? React.createElement(React.Fragment, null, React.createElement("span", { style: { fontWeight: 600, fontSize: 13, color: C.ink0, fontFamily: FONT } }, hv.label), React.createElement("span", { style: { fontSize: 13, color: C.g500 } }, hv.date), React.createElement("span", { style: { fontWeight: 600, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: hv.fg, background: hv.bg, padding: '2px 8px', borderRadius: 9999 } }, hv.status)) : React.createElement("span", { style: { fontSize: 12, fontStyle: 'italic', color: C.g500 } }, "Hover a marker for its detail"))),
+        React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 } }, toggle('Show pre-construction', showPre, () => setShowPre(v => !v)), toggle('Show key dates', showKD, () => setShowKD(v => !v)))));
+    // track
+    const track = [];
+    if (editable && selected != null) track.push(React.createElement("div", { key: 'scrim', onClick: () => { setSelected(null); setEditing(false); }, style: { position: 'fixed', inset: 0, zIndex: 13 } }));
+    if (bandShow) { track.push(React.createElement("div", { key: 'band', style: { position: 'absolute', top: 22, height: marksBottom - 22, left: 0, width: startPct + '%', background: 'rgba(24,59,79,0.05)', borderRight: `1px dashed ${C.g300}`, borderRadius: '2px 0 0 2px' } })); track.push(React.createElement("div", { key: 'bandl', style: { position: 'absolute', top: 2, left: (startPct / 2) + '%', transform: 'translateX(-50%)', fontWeight: 600, fontSize: 9, letterSpacing: '0.12em', color: C.g500, whiteSpace: 'nowrap', fontFamily: FONT } }, "PRE-CONSTRUCTION")); }
+    ticks.forEach((t, i) => { track.push(React.createElement("div", { key: 'tk' + i, style: { position: 'absolute', top: 22, height: marksBottom - 22, left: t.left + '%', width: 1, background: C.g200, transform: 'translateX(-50%)' } })); track.push(React.createElement("div", { key: 'tl' + i, style: { position: 'absolute', top: monthLabelY, left: t.left + '%', transform: 'translateX(-50%)', fontSize: 10, letterSpacing: '0.08em', color: C.g500, textTransform: 'uppercase', whiteSpace: 'nowrap' } }, t.label)); });
+    track.push(React.createElement("div", { key: 'axis', style: { position: 'absolute', top: axisY, left: 0, width: (showDashedFuture ? tPct : 100) + '%', height: 3, background: C.g200, borderRadius: 2, transform: 'translateY(-1.5px)' } }));
+    if (showDashedFuture) track.push(React.createElement("div", { key: 'dash', style: { position: 'absolute', top: axisY, left: tPct + '%', right: 0, height: 0, borderTop: `2px dashed ${C.g500}` } }));
+    track.push(React.createElement("div", { key: 'fill', style: { position: 'absolute', top: axisY, left: 0, width: tPct + '%', height: 5, background: C.prussian, borderRadius: 3, transform: 'translateY(-2.5px)', transition: 'width 160ms ease-out' } }));
+    track.push(React.createElement("div", { key: 'today', style: { position: 'absolute', top: axisY - 10, height: marksBottom - (axisY - 10), left: tPct + '%', width: 2, background: C.carmine, transform: 'translateX(-1px)' } }, React.createElement("span", { style: { position: 'absolute', top: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)', fontWeight: 700, fontSize: 10, letterSpacing: '0.12em', color: C.carmine, whiteSpace: 'nowrap', fontFamily: FONT } }, "TODAY")));
+    if (createdShow) diamond('created', createdPct, 11, C.white, `2px solid ${C.g500}`, 'Created', created ? fmt(created) : '', C.g700, cA, setHover('created'), clearHover('created'), hoverKey === 'created' ? 'scale(1.25)' : 'scale(1)').forEach(el => track.push(el));
+    if (start) diamond('start', startPct, 15, diamondBg, diamondBorder, 'Site Start', fmt(start), C.prussian, sA, setHover('start'), clearHover('start'), hoverKey === 'start' ? 'scale(1.2)' : 'scale(1)').forEach(el => track.push(el));
+    if (end) diamond('end', endPct, 15, diamondBg, diamondBorder, endLabel, fmt(end), C.prussian, eA, setHover('end'), clearHover('end'), hoverKey === 'end' ? 'scale(1.2)' : 'scale(1)').forEach(el => track.push(el));
+    milestones.forEach((m, i) => {
+        const key = 'm' + i; const nodeY = axisY + m.lane * step; const hov = hoverKey === key;
+        if (m.lane !== 0) track.push(React.createElement("div", { key: key + 'c', style: { position: 'absolute', top: Math.min(axisY, nodeY), height: Math.abs(nodeY - axisY), left: m.left + '%', width: 2, background: m.connColor, transform: 'translateX(-1px)' } }));
+        const canEdit = editable && m.id; const isSel = canEdit && selected === key;
+        track.push(React.createElement("div", { key: key + 'n', onMouseEnter: setHover(key), onMouseLeave: clearHover(key), onClick: canEdit ? () => { setSelected(s => s === key ? null : key); setEditing(false); } : undefined, style: { position: 'absolute', top: nodeY, left: m.left + '%', transform: `translate(-50%,-50%) ${hov ? 'scale(1.18)' : 'scale(1)'}`, width: m.nodeSize, height: m.nodeSize, borderRadius: '50%', background: m.nodeBg, border: m.nodeBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: hov ? `0 0 0 4px ${C.white}, 0 0 0 6px ${C.carmine}` : `0 0 0 4px ${C.white}`, cursor: 'pointer', zIndex: hov ? 8 : 6, transition: 'transform 160ms ease-out, box-shadow 160ms ease-out' } }, m.completed ? React.createElement("span", { style: { color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1 } }, "✓") : (m.overdue ? React.createElement("span", { style: { color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1 } }, "✕") : null)));
+        if (isSel) track.push(React.createElement("div", { key: key + 'p', style: { position: 'absolute', top: nodeY - 12, left: m.left + '%', transform: 'translate(-50%,-100%)', zIndex: 14, background: C.white, border: `1px solid ${C.line}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(24,59,79,0.18)', padding: '7px 9px', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' } },
+            editing ? React.createElement("input", { type: "date", defaultValue: m.iso, onChange: e => updateDate(m.id, e.target.value), style: { border: `1px solid ${C.line}`, borderRadius: 3, padding: '5px 8px', fontWeight: 600, fontSize: 12, color: C.ink0, fontFamily: FONT } }) : React.createElement(React.Fragment, null, React.createElement("span", { style: { fontWeight: 700, fontSize: 12, color: C.ink0, fontFamily: FONT } }, m.label), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, m.dateShort)),
+            React.createElement("button", { onClick: () => setEditing(true), title: "Edit date", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.line}`, background: C.white, borderRadius: 3, color: C.prussian, cursor: 'pointer', fontFamily: 'inherit' } }, "✎"),
+            React.createElement("button", { onClick: () => deleteDate(m.id), title: "Delete date", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.line}`, background: C.white, borderRadius: 3, color: C.carmine, cursor: 'pointer', fontFamily: 'inherit' } }, "✕")));
+    });
+    children.push(React.createElement("div", { key: 'track', style: { position: 'relative', height: H, margin: '0 14px' } }, track));
+    return React.createElement("div", { style: { fontFamily: FONT, color: C.ink0 } }, children);
+}
+
+// ============================================================
 // PROJECT DETAIL (inline expanded panel) — handoff at-a-glance
 // strip + recent-notes grid + Programme, shown inside a List row.
 // ============================================================
@@ -1477,7 +1608,7 @@ function ProjectDetailInline({ project, users, latestNote, keyDates, projectActi
                 text ? React.createElement("div", { style: { minHeight: 90, background: C.white, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.carmine}`, borderRadius: 2, padding: '12px 14px', fontSize: 13, lineHeight: 1.5, color: C.ink0 } }, text) : React.createElement("div", { style: { minHeight: 90, border: `1px dashed ${C.g300}`, borderRadius: 2, padding: '12px 14px', fontSize: 13, fontStyle: 'italic', color: C.g300 } }, "No notes yet"));
         })),
         // programme
-        React.createElement(ProgrammeBar, { project: project, keyDates: keyDates || [] }),
+        React.createElement(ProgrammeTimeline, { project: project, keyDates: keyDates || [], editable: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange }),
         React.createElement("div", { style: { marginTop: 20, fontSize: 13, fontStyle: 'italic', color: C.g500 } }, "Last updated ", (latestNote && latestNote.meeting_date) ? formatMeetingDate(latestNote.meeting_date) : (project.updated_at ? formatMeetingDate(project.updated_at.slice(0, 10)) : '—')));
 }
 
@@ -2714,7 +2845,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         ? React.createElement("span", { style: { fontSize: 10, color: C.carmine, fontWeight: 600 } }, "\u2026")
         : React.createElement("span", null))))))), 
     // Key Dates panel — add/edit programme milestones from the detail pane
-    React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '20px 24px', marginTop: 24 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, paddingBottom: 8, borderBottom: `2px solid ${C.carmine}` } }, "Programme"), React.createElement(ProgrammeBar, { project: project, keyDates: myKeyDates }), React.createElement("div", { style: { height: 1, background: C.line, margin: '18px 0 14px' } }), (isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } })),
+    React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '20px 24px', marginTop: 24 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, paddingBottom: 8, borderBottom: `2px solid ${C.carmine}` } }, "Programme"), React.createElement(ProgrammeTimeline, { project: project, keyDates: myKeyDates, editable: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange }), React.createElement("div", { style: { height: 1, background: C.line, margin: '18px 0 14px' } }), (isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } })),
     // Module Status placeholder block
     React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '20px 24px', marginTop: 24 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, paddingBottom: 8, borderBottom: `2px solid ${C.carmine}` } }, "Module Status"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 } }, PLANNED_MODULES.map(m => React.createElement("div", { key: m, style: { padding: '12px 16px', border: `1px dashed ${C.line}`, borderRadius: 4, fontSize: 12, color: C.mist, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, React.createElement("span", null, m), React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.mist } }, "Planned")))))), isSenior && showEdit && React.createElement(ProjectEditModal, { project: project, onClose: () => setShowEdit(false), onSave: onProjectSave }), isSenior && showSecure && React.createElement(SecureProjectModal, { project: project, users: users, currentUser: currentUser, onClose: () => setShowSecure(false), onSave: onProjectSave }));
 }
