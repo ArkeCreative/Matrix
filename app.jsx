@@ -532,32 +532,36 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
         // as a projected (open, dashed) bar in the same colour.
         const outline = barCol || C.prussian60;
         const marks = [];
+        // Site Start / PC always render as diamonds (even with key dates off); key
+        // dates render as circles only when Show key dates is on.
+        if (startWeek !== null && siteStart) marks.push({ w: startWeek, label: 'SITE START', d: siteStart, kind: 'diamond' });
+        if (endWeek !== null && barEndDateStr) marks.push({ w: endWeek, label: pcDate ? 'PC' : 'PROJ', d: barEndDateStr, kind: 'diamond' });
         if (showKeyDates) {
-            if (startWeek !== null && siteStart) marks.push({ w: startWeek, label: 'SITE START', d: siteStart });
-            if (endWeek !== null && barEndDateStr) marks.push({ w: endWeek, label: pcDate ? 'PC' : 'PROJ', d: barEndDateStr });
-            (milestones || []).forEach(ms => { const mdt = new Date(ms.target_date + 'T00:00:00'); marks.push({ w: weeksBetween(weeks[0], getWeekStart(mdt)), label: (ms.event_name || '').toUpperCase(), d: ms.target_date }); });
-            // Left-anchor labels at their diamond and push colliding ones onto lower
-            // tiers so they never overlap or clip.
-            marks.sort((a, b) => a.w - b.w);
-            const tierRightX = [];
-            marks.forEach(m => {
-                m.text = m.label + ' · ' + new Date(m.d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
-                const estW = 12 + m.text.length * 5.4;
-                const x = m.w * WEEK_W + WEEK_W / 2 - 6;
-                let t = 0;
-                while (t < tierRightX.length && tierRightX[t] > x) t++;
-                m.tier = t;
-                tierRightX[t] = x + estW;
-            });
+            (milestones || []).forEach(ms => { const mdt = new Date(ms.target_date + 'T00:00:00'); marks.push({ w: weeksBetween(weeks[0], getWeekStart(mdt)), label: (ms.event_name || '').toUpperCase(), d: ms.target_date, kind: 'circle', overdue: mdt < today }); });
         }
+        // Label text + non-overlapping tiers for every marker (labels are shown when
+        // key dates are on, and on hover otherwise).
+        marks.sort((a, b) => a.w - b.w);
+        const tierRightX = [];
+        marks.forEach(m => {
+            m.text = m.label + ' · ' + new Date(m.d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
+            const estW = 12 + m.text.length * 5.4;
+            const x = m.w * WEEK_W + WEEK_W / 2 - 6;
+            let t = 0;
+            while (t < tierRightX.length && tierRightX[t] > x) t++;
+            m.tier = t;
+            tierRightX[t] = x + estW;
+        });
         // Solid PM-colour bar (matches the team-member key) with a hover drop shadow;
         // projects with no PM assigned show a dashed "unallocated" bar. Site Start /
-        // PC / key dates plot as ink diamonds with tiered labels when key dates show.
+        // PC are larger white diamonds; key dates are carmine circles.
         return React.createElement("div", { key: project.id, style: { height: ROW_H, position: 'relative', borderBottom: `1px solid ${C.line}`, boxSizing: 'border-box', background: ri % 2 === 1 ? C.g50 : C.white, backgroundImage: `repeating-linear-gradient(to right, transparent, transparent ${WEEK_W - 1}px, ${C.g100} ${WEEK_W - 1}px, ${C.g100} ${WEEK_W}px)` } },
             hasBar && brw > 0 && React.createElement("div", { onMouseEnter: e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(24,59,79,0.35)'; }, onMouseLeave: e => { e.currentTarget.style.boxShadow = 'none'; }, title: project.name, style: { position: 'absolute', left: bl * WEEK_W + 2, width: brw * WEEK_W - 4, top: 26, height: 12, borderRadius: 2, background: barCol || '#fff', border: barCol ? 'none' : `1.5px dashed ${C.prussian60}`, boxSizing: 'border-box', transition: 'box-shadow 160ms ease-out', zIndex: 2 } }),
             marks.map((m, mi) => (m.w >= 0 && m.w < weeksTotal) ? React.createElement(React.Fragment, { key: mi },
-                React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 7, top: 25, width: 14, height: 14, background: C.ink0, borderRadius: 2, transform: 'rotate(45deg)', zIndex: 3 } }),
-                React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 6, top: 44 + (m.tier || 0) * 14, fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap', zIndex: 4 } }, m.text)) : null));
+                m.kind === 'circle'
+                    ? React.createElement("div", { title: m.text, onMouseEnter: e => { const l = e.currentTarget.nextElementSibling; if (l) l.style.opacity = 1; }, onMouseLeave: e => { const l = e.currentTarget.nextElementSibling; if (l) l.style.opacity = showKeyDates ? 1 : 0; }, style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 7, top: 25, width: 14, height: 14, borderRadius: '50%', background: m.overdue ? C.carmine : '#fff', border: `2px solid ${C.carmine}`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'default', zIndex: 3 } }, m.overdue ? lucide('x', 9, '#fff', 3) : null)
+                    : React.createElement("div", { title: m.text, onMouseEnter: e => { const l = e.currentTarget.nextElementSibling; if (l) l.style.opacity = 1; e.currentTarget.style.boxShadow = '0 2px 7px rgba(24,59,79,0.4)'; }, onMouseLeave: e => { const l = e.currentTarget.nextElementSibling; if (l) l.style.opacity = showKeyDates ? 1 : 0; e.currentTarget.style.boxShadow = 'none'; }, style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 8, top: 24, width: 16, height: 16, background: '#fff', border: `2px solid ${C.ink0}`, borderRadius: 2, transform: 'rotate(45deg)', boxSizing: 'border-box', cursor: 'default', transition: 'box-shadow 160ms ease-out', zIndex: 5 } }),
+                React.createElement("div", { style: { position: 'absolute', left: m.w * WEEK_W + WEEK_W / 2 - 6, top: 44 + (m.tier || 0) * 14, fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap', zIndex: 4, opacity: showKeyDates ? 1 : 0, transition: 'opacity 160ms ease-out', pointerEvents: 'none' } }, m.text)) : null));
     }), (() => { const todayX = ((today - weeks[0]) / 86400000) / 7 * WEEK_W; if (todayX < 0 || todayX > weeksTotal * WEEK_W) return null; return React.createElement("div", { style: { position: 'absolute', left: todayX, top: 0, bottom: 0, width: 2, background: C.carmine, zIndex: 6, pointerEvents: 'none' } }, React.createElement("div", { style: { position: 'absolute', top: 0, left: 4, background: C.carmine, color: '#fff', fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '3px 6px', borderRadius: 2, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Today")); })())))), 
 addKdProjectId && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
         _a.name), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Type"), React.createElement("select", { value: kdForm.type, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { type: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => React.createElement("option", { key: t.value, value: t.value }, t.label)))), React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Date"), React.createElement("input", { type: "date", value: kdForm.date, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } }, React.createElement("button", { onClick: () => setAddKdProjectId(null), style: btnSecondary() }, "Cancel"), React.createElement("button", { onClick: saveKd, disabled: saving || !kdForm.date, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: (!kdForm.date || saving) ? 0.5 : 1 }) }, "Save"))))), editProject && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 100 }, onClick: () => setEditProject(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: {
