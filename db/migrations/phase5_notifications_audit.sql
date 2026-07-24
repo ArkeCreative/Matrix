@@ -207,3 +207,15 @@ create trigger trg_audit_actions after insert or update on public.actions
 --     for each row execute function public.audit_<module>();
 --   … calling record_activity(...) with an appropriate category so their
 --   events flow into the same hub with no UI changes.
+
+-- 9. Hardening (applied as a follow-up) — these are trigger/internal helpers,
+--    not RPC endpoints. Triggers fire regardless of EXECUTE grants, so revoking
+--    closes the direct-RPC forge vector flagged by the security advisor.
+revoke execute on function public.record_activity(uuid, text, uuid, uuid, text, text, text, jsonb, boolean) from anon, authenticated;
+revoke execute on function public.project_audience(uuid) from anon, authenticated;
+revoke execute on function public.audit_projects() from anon, authenticated;
+revoke execute on function public.audit_key_dates() from anon, authenticated;
+revoke execute on function public.audit_meetings() from anon, authenticated;
+revoke execute on function public.audit_flags() from anon, authenticated;
+revoke execute on function public.audit_actions() from anon, authenticated;
+revoke execute on function public.notify_user(uuid, uuid, text, jsonb) from anon, authenticated;
