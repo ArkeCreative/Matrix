@@ -3586,6 +3586,13 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             alert('Only the chair of this meeting can acknowledge a handoff.');
             return;
         }
+        // A closed meeting is a historical record — a flag can't be acknowledged
+        // (silently killed) after the fact. It carries forward to the next
+        // relevant meeting until actioned there. Reopen to act on it here.
+        if (meeting && meeting.status === 'closed') {
+            alert('This meeting is closed — reopen it to acknowledge this flag. Until then it carries forward to the next relevant meeting.');
+            return;
+        }
         try {
             const { data, error } = await sb.from('meeting_handoffs').update({
                 status: 'acknowledged',
@@ -3603,6 +3610,10 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const convertHandoffToAction = (handoff) => {
         if (!isChair) {
             alert('Only the chair of this meeting can convert a handoff to an action.');
+            return;
+        }
+        if (meeting && meeting.status === 'closed') {
+            alert('This meeting is closed — reopen it to convert this flag into an action.');
             return;
         }
         // Open the full add-action dialogue, pre-filled with the flag text.
@@ -4165,7 +4176,7 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
         const renderCard = (h, isResolved) => {
             const fromCfg = MEETING_TYPES[h.from_meeting_type] || { short: h.from_meeting_type };
             const author = users.find(u => u.id === h.created_by);
-            return React.createElement("div", { key: h.id, style: { background: isResolved ? C.bg : C.carmineSoft, border: `1px solid ${isResolved ? C.line : C.carmineMid}`, borderLeft: `3px solid ${isResolved ? C.mist : C.carmine}`, borderRadius: 4, padding: '10px 14px', marginBottom: 8 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: isResolved ? C.mist : C.carmine } }, isResolved ? (h.resulting_action_id ? '\u2713 Converted to action' : '\u2713 Acknowledged') : '\u2691 Flagged for this team'), React.createElement("div", { style: { fontSize: 10, color: C.mist, whiteSpace: 'nowrap' } }, `from ${fromCfg.short || h.from_meeting_type}`, author && ` \u00B7 ${author.display_name}`, ` \u00B7 ${timeAgo(h.created_at)}`)), React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.5, marginBottom: isResolved ? 0 : 8 } }, h.note), !isResolved && isChair && React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => onAcknowledgeHandoff(h), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '5px 10px' }) }, "Acknowledge"), React.createElement("button", { onClick: () => onConvertHandoff(h), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, padding: '5px 10px' }) }, "Convert to action")), !isResolved && !isChair && React.createElement("div", { style: { fontSize: 10, color: C.mist, fontStyle: 'italic' } }, "The chair of this meeting can acknowledge or convert this."), isResolved && (() => {
+            return React.createElement("div", { key: h.id, style: { background: isResolved ? C.bg : C.carmineSoft, border: `1px solid ${isResolved ? C.line : C.carmineMid}`, borderLeft: `3px solid ${isResolved ? C.mist : C.carmine}`, borderRadius: 4, padding: '10px 14px', marginBottom: 8 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: isResolved ? C.mist : C.carmine } }, isResolved ? (h.resulting_action_id ? '\u2713 Converted to action' : '\u2713 Acknowledged') : '\u2691 Carried forward \u2014 needs action'), React.createElement("div", { style: { fontSize: 10, color: C.mist, whiteSpace: 'nowrap' } }, `from ${fromCfg.short || h.from_meeting_type}`, author && ` \u00B7 ${author.display_name}`, ` \u00B7 ${timeAgo(h.created_at)}`)), React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.5, marginBottom: isResolved ? 0 : 8 } }, h.note), !isResolved && isChair && !isReadOnly && React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => onAcknowledgeHandoff(h), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '5px 10px' }) }, "Acknowledge"), React.createElement("button", { onClick: () => onConvertHandoff(h), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, padding: '5px 10px' }) }, "Convert to action")), !isResolved && isChair && isReadOnly && React.createElement("div", { style: { fontSize: 10, color: C.mist, fontStyle: 'italic' } }, "This meeting is closed — reopen it to acknowledge or convert this flag. It carries forward until actioned."), !isResolved && !isChair && React.createElement("div", { style: { fontSize: 10, color: C.mist, fontStyle: 'italic' } }, "The chair of this meeting can acknowledge or convert this."), isResolved && (() => {
                 const prov = h.resulting_action_id ? resolveProvenance(h) : null;
                 if (prov) {
                     return React.createElement("div", { style: { fontSize: 10, color: C.muted, fontStyle: 'italic', marginTop: 4 } }, "Became an action", prov.owner ? ` \u00B7 ${prov.owner}` : '', prov.dueDate ? ` \u00B7 due ${formatMeetingDate(prov.dueDate)}` : '', prov.mtgLabel ? ` \u00B7 in ${prov.mtgLabel}` : '');
