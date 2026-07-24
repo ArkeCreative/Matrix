@@ -16,7 +16,10 @@ https://arkecreative.github.io/Matrix/ (auto-deploys on merge to `main`, ~1 min 
   is the guard). Schema changes via Supabase MCP (`apply_migration` DDL / `execute_sql` data);
   `service_role` key must never reach the repo.
 - **Dev org** `dawlish` (`c6e9cc3c-…`), all fictional data. **No real Arke data yet** — deferred to the
-  org/permissions + RLS go-live gate (Phase 6).
+  org/permissions + RLS go-live gate (Phase 6). Seed scripts are versioned under `seed/` — latest
+  (`seed/2026-07-24-test-data-expansion.sql`) grows the org to 30 projects across the full pipeline
+  (created May 2024 → Jul 2026, mixed building- and client-named), with pre-con-weighted key dates,
+  16 historic closed meetings, meeting entries, actions/queries and flags, all authored by a spread of users.
 
 ## How the code works
 - Single self-contained `index.html`; React 18 CDN; **pre-compiled JSX — write
