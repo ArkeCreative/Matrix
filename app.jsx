@@ -860,7 +860,7 @@ function NotificationRow({ n, projects, users, onOpenProject, dense }) {
             background: unread ? C.carmineSoft : C.white,
             cursor: clickable ? 'pointer' : 'default',
             borderBottom: `1px solid ${C.line}`,
-        }, onMouseEnter: clickable ? (e => e.currentTarget.style.background = unread ? C.carmineMid : C.bg) : undefined, onMouseLeave: clickable ? (e => e.currentTarget.style.background = unread ? C.carmineSoft : C.white) : undefined },
+        }, onMouseEnter: e => e.currentTarget.style.background = unread ? C.carmineMid : C.bg, onMouseLeave: e => e.currentTarget.style.background = unread ? C.carmineSoft : C.white },
         React.createElement("div", { style: { width: 30, height: 30, borderRadius: 6, background: C.white, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: iconColour, marginTop: 1 } }, lucide(d.meta.icon, 15, 'currentColor', 2)),
         React.createElement("div", { style: { flex: 1, minWidth: 0 } },
             React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.45 } },
@@ -952,7 +952,10 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
     const [tab, setTab] = useState(initialTab || 'register');
     const [scope, setScope] = useState('all'); // all | attention | week
     const [group, setGroup] = useState('urgency'); // urgency | person | project
+    const [kindFilter, setKindFilter] = useState('all'); // all | action | flag | date (from the tiles)
+    const [collapsed, setCollapsed] = useState({}); // { groupLabel: true } — collapsed group headers
     const [actFilter, setActFilter] = useState('all'); // Activity tab category filter
+    const toggleGroup = (label) => setCollapsed(c => (Object.assign(Object.assign({}, c), { [label]: !c[label] })));
     const uById = {};
     (users || []).forEach(u => { uById[u.id] = u; });
     const pById = {};
@@ -985,6 +988,8 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
         return 'upcoming';
     };
     const scoped = items.filter(it => {
+        if (kindFilter !== 'all' && it.kind !== kindFilter)
+            return false;
         const b = bucketOf(it);
         if (scope === 'attention')
             return b === 'now';
@@ -1036,34 +1041,37 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
         else {
             buttons = [btn('Mark met', true, () => onMarkDateMet(it.raw))];
         }
-        return React.createElement("div", { key: it.kind + it.id, style: { display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: `1px solid ${C.line}`, background: C.white } },
-            React.createElement("div", { style: { width: 34, height: 34, borderRadius: 6, background: km.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: km.fg } }, lucide(km.icon, 17, 'currentColor', 2)),
-            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-                React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis' } }, it.title),
+        return React.createElement("div", { key: it.kind + it.id, onClick: () => onDeferredAction('Open detail'), onMouseEnter: e => e.currentTarget.style.background = C.bg, onMouseLeave: e => e.currentTarget.style.background = C.white, style: { display: 'grid', gridTemplateColumns: '34px minmax(0,1fr) 172px 128px 316px', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: `1px solid ${C.line}`, background: C.white, cursor: 'pointer', transition: 'background 160ms ease-out' } },
+            React.createElement("div", { style: { width: 34, height: 34, borderRadius: 6, background: km.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: km.fg } }, lucide(km.icon, 17, 'currentColor', 2)),
+            React.createElement("div", { style: { minWidth: 0 } },
+                React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, it.title),
                 React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 3 } },
                     React.createElement("span", { style: { color: C.carmine, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' } }, km.label),
                     proj ? ' · ' + proj.name : '',
                     it.kind === 'flag' && it.toDept ? ' · for ' + ((MEETING_TYPES[it.toDept] || { short: it.toDept }).short) + ' team' : '')),
-            React.createElement("div", { style: { width: 150, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 } }, it.kind === 'date'
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } }, it.kind === 'date'
                 ? React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, "Programme")
                 : React.createElement(React.Fragment, null,
                     React.createElement("span", { style: { width: 24, height: 24, borderRadius: '50%', background: owner ? C.carmineSoft : C.g100, color: owner ? C.carmine : C.g500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 } }, owner ? (owner.initials || initialsFromName(owner.display_name)) : 'SYS'),
                     React.createElement("span", { style: { fontSize: 12.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, owner ? owner.display_name : 'System'))),
-            React.createElement("div", { style: { width: 120, flexShrink: 0, textAlign: 'right' } },
+            React.createElement("div", { style: { textAlign: 'right' } },
                 due.pill ? React.createElement("span", { style: { display: 'inline-block', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 8px', borderRadius: 3, background: tone.bg, color: tone.fg } }, due.pill) : null,
                 React.createElement("div", { style: { fontSize: 11, color: due.tone === 'overdue' ? C.carmine : C.g500, marginTop: due.pill ? 4 : 0 } }, due.sub)),
-            React.createElement("div", { style: { display: 'flex', gap: 6, flexShrink: 0 } }, buttons),
-            React.createElement("span", { onClick: () => onDeferredAction('Open detail'), style: { color: C.g300, cursor: 'pointer', display: 'inline-flex', flexShrink: 0 }, title: "Detail view — coming in a later pass" }, lucide('chevron-down', 16, 'currentColor', 2)));
+            React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, buttons));
     };
     const scopeChip = (key, label) => React.createElement("button", { key: key, onClick: () => setScope(key), style: { padding: '7px 13px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: scope === key ? C.prussian : 'transparent', color: scope === key ? '#fff' : C.g500, borderRadius: 3 } }, label);
     const groupChip = (key, label) => React.createElement("button", { key: key, onClick: () => setGroup(key), style: { padding: '7px 13px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: group === key ? C.prussian : 'transparent', color: group === key ? '#fff' : C.g500, borderRadius: 3 } }, label);
-    const tile = (label, icon, count, sub, subCol) => React.createElement("div", { style: { flex: 1, background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: '20px 22px', boxShadow: '0 1px 2px rgba(24,59,79,.06)' } },
-        React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-            React.createElement("span", { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, label),
-            React.createElement("span", { style: { width: 30, height: 30, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(icon, 15, 'currentColor', 2))),
-        React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 12 } },
-            React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 34, color: C.carmine, lineHeight: 1 } }, count),
-            sub ? React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: subCol || C.g500 } }, sub) : null));
+    const tile = (label, icon, count, sub, subCol, kindKey) => {
+        const active = kindFilter === kindKey;
+        return React.createElement("div", { onClick: () => setKindFilter(active ? 'all' : kindKey), onMouseEnter: e => { if (!active) e.currentTarget.style.borderColor = C.carmineMid; }, onMouseLeave: e => { if (!active) e.currentTarget.style.borderColor = C.line; }, style: { flex: 1, background: active ? C.carmineSoft : C.white, border: `1px solid ${active ? C.carmine : C.line}`, borderRadius: 6, padding: '20px 22px', boxShadow: '0 1px 2px rgba(24,59,79,.06)', cursor: 'pointer', transition: 'border-color 160ms ease-out, background 160ms ease-out' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
+                React.createElement("span", { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: active ? C.carmine : C.g500 } }, label),
+                React.createElement("span", { style: { width: 30, height: 30, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(icon, 15, 'currentColor', 2))),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 12 } },
+                React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 34, color: C.carmine, lineHeight: 1 } }, count),
+                sub ? React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: subCol || C.g500 } }, sub) : null,
+                active ? React.createElement("span", { style: { marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.08em' } }, "Filtered ✕") : null));
+    };
     // Activity tab reuses the notification feed.
     const actFiltered = actFilter === 'all' ? notifications : (notifications || []).filter(n => describeNotification(n, projects, users).cat === actFilter);
     const actGroups = groupNotifsByDay(actFiltered);
@@ -1076,9 +1084,9 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
         React.createElement("main", { style: { padding: '22px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, tab === 'register'
             ? React.createElement(React.Fragment, null,
                 React.createElement("div", { style: { display: 'flex', gap: 16, marginBottom: 18 } },
-                    tile('Open actions', 'check-square', actionItems.length, overdueActions > 0 ? overdueActions + ' overdue' : null, C.carmine),
-                    tile('Open flags', 'flag', flagItems.length, ageingFlags > 0 ? ageingFlags + ' ageing' : null, C.carmine),
-                    tile('Key dates', 'calendar-plus', dateItems.length, overdueDates > 0 ? overdueDates + ' overdue' : null, C.carmine)),
+                    tile('Open actions', 'check-square', actionItems.length, overdueActions > 0 ? overdueActions + ' overdue' : null, C.carmine, 'action'),
+                    tile('Open flags', 'flag', flagItems.length, ageingFlags > 0 ? ageingFlags + ' ageing' : null, C.carmine, 'flag'),
+                    tile('Key dates', 'calendar-plus', dateItems.length, overdueDates > 0 ? overdueDates + ' overdue' : null, C.carmine, 'date')),
                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap' } },
                     React.createElement("div", { style: { display: 'inline-flex', background: C.g100, borderRadius: 4, padding: 3, gap: 2 } }, scopeChip('all', 'All open'), scopeChip('attention', 'Needs attention'), scopeChip('week', 'This week')),
                     React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: C.g500, textTransform: 'uppercase', marginLeft: 6 } }, "Group"),
@@ -1086,12 +1094,13 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
                     React.createElement("span", { style: { marginLeft: 'auto', fontSize: 12, color: C.g500 } }, "Showing ", scoped.length, " open item", scoped.length === 1 ? '' : 's')),
                 React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, groupsList.length === 0
                     ? React.createElement("div", { style: { padding: '48px 20px', textAlign: 'center', color: C.mist } }, "Nothing open — all clear.")
-                    : groupsList.map(g => React.createElement("div", { key: g.label },
-                        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: C.bg, borderBottom: `1px solid ${C.line}` } },
+                    : groupsList.map(g => { const isColl = !!collapsed[g.label]; return React.createElement("div", { key: g.label },
+                        React.createElement("div", { onClick: () => toggleGroup(g.label), style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: C.bg, borderBottom: `1px solid ${C.line}`, cursor: 'pointer', userSelect: 'none' } },
+                            React.createElement("span", { style: { display: 'inline-flex', color: C.g500, transform: isColl ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 160ms ease-out' } }, lucide('chevron-down', 15, 'currentColor', 2)),
                             React.createElement("span", { style: { width: 7, height: 7, borderRadius: '50%', background: g.dot } }),
                             React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.ink0 } }, g.label),
                             React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, g.items.length, " item", g.items.length === 1 ? '' : 's')),
-                        g.items.map(renderRow)))))
+                        !isColl && React.createElement("div", null, g.items.map(renderRow))); })))
             : React.createElement(React.Fragment, null,
                 React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 } }, NOTIF_CATS.map(c => {
                     const active = actFilter === c.key;
