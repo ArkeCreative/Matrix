@@ -2015,9 +2015,12 @@ function ProjectListTable({ projects, users, latestNotes, keyDates, projectActio
     const [expanded, setExpanded] = React.useState({});
     const anyOpen = Object.keys(expanded).some(k => expanded[k]);
     const today = new Date().toISOString().slice(0, 10);
-    const COLS = '52px 104px minmax(190px,1.4fr) minmax(190px,1.5fr) 108px 100px 104px 96px 116px 140px 48px';
+    // Trimmed so the whole row — including the rightmost "Open page" expand
+    // button — fits common laptop widths (≥1280) instead of being clipped off
+    // the right edge by the container's overflow. (Was 52…140/48 @ gap 14.)
+    const COLS = '48px 92px minmax(160px,1.3fr) minmax(160px,1.4fr) 96px 88px 92px 92px 108px 132px 44px';
     const th = (label, opts) => React.createElement("div", { style: Object.assign({ fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, fontFamily: FONT }, opts || {}) }, label);
-    const header = React.createElement("div", { style: { display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', padding: '14px 22px', background: C.g50, borderBottom: `1px solid ${C.line}` } },
+    const header = React.createElement("div", { style: { display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '14px 22px', background: C.g50, borderBottom: `1px solid ${C.line}` } },
         React.createElement("span", null),
         th('Project #'), th('Project'), th('Address'),
         th('Act · Flg · Od', { fontSize: 10, letterSpacing: '0.1em', textAlign: 'center' }),
@@ -2040,7 +2043,7 @@ function ProjectListTable({ projects, users, latestNotes, keyDates, projectActio
         const stage = stagePillFor(project);
         const numCell = (n, col) => React.createElement("span", { style: { color: n ? col : C.g300 } }, n);
         return React.createElement("div", { key: project.id, onMouseEnter: e => { e.currentTarget.style.transform = 'translateX(8px)'; e.currentTarget.style.boxShadow = SHADOW_MD; e.currentTarget.style.zIndex = 5; if (!isOpen) e.currentTarget.firstChild.style.background = C.g50; }, onMouseLeave: e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = isOpen ? SHADOW_MD : 'none'; e.currentTarget.style.zIndex = isOpen ? 2 : 1; if (!isOpen) e.currentTarget.firstChild.style.background = '#fff'; }, style: { position: 'relative', zIndex: isOpen ? 2 : 1, borderLeft: `4px solid ${isOpen ? C.carmine : 'transparent'}`, background: isOpen ? '#fff' : 'transparent', boxShadow: isOpen ? SHADOW_MD : 'none', opacity: dim ? 0.4 : 1, borderBottom: `1px solid ${C.line}`, transition: `box-shadow 240ms ${EASE}, opacity 240ms ${EASE}, transform 240ms ${EASE}`, fontFamily: FONT, boxSizing: 'border-box' } },
-            React.createElement("div", { onClick: () => setExpanded(e => Object.assign({}, e, { [project.id]: !e[project.id] })), style: { display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', padding: '14px 22px', paddingLeft: isOpen ? 18 : 22, cursor: 'pointer', background: isOpen ? C.carmineSoft : '#fff', transition: `background 240ms ${EASE}`, boxSizing: 'border-box' } },
+            React.createElement("div", { onClick: () => setExpanded(e => Object.assign({}, e, { [project.id]: !e[project.id] })), style: { display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '14px 22px', paddingLeft: isOpen ? 18 : 22, cursor: 'pointer', background: isOpen ? C.carmineSoft : '#fff', transition: `background 240ms ${EASE}`, boxSizing: 'border-box' } },
                 React.createElement("span", { style: { width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${isOpen ? C.carmine : C.line}`, borderRadius: '50%', background: isOpen ? C.carmineSoft : '#fff', color: isOpen ? C.carmine : C.g500, transition: `all 240ms ${EASE}` } }, React.createElement("span", { style: { display: 'inline-flex', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: `transform 240ms ${EASE}` } }, lucide('chevron-down', 16, 'currentColor', 2.4))),
                 React.createElement("span", { style: { fontWeight: 700, fontSize: 15, letterSpacing: '0.02em', color: C.carmine } }, project.project_number || '—'),
                 React.createElement("span", { style: { fontWeight: 700, fontSize: 17, color: C.ink0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, project.name || 'Untitled'),
