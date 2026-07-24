@@ -915,25 +915,193 @@ function NotificationsHub({ notifications, projects, users, onMarkAllRead, onOpe
                 React.createElement("button", { onClick: onViewAudit, style: { background: 'transparent', border: 'none', color: C.carmine, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 6 } }, "View full audit log", lucide('arrow-right', 13, 'currentColor', 2)))));
 }
 // Full-page audit log — the "View full audit log" destination.
-function ActivityLogView({ notifications, projects, users, onOpenProject, onBack }) {
-    const [filter, setFilter] = useState('all');
-    const filtered = filter === 'all' ? notifications : notifications.filter(n => describeNotification(n, projects, users).cat === filter);
-    const groups = groupNotifsByDay(filtered);
+// ---- Open register helpers ----
+function regDaysUntil(dateStr) {
+    if (!dateStr)
+        return null;
+    const d = new Date(dateStr + 'T00:00:00');
+    const now = new Date();
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const td = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    return Math.round((td - t0) / 86400000);
+}
+function regDueMeta(days) {
+    if (days === null)
+        return { label: 'No date set', pill: null, tone: 'upcoming', sub: 'No date set' };
+    if (days < 0)
+        return { label: 'Overdue', pill: 'OVERDUE', tone: 'overdue', sub: Math.abs(days) + ' day' + (Math.abs(days) === 1 ? '' : 's') + ' overdue' };
+    if (days === 0)
+        return { label: 'Due today', pill: 'DUE TODAY', tone: 'overdue', sub: 'Due today' };
+    if (days <= 7)
+        return { label: 'Due soon', pill: 'DUE SOON', tone: 'soon', sub: 'Due in ' + days + ' day' + (days === 1 ? '' : 's') };
+    const w = Math.round(days / 7);
+    return { label: 'Upcoming', pill: null, tone: 'upcoming', sub: 'Due in ' + w + ' week' + (w === 1 ? '' : 's') };
+}
+const REG_TONES = {
+    overdue: { bg: C.carmineSoft, fg: C.carmine },
+    soon: { bg: C.amberLight, fg: C.amber },
+    upcoming: { bg: C.g100, fg: C.g500 },
+};
+const REG_KIND_META = {
+    action: { icon: 'check-square', label: 'Actions', bg: C.carmineSoft, fg: C.carmine },
+    flag: { icon: 'flag', label: 'Flags', bg: C.carmineSoft, fg: C.carmine },
+    date: { icon: 'calendar-plus', label: 'Key dates', bg: C.amberLight, fg: C.amber },
+};
+// The full "Register & activity" page — Open register + Activity tabs.
+function RegisterActivityView({ initialTab, projects, users, currentUser, isSenior, projectActions, projectFlags, keyDates, notifications, onOpenProject, onMarkActionComplete, onMarkDateMet, onDeferredAction, onBack }) {
+    const [tab, setTab] = useState(initialTab || 'register');
+    const [scope, setScope] = useState('all'); // all | attention | week
+    const [group, setGroup] = useState('urgency'); // urgency | person | project
+    const [actFilter, setActFilter] = useState('all'); // Activity tab category filter
+    const uById = {};
+    (users || []).forEach(u => { uById[u.id] = u; });
+    const pById = {};
+    (projects || []).forEach(p => { pById[p.id] = p; });
+    // Build a unified item list from open actions, flags and key dates.
+    const items = [];
+    (projectActions || []).forEach(a => {
+        const days = regDaysUntil(a.due_date);
+        items.push({ kind: 'action', id: a.id, title: a.description, projectId: a.project_id, ownerId: a.owner_user_id, days: days, sort: days === null ? 99999 : days, raw: a });
+    });
+    (projectFlags || []).forEach(f => {
+        const age = f.created_at ? Math.round((new Date().getTime() - new Date(f.created_at).getTime()) / 86400000) : 0;
+        items.push({ kind: 'flag', id: f.id, title: f.note, projectId: f.project_id, toDept: f.to_department, ownerId: f.created_by, age: age, days: null, sort: -1000 + age, raw: f });
+    });
+    Object.keys(keyDates || {}).forEach(pid => (keyDates[pid] || []).forEach(kd => {
+        if (!kd.completed && kd.target_date) {
+            const days = regDaysUntil(kd.target_date);
+            items.push({ kind: 'date', id: kd.id, title: kd.event_name, projectId: pid, days: days, sort: days === null ? 99999 : days, raw: kd });
+        }
+    }));
+    const bucketOf = (it) => {
+        if (it.kind === 'flag')
+            return it.age > 3 ? 'now' : 'week';
+        if (it.days === null)
+            return 'upcoming';
+        if (it.days <= 0)
+            return 'now';
+        if (it.days <= 7)
+            return 'week';
+        return 'upcoming';
+    };
+    const scoped = items.filter(it => {
+        const b = bucketOf(it);
+        if (scope === 'attention')
+            return b === 'now';
+        if (scope === 'week')
+            return b === 'now' || b === 'week';
+        return true;
+    });
+    // Tile counts (from the full open set, not the scoped view)
+    const actionItems = items.filter(i => i.kind === 'action');
+    const flagItems = items.filter(i => i.kind === 'flag');
+    const dateItems = items.filter(i => i.kind === 'date');
+    const overdueActions = actionItems.filter(i => i.days !== null && i.days < 0).length;
+    const overdueDates = dateItems.filter(i => i.days !== null && i.days < 0).length;
+    const ageingFlags = flagItems.filter(i => i.age > 3).length;
+    // Grouping
+    let groupsList;
+    if (group === 'urgency') {
+        const order = [{ key: 'now', label: 'Needs attention now', dot: C.carmine }, { key: 'week', label: 'This week', dot: C.amber }, { key: 'upcoming', label: 'Upcoming', dot: C.g500 }];
+        groupsList = order.map(o => ({ label: o.label, dot: o.dot, items: scoped.filter(it => bucketOf(it) === o.key).sort((a, b) => a.sort - b.sort) })).filter(g => g.items.length > 0);
+    }
+    else if (group === 'person') {
+        const map = {};
+        scoped.forEach(it => { const key = it.ownerId || '—'; (map[key] = map[key] || []).push(it); });
+        groupsList = Object.keys(map).map(k => ({ label: k === '—' ? 'Unassigned' : (uById[k] ? uById[k].display_name : 'System'), dot: C.prussian, items: map[k].sort((a, b) => a.sort - b.sort) })).sort((a, b) => a.label.localeCompare(b.label));
+    }
+    else {
+        const map = {};
+        scoped.forEach(it => { const key = it.projectId || '—'; (map[key] = map[key] || []).push(it); });
+        groupsList = Object.keys(map).map(k => ({ label: pById[k] ? pById[k].name : 'No project', dot: C.prussian, items: map[k].sort((a, b) => a.sort - b.sort) })).sort((a, b) => a.label.localeCompare(b.label));
+    }
+    const renderRow = (it) => {
+        const km = REG_KIND_META[it.kind];
+        const proj = pById[it.projectId];
+        const owner = it.ownerId ? uById[it.ownerId] : null;
+        const due = it.kind === 'flag' ? { pill: null, tone: 'soon', sub: 'Raised ' + (it.age <= 0 ? 'today' : it.age + 'd ago') } : regDueMeta(it.days);
+        const tone = REG_TONES[due.tone] || REG_TONES.upcoming;
+        const isMine = owner && currentUser && owner.id === currentUser.id;
+        // right-hand action buttons per kind
+        const btn = (label, primary, onClick) => React.createElement("button", { key: label, onClick: (e) => { e.stopPropagation(); onClick(); }, style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, borderRadius: 3, cursor: 'pointer', whiteSpace: 'nowrap', border: primary ? 'none' : `1px solid ${C.line}`, background: primary ? C.carmine : C.white, color: primary ? '#fff' : C.text } }, label);
+        let buttons = [];
+        if (it.kind === 'action') {
+            buttons = isMine
+                ? [btn('Raise a query', false, () => onDeferredAction('Raise a query')), btn('Mark complete', true, () => onMarkActionComplete(it.raw))]
+                : [btn('Reassign', false, () => onDeferredAction('Reassign')), btn('Chase', true, () => onDeferredAction('Chase'))];
+        }
+        else if (it.kind === 'flag') {
+            buttons = [btn('Acknowledge', false, () => onDeferredAction('Acknowledge')), btn('Convert to action', false, () => onDeferredAction('Convert to action')), btn('Chase', true, () => onDeferredAction('Chase'))];
+        }
+        else {
+            buttons = [btn('Mark met', true, () => onMarkDateMet(it.raw))];
+        }
+        return React.createElement("div", { key: it.kind + it.id, style: { display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: `1px solid ${C.line}`, background: C.white } },
+            React.createElement("div", { style: { width: 34, height: 34, borderRadius: 6, background: km.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: km.fg } }, lucide(km.icon, 17, 'currentColor', 2)),
+            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis' } }, it.title),
+                React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 3 } },
+                    React.createElement("span", { style: { color: C.carmine, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' } }, km.label),
+                    proj ? ' · ' + proj.name : '',
+                    it.kind === 'flag' && it.toDept ? ' · for ' + ((MEETING_TYPES[it.toDept] || { short: it.toDept }).short) + ' team' : '')),
+            React.createElement("div", { style: { width: 150, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 } }, it.kind === 'date'
+                ? React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, "Programme")
+                : React.createElement(React.Fragment, null,
+                    React.createElement("span", { style: { width: 24, height: 24, borderRadius: '50%', background: owner ? C.carmineSoft : C.g100, color: owner ? C.carmine : C.g500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 } }, owner ? (owner.initials || initialsFromName(owner.display_name)) : 'SYS'),
+                    React.createElement("span", { style: { fontSize: 12.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, owner ? owner.display_name : 'System'))),
+            React.createElement("div", { style: { width: 120, flexShrink: 0, textAlign: 'right' } },
+                due.pill ? React.createElement("span", { style: { display: 'inline-block', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 8px', borderRadius: 3, background: tone.bg, color: tone.fg } }, due.pill) : null,
+                React.createElement("div", { style: { fontSize: 11, color: due.tone === 'overdue' ? C.carmine : C.g500, marginTop: due.pill ? 4 : 0 } }, due.sub)),
+            React.createElement("div", { style: { display: 'flex', gap: 6, flexShrink: 0 } }, buttons),
+            React.createElement("span", { onClick: () => onDeferredAction('Open detail'), style: { color: C.g300, cursor: 'pointer', display: 'inline-flex', flexShrink: 0 }, title: "Detail view — coming in a later pass" }, lucide('chevron-down', 16, 'currentColor', 2)));
+    };
+    const scopeChip = (key, label) => React.createElement("button", { key: key, onClick: () => setScope(key), style: { padding: '7px 13px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: scope === key ? C.prussian : 'transparent', color: scope === key ? '#fff' : C.g500, borderRadius: 3 } }, label);
+    const groupChip = (key, label) => React.createElement("button", { key: key, onClick: () => setGroup(key), style: { padding: '7px 13px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: group === key ? C.prussian : 'transparent', color: group === key ? '#fff' : C.g500, borderRadius: 3 } }, label);
+    const tile = (label, icon, count, sub, subCol) => React.createElement("div", { style: { flex: 1, background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: '20px 22px', boxShadow: '0 1px 2px rgba(24,59,79,.06)' } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
+            React.createElement("span", { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, label),
+            React.createElement("span", { style: { width: 30, height: 30, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(icon, 15, 'currentColor', 2))),
+        React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 12 } },
+            React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 34, color: C.carmine, lineHeight: 1 } }, count),
+            sub ? React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: subCol || C.g500 } }, sub) : null));
+    // Activity tab reuses the notification feed.
+    const actFiltered = actFilter === 'all' ? notifications : (notifications || []).filter(n => describeNotification(n, projects, users).cat === actFilter);
+    const actGroups = groupNotifsByDay(actFiltered);
     return React.createElement(React.Fragment, null,
-        React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 20px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } },
-            React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer', padding: 0, marginBottom: 6, fontFamily: FONT, letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 } }, "← Back"),
-            React.createElement("div", { style: { fontFamily: FONT, fontSize: 20, color: C.white, fontWeight: 700 } }, "Audit log"),
-            React.createElement("div", { style: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 3 } }, "Every recorded change across the projects you can see"))),
-        React.createElement("main", { style: { padding: '20px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } },
-            React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 } }, NOTIF_CATS.map(c => {
-                const active = filter === c.key;
-                return React.createElement("button", { key: c.key, onClick: () => setFilter(c.key), style: { padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 3, cursor: 'pointer', fontFamily: FONT, border: `1px solid ${active ? C.carmine : C.line}`, background: active ? C.carmine : C.white, color: active ? '#fff' : C.text } }, c.label);
-            })),
-            React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, groups.length === 0
-                ? React.createElement("div", { style: { padding: '48px 20px', textAlign: 'center', color: C.mist } }, "No activity recorded yet.")
-                : groups.map(g => React.createElement("div", { key: g.bucket },
-                    React.createElement("div", { style: { padding: '8px 18px', background: C.bg, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.mist } }, g.bucket),
-                    g.items.map(n => React.createElement(NotificationRow, { key: n.id, n: n, projects: projects, users: users, onOpenProject: onOpenProject, dense: false }))))))));
+        React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 0' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } },
+            React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer', padding: 0, marginBottom: 6, fontFamily: FONT, letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 } }, "← Back to Projects"),
+            React.createElement("div", { style: { fontFamily: FONT, fontSize: 22, color: C.white, fontWeight: 700 } }, "Register & activity"),
+            React.createElement("div", { style: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 3, marginBottom: 14 } }, "Every open action, flag and key date that still needs attention."),
+            React.createElement("div", { style: { display: 'flex', gap: 26 } }, [['register', 'Open register'], ['activity', 'Activity']].map(([k, l]) => React.createElement("button", { key: k, onClick: () => setTab(k), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: tab === k ? 700 : 600, fontSize: 13.5, letterSpacing: '0.02em', color: tab === k ? C.white : 'rgba(255,255,255,0.55)', padding: '10px 0', borderBottom: tab === k ? '3px solid #fff' : '3px solid transparent' } }, l))))),
+        React.createElement("main", { style: { padding: '22px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, tab === 'register'
+            ? React.createElement(React.Fragment, null,
+                React.createElement("div", { style: { display: 'flex', gap: 16, marginBottom: 18 } },
+                    tile('Open actions', 'check-square', actionItems.length, overdueActions > 0 ? overdueActions + ' overdue' : null, C.carmine),
+                    tile('Open flags', 'flag', flagItems.length, ageingFlags > 0 ? ageingFlags + ' ageing' : null, C.carmine),
+                    tile('Key dates', 'calendar-plus', dateItems.length, overdueDates > 0 ? overdueDates + ' overdue' : null, C.carmine)),
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap' } },
+                    React.createElement("div", { style: { display: 'inline-flex', background: C.g100, borderRadius: 4, padding: 3, gap: 2 } }, scopeChip('all', 'All open'), scopeChip('attention', 'Needs attention'), scopeChip('week', 'This week')),
+                    React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: C.g500, textTransform: 'uppercase', marginLeft: 6 } }, "Group"),
+                    React.createElement("div", { style: { display: 'inline-flex', background: C.g100, borderRadius: 4, padding: 3, gap: 2 } }, groupChip('urgency', 'By urgency'), groupChip('person', 'By person'), groupChip('project', 'By project')),
+                    React.createElement("span", { style: { marginLeft: 'auto', fontSize: 12, color: C.g500 } }, "Showing ", scoped.length, " open item", scoped.length === 1 ? '' : 's')),
+                React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, groupsList.length === 0
+                    ? React.createElement("div", { style: { padding: '48px 20px', textAlign: 'center', color: C.mist } }, "Nothing open — all clear.")
+                    : groupsList.map(g => React.createElement("div", { key: g.label },
+                        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: C.bg, borderBottom: `1px solid ${C.line}` } },
+                            React.createElement("span", { style: { width: 7, height: 7, borderRadius: '50%', background: g.dot } }),
+                            React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.ink0 } }, g.label),
+                            React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, g.items.length, " item", g.items.length === 1 ? '' : 's')),
+                        g.items.map(renderRow)))))
+            : React.createElement(React.Fragment, null,
+                React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 } }, NOTIF_CATS.map(c => {
+                    const active = actFilter === c.key;
+                    return React.createElement("button", { key: c.key, onClick: () => setActFilter(c.key), style: { padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 3, cursor: 'pointer', fontFamily: FONT, border: `1px solid ${active ? C.carmine : C.line}`, background: active ? C.carmine : C.white, color: active ? '#fff' : C.text } }, c.label);
+                })),
+                React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, actGroups.length === 0
+                    ? React.createElement("div", { style: { padding: '48px 20px', textAlign: 'center', color: C.mist } }, "No activity recorded yet.")
+                    : actGroups.map(g => React.createElement("div", { key: g.bucket },
+                        React.createElement("div", { style: { padding: '8px 18px', background: C.bg, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.mist } }, g.bucket),
+                        g.items.map(n => React.createElement(NotificationRow, { key: n.id, n: n, projects: projects, users: users, onOpenProject: onOpenProject, dense: false })))))))));
 }
 function Dashboard({ user, profile, onProfileUpdated }) {
     const [projects, setProjects] = useState([]);
@@ -962,6 +1130,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const [saveStatus, setSaveStatus] = useState({});
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [registerInitialTab, setRegisterInitialTab] = useState('register');
     const isSenior = profile.role === 'senior';
     // Pre-con meetings are visible to senior leaders AND anyone in the pre-con department
     const canSeePreCon = isSenior || profile.department === 'pre-con';
@@ -1090,6 +1259,36 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             setCurrentProjectId(projectId);
             setCurrentView('project-dashboard');
         }
+    }, []);
+    // ---- Register (Open register) inline actions ----
+    const markActionComplete = useCallback(async (action) => {
+        if (!window.confirm('Mark this action complete?'))
+            return;
+        try {
+            const { error } = await sb.from('actions').update({ status: 'completed', completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', action.id);
+            if (error)
+                throw error;
+            setProjectActions(prev => prev.filter(a => a.id !== action.id));
+        }
+        catch (e) {
+            alert('Failed to mark complete: ' + e.message);
+        }
+    }, [user.id]);
+    const markKeyDateMet = useCallback(async (kd) => {
+        if (!window.confirm('Mark this key date as met?'))
+            return;
+        try {
+            const { error } = await sb.from('project_key_dates').update({ completed: true, completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', kd.id);
+            if (error)
+                throw error;
+            refreshKeyDates();
+        }
+        catch (e) {
+            alert('Failed to update key date: ' + e.message);
+        }
+    }, [user.id]);
+    const deferredRegisterAction = useCallback((label) => {
+        alert(`"${label}" is coming in the cross-app tie-back pass — the detail view and cross-page actions are scoped for a later step in the dev plan.`);
     }, []);
     // Save a project field — debounced per project per field
     const saveTimers = useRef({});
@@ -1420,7 +1619,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3 } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setCurrentView('activity-log'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'activity-log' && (React.createElement(ActivityLogView, { key: currentView, notifications: notifications, projects: projects, users: users, onOpenProject: openProjectFromNotif, onBack: () => setCurrentView('tracker') })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3 } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Register & activity", active: currentView === 'register', onClick: () => { setRegisterInitialTab('register'); setCurrentView('register'); } }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setRegisterInitialTab('activity'); setCurrentView('register'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: projectActions, projectFlags: projectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onDeferredAction: deferredRegisterAction, onBack: () => setCurrentView('tracker') })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
