@@ -57,47 +57,46 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
   senior editing, people model `job_title`+`is_team_lead`, re-openable actions).
 - **Design revamp** — Projects List View, inline ProjectDetail, Programme timeline, Project Detail
   Page, Live Tracker.
-- **Phase 3 — Meetings workflow & flag integrity.** Shipped across PR #26 (merged, live) + PR #27:
-  - *Slice 1 (PR #26, merged/live):* closed-meeting flag integrity — block posthumous
-    acknowledge/convert; unresolved flags read as "⚑ Carried forward — needs action". Resolved the
-    Westlake flag mystery (flags were acknowledged into oblivion after their meeting closed).
-  - *Slices 2–5 (PR #27, open):* in-meeting rail indicators (covered tick + flag/action badges);
-    edit project status from within a meeting (senior); "no team member assigned" flag warning with
-    an "Assign a team member →" link to the project detail page; meetings-list "Closed meetings"
-    section header + standardised closed-badge emboss.
+- **Phase 3 — Meetings workflow & flag integrity** (PR #26 + #27, both merged/live): closed-meeting
+  flag integrity (resolved the Westlake mystery); in-meeting rail indicators; edit project status
+  from within a meeting; "no team member assigned" flag warning + link; meetings-list "Closed
+  meetings" section + standardised closed-badge emboss.
+- **Phase 4a/4c** (PR #28, merged/live): clickable metric tiles → catalogues (+ collapsible
+  Completed); team-change data integrity (warn + offer reassign).
 
 ---
 
 ## ▶ REMAINING PLAN — work top to bottom, confirm scope per phase
 
 ### Phase 4 — Project detail pane build-out  *(large, iterative — in progress)*
-- ✅ **4a — Clickable metric tiles → catalogues** (PR #28): Open actions / Open flags / Overdue dates
-  tiles jump to the Actions & Flags catalogue; catalogue gains a collapsible Completed section.
-- ✅ **4c — Team-change data integrity** (PR #28): warn on reassigning/removing a member who owns open
-  actions; offer to reassign them or keep; actions retained either way.
-- ↪ **4b — Audit trail → per-user activity** was expanded by Tom into a full permission-scoped
-  notifications + audit hub and **folded into Phase 5** (below).
+- ✅ **4a / 4c** merged/live (see DONE above).
+- ↪ **4b — Audit trail → per-user activity** was expanded by Tom into the permission-scoped
+  Register & activity hub and **folded into Phase 5** (below).
 - ⬜ **Modules build-out** — the 8 "PLANNED" placeholder tiles (Building Regs, Adjudication, Risk
   Register, Long Lead Items, RFI Schedule, Budget Movement, Close Out, Lessons Learned). Each is a
   real feature needing its own schema + design — **dedicated per-module scoping pass, own session.**
 
-### Phase 5 — Notifications & site-wide audit hub  *(large — brought forward & expanded from original "Notifications")*
-Tom's spec: a **full audit trail of site-wide field changes / any update submitted to the app, wired
-to every customisable field**, surfaced as a **notifications hub — a bell by the profile tab
-(top-right)** with unread badge + dropdown panel. **Permission-scoped:** a user only sees
-notifications for things they're entitled to (e.g. a team that can't see a project gets none).
-Three layers:
-1. **Audit layer** — generic DB triggers on every table logging field-level before/after diffs to an
-   audit log. Today only `notify_action_owner` / `notify_collaborator` / `notify_query_events` exist
-   (actions/queries only); `org_audit_log` logs member changes only. Everything else (project fields,
-   status, team, new projects, key dates, meetings, flags) is unwired.
-2. **Notification fan-out** — those triggers also enqueue per-user `notifications` rows (already
-   RLS-scoped to the recipient via `user_id = auth.uid()`).
-3. **Bell hub UI** — greenfield (no notification UI exists today).
-- **Scoping decision:** fan-out by **project-team membership + role + pre-con visibility now**,
-  structured so **Phase 6's per-project visibility rules tighten it automatically**. True per-team
-  project-level scoping depends on Phase 6 — do not claim it's complete before then.
-- Then external transport (email/Teams via M365).
+### Phase 5 — Register & activity: notifications hub + site-wide audit  *(large — in progress, branch `claude/phase-5-notifications-hub`)*
+Reworked with Tom from a pure notifications hub into a **"Register & activity"** page (nav tab) with
+two tabs, plus a header bell:
+- ✅ **Hub UI** — bell + unread badge + dropdown activity panel (filter chips, day grouping, typed
+  event rows, mark-all-read). Reads per-user `notifications` (RLS-scoped).
+- ✅ **Open register** — cross-project register of every open action / flag / key date: summary tiles,
+  scope filters (All open / Needs attention / This week), grouping (By urgency / person / project),
+  per-kind rows with owner + urgency pill + inline buttons. Wired the two safe writes (Mark complete,
+  Mark met).
+- ✅ **Audit + fan-out backend (APPLIED to live DB)** — `audit_log` table (senior-read) + generic
+  triggers on projects (every field), key dates/programme, meetings, flags, actions →
+  `record_activity()` writes the audit row and fans out per-user `notifications` to
+  `project_audience()` (team ∪ seniors). Verified end-to-end (edit → diff row → 6 fan-out notifs).
+  SECURITY DEFINER helpers had direct-RPC EXECUTE revoked (advisor hardening). SQL versioned at
+  `db/migrations/phase5_notifications_audit.sql`.
+- **Scoping:** audience = team + seniors + pre-con now; **Phase 6's per-project visibility tightens
+  `project_audience()` automatically**. Not true per-team scoping until then.
+- ⬜ **Deferred to a cross-app "tie-back" pass:** the item **detail modal** (chevron), and the
+  register's cross-app buttons (Reassign / Chase / Acknowledge / Convert / Raise a query).
+- ⬜ **Deferred:** flag **severity** field (register buckets flags by age for now); external transport
+  (email/Teams via M365).
 
 ### Phase 6 — Organisation & permissions layer  *(large — GO-LIVE GATE)*
 - Org dashboard (add/edit users incl. title + team-lead; per-member project visibility; per-team
