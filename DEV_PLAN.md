@@ -97,6 +97,18 @@ two tabs, plus a header bell:
   register's cross-app buttons (Reassign / Chase / Acknowledge / Convert / Raise a query).
 - ⬜ **Deferred:** flag **severity** field (register buckets flags by age for now); external transport
   (email/Teams via M365).
+- ⚠️ **KNOWN ISSUE — activity log under-wired (revisit).** Tom's observation: the Activity feed
+  "isn't picking up the level of detail across users it needs." Root cause: the Activity tab + bell
+  read the **per-user `notifications`** table, so a user only sees events **fanned out to them**
+  (their team's projects + senior audience) — it behaves like a personal inbox, **not** a full
+  cross-user activity log. The complete record lives in **`audit_log`** (all users/events, senior-
+  read) but is **not surfaced in the UI**. Also, fan-out only populates **going forward** from when
+  the triggers were added, and `record_activity` writes `actor_user_id` from `auth.uid()` (null for
+  non-app writes). **Fix direction:** point the Activity/"full audit log" view at **`audit_log`**
+  (scoped: seniors = all; contributors = their visible projects once Phase 6 lands) so it shows
+  every user's activity with full detail; keep the bell on per-user `notifications`. Consider a
+  one-off back-population of `audit_log`/notifications for recent history. Verify actor attribution
+  end-to-end from the live app (real JWT) — the dev-org fan-out test ran without a user context.
 
 ### Phase 6 — Organisation & permissions layer  *(large — GO-LIVE GATE)*
 - Org dashboard (add/edit users incl. title + team-lead; per-member project visibility; per-team
