@@ -1,0 +1,8 @@
+-- Checklist module — templates (org-level) + per-project state. APPLIED to live DB.
+-- module_templates        : one row per checklist tab (mode, status_set, config jsonb)
+-- module_template_items   : the fixed template rows, grouped into sections (+ optional `who`)
+-- project_checklists      : per project × module — notes, sign-off
+-- project_checklist_items : per row — status, note, and ties out to a flag / action
+-- See seed/2026-07-25-checklist-templates.sql for the four seeded tabs.
+-- Full DDL as applied is reproduced in the Supabase migration `checklist_module`
+-- plus the follow-up `alter table module_template_items add column who text`.

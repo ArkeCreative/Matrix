@@ -1198,7 +1198,9 @@ function Dashboard({ user, profile, onProfileUpdated }) {
                             const { data: liveMtgs } = await sb.from('meetings').select('id').in('id', fromIds);
                             (liveMtgs || []).forEach(m => liveIds.add(m.id));
                         }
-                        const valid = flagData.filter(f => f.from_meeting_id && liveIds.has(f.from_meeting_id));
+                        // Keep flags raised outside a meeting (e.g. from a checklist row);
+                        // the liveIds check only exists to drop flags whose meeting was deleted.
+                        const valid = flagData.filter(f => !f.from_meeting_id || liveIds.has(f.from_meeting_id));
                         if (mounted)
                             setProjectFlags(valid);
                     }
@@ -3179,6 +3181,7 @@ function SecureProjectModal({ project, users, currentUser, onClose, onSave }) {
 // ============================================================
 const MODULE_DEFS = [
     { key: 'building-regs', label: 'Building Regs', icon: 'check-square', singular: 'reg item', blurb: 'Building regulation submissions, approvals and sign-offs.' },
+    { key: 'bd', label: 'BD Checklist', icon: 'check-square', singular: 'question', blurb: 'The questions to have answered before an opportunity moves on.' },
     { key: 'adjudication', label: 'Adjudication', icon: 'flag', singular: 'matter', blurb: 'Adjudication matters and their status.' },
     { key: 'risk-register', label: 'Risk Register', icon: 'flag', singular: 'risk', blurb: 'Project risks with likelihood, impact, owner and mitigation.' },
     { key: 'long-lead', label: 'Long Lead Items', icon: 'calendar-plus', singular: 'item', blurb: 'Procurement items with long lead times and order-by dates.' },
@@ -3187,6 +3190,376 @@ const MODULE_DEFS = [
     { key: 'close-out', label: 'Close Out', icon: 'check', singular: 'task', blurb: 'Project close-out checklist and handover items.' },
     { key: 'lessons-learned', label: 'Lessons Learned', icon: 'message-square', singular: 'lesson', blurb: 'Lessons captured for future projects.' },
 ];
+// ---- Checklist module (first real module type) -----------------------------
+// One component driven by a template config row: `mode` picks the row
+// behaviour, `status_set` drives the row control and the RAG counts,
+// requireDetail nudges for evidence, flagOnAttention routes a stuck row out to
+// a team flag or an individual action.
+const CHECKLIST_STATUS_SETS = {
+    rag: [
+        { key: 'resolved', label: 'Resolved', short: 'Res', icon: 'check', colour: C.green, soft: C.greenLight, done: true },
+        { key: 'awaiting', label: 'Awaiting response', short: 'Awt', icon: 'clock', colour: C.amber, soft: C.amberLight },
+        { key: 'further', label: 'Further info required', short: 'Info', icon: 'alert', colour: C.redStatus, soft: C.redStatusLight, attention: true },
+        { key: 'na', label: 'Not applicable', short: 'N/A', icon: 'na', colour: C.prussian, soft: C.prussian10, done: true },
+    ],
+    yesno: [
+        { key: 'yes', label: 'Yes', short: 'Yes', icon: 'check', colour: C.green, soft: C.greenLight, done: true },
+        { key: 'no', label: 'No', short: 'No', icon: 'clock', colour: C.amber, soft: C.amberLight },
+        { key: 'na', label: 'Not applicable', short: 'N/A', icon: 'na', colour: C.prussian, soft: C.prussian10, done: true },
+    ],
+    complete: [
+        { key: 'complete', label: 'Complete', short: 'Done', icon: 'check', colour: C.green, soft: C.greenLight, done: true },
+        { key: 'progress', label: 'In progress', short: 'WIP', icon: 'clock', colour: C.amber, soft: C.amberLight },
+        { key: 'blocked', label: 'Blocked', short: 'Blk', icon: 'alert', colour: C.redStatus, soft: C.redStatusLight, attention: true },
+        { key: 'na', label: 'Not applicable', short: 'N/A', icon: 'na', colour: C.prussian, soft: C.prussian10, done: true },
+    ],
+};
+const CHECKLIST_COLS = 'minmax(0, 1fr) 260px 190px 112px';
+const RING_CIRC = 2 * Math.PI * 52;
+// Donut segments for a set of {colour, n} tallies.
+function ringSegments(tallies, total) {
+    let acc = 0;
+    const out = [];
+    tallies.forEach(t => {
+        if (!t.n)
+            return;
+        const len = total ? (t.n / total) * RING_CIRC : 0;
+        out.push({ colour: t.colour, dash: len.toFixed(2) + ' ' + (RING_CIRC - len).toFixed(2), offset: (-acc).toFixed(2) });
+        acc += len;
+    });
+    return out;
+}
+function checklistStats(statuses, values, rowCount) {
+    const list = Object.keys(values).map(k => values[k]);
+    const answered = list.filter(v => v && v.status).length;
+    const tallies = statuses.map(st => ({ key: st.key, label: st.label, colour: st.colour, soft: st.soft, n: list.filter(v => v && v.status === st.key).length }));
+    return { answered, pct: rowCount ? Math.round((answered / rowCount) * 100) : 0, tallies, ring: ringSegments(tallies, rowCount) };
+}
+function ChecklistModule({ project, template, currentUser, users, isSenior, onBack, onDataChanged }) {
+    const cfg = template.config || {};
+    const statuses = CHECKLIST_STATUS_SETS[template.status_set] || CHECKLIST_STATUS_SETS.rag;
+    const statusMeta = (k) => statuses.find(s => s.key === k) || null;
+    const [tplRows, setTplRows] = React.useState([]);
+    const [values, setValues] = React.useState({});
+    const [baseline, setBaseline] = React.useState('{}');
+    const [notes, setNotes] = React.useState('');
+    const [notesBaseline, setNotesBaseline] = React.useState('');
+    const [signedOff, setSignedOff] = React.useState(false);
+    const [collapsed, setCollapsed] = React.useState({});
+    const [hovered, setHovered] = React.useState(null);
+    const [filter, setFilter] = React.useState('all');
+    const [modal, setModal] = React.useState(null);
+    const [toast, setToast] = React.useState('');
+    const [loading, setLoading] = React.useState(true);
+    const [saving, setSaving] = React.useState(false);
+    const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 3200); };
+    React.useEffect(() => {
+        let on = true;
+        (async () => {
+            try {
+                const [tplRes, itemRes, headRes] = await Promise.all([
+                    sb.from('module_template_items').select('*').eq('module_key', template.module_key).order('section_index').order('row_index'),
+                    sb.from('project_checklist_items').select('*').eq('project_id', project.id).eq('module_key', template.module_key),
+                    sb.from('project_checklists').select('*').eq('project_id', project.id).eq('module_key', template.module_key).maybeSingle(),
+                ]);
+                if (!on)
+                    return;
+                setTplRows(tplRes.data || []);
+                const map = {};
+                (itemRes.data || []).forEach(it => { map[it.section_index + ':' + it.row_index] = it; });
+                setValues(map);
+                setBaseline(JSON.stringify(map));
+                const head = headRes && headRes.data;
+                setNotes(head && head.notes ? head.notes : '');
+                setNotesBaseline(head && head.notes ? head.notes : '');
+                setSignedOff(!!(head && head.signed_off));
+            }
+            catch (_) { /* tables may be absent on older schemas */ }
+            if (on)
+                setLoading(false);
+        })();
+        return () => { on = false; };
+    }, [project.id, template.module_key]);
+    // Group template rows into sections, preserving order.
+    const sections = [];
+    tplRows.forEach(r => {
+        let s = sections.find(x => x.index === r.section_index);
+        if (!s) {
+            s = { index: r.section_index, title: r.section_title, rows: [] };
+            sections.push(s);
+        }
+        s.rows.push(r);
+    });
+    const rowCount = tplRows.length;
+    const stats = checklistStats(statuses, values, rowCount);
+    const valueFor = (r) => values[r.section_index + ':' + r.row_index] || {};
+    const attention = tplRows.filter(r => { const m = statusMeta(valueFor(r).status); return !!(m && m.attention); });
+    const routable = cfg.flagOnAttention || template.mode === 'signoff';
+    const needsRouting = routable ? attention.filter(r => { const v = valueFor(r); return !v.flag_id && !v.action_id; }) : [];
+    const thin = cfg.requireDetail ? tplRows.filter(r => { const v = valueFor(r); return v.status && !(v.note || '').trim(); }) : [];
+    const dirty = JSON.stringify(values) !== baseline || notes !== notesBaseline;
+    const setRow = (r, patch) => {
+        const key = r.section_index + ':' + r.row_index;
+        setValues(prev => Object.assign(Object.assign({}, prev), { [key]: Object.assign(Object.assign({}, prev[key] || {}), patch) }));
+    };
+    const save = async () => {
+        setSaving(true);
+        try {
+            const rows = tplRows.map(r => {
+                const v = valueFor(r);
+                return { project_id: project.id, module_key: template.module_key, section_index: r.section_index, row_index: r.row_index, status: v.status || null, note: v.note || null, flag_id: v.flag_id || null, action_id: v.action_id || null, updated_by: currentUser ? currentUser.id : null };
+            }).filter(r => r.status || r.note || r.flag_id || r.action_id);
+            if (rows.length > 0) {
+                const { error } = await sb.from('project_checklist_items').upsert(rows, { onConflict: 'project_id,module_key,section_index,row_index' });
+                if (error)
+                    throw error;
+            }
+            const { error: hErr } = await sb.from('project_checklists').upsert({ project_id: project.id, module_key: template.module_key, notes: notes || null }, { onConflict: 'project_id,module_key' });
+            if (hErr)
+                throw hErr;
+            setBaseline(JSON.stringify(values));
+            setNotesBaseline(notes);
+            flash('Checklist saved · logged to the project activity feed');
+            if (onDataChanged)
+                onDataChanged();
+        }
+        catch (e) {
+            alert('Save failed: ' + e.message);
+        }
+        setSaving(false);
+    };
+    const discard = async () => {
+        setValues(JSON.parse(baseline));
+        setNotes(notesBaseline);
+    };
+    const toggleSignOff = async () => {
+        const next = !signedOff;
+        if (next && !window.confirm('Sign off ' + template.label + '? This stamps the record into the project audit trail.'))
+            return;
+        setSignedOff(next);
+        try {
+            await sb.from('project_checklists').upsert({ project_id: project.id, module_key: template.module_key, notes: notes || null, signed_off: next, signed_off_by: next && currentUser ? currentUser.id : null, signed_off_at: next ? new Date().toISOString() : null }, { onConflict: 'project_id,module_key' });
+            flash(next ? 'Signed off' : 'Sign-off withdrawn');
+        }
+        catch (e) { alert('Sign-off failed: ' + e.message); }
+    };
+    // ---- routing a row out to a real flag or a real action ----
+    const openRoute = (r, kind) => setModal({ row: r, kind: kind, target: kind === 'flag' ? (cfg.defaultTeam || 'pre-con') : null, note: (valueFor(r).note || ''), due: '' });
+    const confirmRoute = async () => {
+        if (!modal)
+            return;
+        const r = modal.row;
+        try {
+            if (modal.kind === 'flag') {
+                const { data, error } = await sb.from('meeting_handoffs').insert({
+                    project_id: project.id, from_meeting_id: null, from_meeting_type: 'checklist:' + template.module_key,
+                    to_department: modal.target, note: (modal.note || r.text).slice(0, 500),
+                    created_by: currentUser ? currentUser.id : null, status: 'open',
+                }).select().single();
+                if (error)
+                    throw error;
+                setRow(r, { flag_id: data.id });
+                flash('Flag raised to the ' + ((MEETING_TYPES[modal.target] || { short: modal.target }).short) + ' team');
+            }
+            else {
+                const { data, error } = await sb.from('actions').insert({
+                    project_id: project.id, meeting_id: null, description: (modal.note || r.text).slice(0, 500),
+                    owner_user_id: modal.target || null, due_date: modal.due || null, status: 'open',
+                    created_by: currentUser ? currentUser.id : null,
+                }).select().single();
+                if (error)
+                    throw error;
+                setRow(r, { action_id: data.id });
+                const ow = users.find(u => u.id === modal.target);
+                flash('Action assigned' + (ow ? ' to ' + ow.display_name : ''));
+            }
+            setModal(null);
+            if (onDataChanged)
+                onDataChanged();
+        }
+        catch (e) { alert('Failed: ' + e.message); }
+    };
+    if (loading)
+        return React.createElement("div", { style: { padding: 40, textAlign: 'center', color: C.mist } }, "Loading checklist…");
+    // ---------- header card ----------
+    const countTile = (t) => React.createElement("div", { key: t.key, onClick: () => setFilter(filter === 'status:' + t.key ? 'all' : 'status:' + t.key), title: 'Isolate “' + t.label + '” rows', style: { cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5, minWidth: 74, padding: '8px 10px', borderRadius: 2, border: `1px solid ${filter === 'status:' + t.key ? C.carmine : C.line}`, background: filter === 'status:' + t.key ? t.soft : C.white } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 7 } },
+            React.createElement("span", { style: { width: 9, height: 9, borderRadius: 2, background: t.colour } }),
+            React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 18, lineHeight: 1, color: C.ink0 } }, t.n)),
+        React.createElement("span", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.g500 } }, t.label));
+    const pillBtn = (label, icon, onClick, colour) => React.createElement("span", { onClick: onClick, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, border: `1px solid ${C.line}`, borderRadius: 2, padding: '6px 11px', fontSize: 11.5, fontWeight: 600, color: colour || C.prussian, background: C.white, fontFamily: FONT } }, lucide(icon, 13, 'currentColor', 2), label);
+    const header = React.createElement("div", { style: { position: 'sticky', top: 0, zIndex: 6, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: '0 4px 12px rgba(24,59,79,.08), 0 2px 4px rgba(24,59,79,.06)', padding: '16px 22px 14px', marginBottom: 20 } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, paddingBottom: 16, marginBottom: 16, borderBottom: `1px solid ${C.line}` } },
+            React.createElement("span", { onClick: onBack, title: "Back to all modules", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.background = C.white; }, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: `1px solid ${C.line}`, borderRadius: 2, color: C.carmine, background: C.white, flexShrink: 0 } }, lucide('arrow-left', 16, 'currentColor', 2)),
+            React.createElement("span", { style: { width: 36, height: 36, borderRadius: 8, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide('check-square', 19, 'currentColor', 2)),
+            React.createElement("div", { style: { minWidth: 0 } },
+                React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 20, lineHeight: 1.2, color: C.ink0 } }, template.label),
+                React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, project.name, project.project_number ? ' · #' + project.project_number : '')),
+            React.createElement("div", { style: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' } },
+                React.createElement("span", { onClick: () => flash('PDF export is coming in a dedicated export pass'), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, border: `1.5px solid ${C.carmine}`, color: C.carmine, background: C.white, borderRadius: 2, padding: '8px 14px', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', fontFamily: FONT } }, lucide('upload', 14, 'currentColor', 2), "PDF"),
+                React.createElement("span", { onClick: () => flash('XLSX export is coming in a dedicated export pass'), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, border: `1.5px solid ${C.prussian}`, color: C.prussian, background: C.white, borderRadius: 2, padding: '8px 14px', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', fontFamily: FONT } }, lucide('upload', 14, 'currentColor', 2), "XLSX"))),
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 20 } },
+                React.createElement("div", { style: { position: 'relative', width: 116, height: 116, flexShrink: 0 } },
+                    React.createElement("svg", { width: 116, height: 116, viewBox: "0 0 120 120", style: { display: 'block', transform: 'rotate(-90deg)' } },
+                        React.createElement("circle", { cx: 60, cy: 60, r: 52, fill: "none", stroke: C.g100, strokeWidth: 13 }),
+                        stats.ring.map((s, i) => React.createElement("circle", { key: i, cx: 60, cy: 60, r: 52, fill: "none", stroke: s.colour, strokeWidth: 13, strokeDasharray: s.dash, strokeDashoffset: s.offset }))),
+                    React.createElement("div", { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+                        React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 26, lineHeight: 1, color: C.ink0 } }, stats.pct + '%'))),
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 6 } }, cfg.progressLabel || 'Progress'),
+                    React.createElement("div", { style: { fontSize: 13, color: C.ink } }, stats.answered + ' of ' + rowCount + ' rows answered'),
+                    cfg.stage ? React.createElement("div", { style: { fontSize: 11.5, color: C.g500, marginTop: 4 } }, 'Expected ' + (cfg.expected || 0) + '% by ' + cfg.stage) : null)),
+            React.createElement("div", { style: { display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' } }, stats.tallies.map(countTile)),
+            React.createElement("div", { style: { display: 'flex', gap: 26, paddingLeft: 24, borderLeft: `1px solid ${C.line}` } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500, marginBottom: 6 } }, "Owner"),
+                    React.createElement("div", { style: { fontSize: 13.5, fontWeight: 600, color: C.ink0 } }, cfg.owner || '—'),
+                    React.createElement("div", { style: { fontSize: 11.5, color: C.g500, marginTop: 2 } }, cfg.ownerRole || '')))),
+        React.createElement("div", { style: { marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+                pillBtn('Expand all', 'chevron-down', () => setCollapsed({})),
+                pillBtn('Collapse all', 'chevron-down', () => { const c = {}; sections.forEach(s => { c[s.index] = true; }); setCollapsed(c); })),
+            React.createElement("div", { style: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' } },
+                needsRouting.length > 0 ? React.createElement("span", { onClick: () => setFilter(filter === 'notrouted' ? 'all' : 'notrouted'), title: "Isolate the rows not yet routed", style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, border: `1px solid ${C.redStatus}`, background: filter === 'notrouted' ? C.redStatus : C.redStatusLight, color: filter === 'notrouted' ? C.white : C.redStatus, borderRadius: 2, padding: '6px 11px', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.04em', fontFamily: FONT } }, lucide('flag', 13, 'currentColor', 2), needsRouting.length + ' not routed') : null,
+                thin.length > 0 ? React.createElement("span", { onClick: () => setFilter(filter === 'thin' ? 'all' : 'thin'), title: "Isolate the rows answered without detail", style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, border: `1px solid ${C.amber}`, background: filter === 'thin' ? C.amber : C.amberLight, color: filter === 'thin' ? C.white : C.warn, borderRadius: 2, padding: '6px 11px', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.04em', fontFamily: FONT } }, lucide('pencil', 13, 'currentColor', 2), thin.length + ' answered without detail') : null)));
+    // ---------- row ----------
+    const keep = (r) => {
+        const v = valueFor(r);
+        if (filter === 'all')
+            return true;
+        if (filter === 'thin')
+            return !!(v.status && !(v.note || '').trim());
+        if (filter === 'notrouted') {
+            const m = statusMeta(v.status);
+            return !!(m && m.attention && !v.flag_id && !v.action_id);
+        }
+        if (filter.indexOf('status:') === 0)
+            return v.status === filter.slice(7);
+        return true;
+    };
+    const renderRow = (r) => {
+        const v = valueFor(r);
+        const m = statusMeta(v.status);
+        const isHover = hovered === r.id;
+        const noteEmpty = !(v.note || '').trim();
+        const nudge = !!(cfg.requireDetail && m && noteEmpty);
+        const promptRoute = !!(routable && m && m.attention && !v.flag_id && !v.action_id);
+        const ties = [];
+        if (v.flag_id)
+            ties.push({ label: '⚑ Flag raised', bg: C.carmineSoft, bc: C.carmineMid, fg: C.carmine });
+        if (v.action_id)
+            ties.push({ label: '✓ Action assigned', bg: C.prussian10, bc: C.prussian20, fg: C.prussian });
+        return React.createElement("div", { key: r.id, onMouseEnter: () => setHovered(r.id), onMouseLeave: () => setHovered(null), style: { display: 'grid', gridTemplateColumns: CHECKLIST_COLS, gap: 12, padding: '11px 22px', alignItems: 'start', borderBottom: `1px solid ${C.bg}`, background: isHover ? '#FCFBFA' : C.white, transition: 'background 160ms ease-out', position: 'relative' } },
+            React.createElement("div", { style: { minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 10 } },
+                React.createElement("span", { style: { width: 3, alignSelf: 'stretch', minHeight: 20, borderRadius: 1, background: m ? m.colour : C.g200 } }),
+                React.createElement("div", { style: { minWidth: 0 } },
+                    React.createElement("div", { style: { fontSize: 13.5, lineHeight: 1.45, color: C.ink } }, r.text),
+                    r.who ? React.createElement("span", { style: { display: 'inline-block', marginTop: 6, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.prussian, background: C.prussian10, border: `1px solid ${C.prussian20}`, borderRadius: 2, padding: '2px 7px' } }, r.who) : null,
+                    promptRoute ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8, borderLeft: `3px solid ${C.redStatus}`, background: C.redStatusLight, padding: '7px 11px', borderRadius: '0 2px 2px 0' } },
+                        React.createElement("span", { style: { fontSize: 12, color: C.redStatus, lineHeight: 1.4, flex: '1 1 140px', minWidth: 140 } }, 'Marked ', React.createElement("strong", null, m.label)),
+                        React.createElement("span", { onClick: () => openRoute(r, 'flag'), style: { cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 6, background: C.carmine, color: '#fff', borderRadius: 2, padding: '5px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: FONT } }, lucide('flag', 12, 'currentColor', 2), "Flag a team"),
+                        React.createElement("span", { onClick: () => openRoute(r, 'action'), style: { cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 6, border: `1px solid ${C.prussian}`, color: C.prussian, background: C.white, borderRadius: 2, padding: '4px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: FONT } }, lucide('users', 12, 'currentColor', 2), "Assign an action")) : null,
+                    ties.length > 0 ? React.createElement("div", { style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 } }, ties.map((t, i) => React.createElement("span", { key: i, style: { display: 'inline-flex', alignItems: 'center', gap: 7, border: `1px solid ${t.bc}`, background: t.bg, color: t.fg, borderRadius: 2, padding: '4px 9px', fontSize: 11, fontWeight: 600 } }, t.label))) : null,
+                    (isHover && !promptRoute) ? React.createElement("div", { style: { display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 9 } },
+                        React.createElement("span", { onClick: () => openRoute(r, 'flag'), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.carmine, fontFamily: FONT } }, lucide('flag', 12, 'currentColor', 2), "Flag to a team"),
+                        React.createElement("span", { onClick: () => openRoute(r, 'action'), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.prussian, fontFamily: FONT } }, lucide('users', 12, 'currentColor', 2), "Assign an action")) : null)),
+            React.createElement("div", null,
+                React.createElement("textarea", { value: v.note || '', onChange: e => setRow(r, { note: e.target.value }), placeholder: cfg.inputPlaceholder || 'Notes…', rows: 2, style: { width: '100%', boxSizing: 'border-box', border: `1px ${nudge ? 'dashed' : 'solid'} ${nudge ? C.amber : C.line}`, borderRadius: 2, padding: '8px 10px', fontSize: 13, lineHeight: 1.45, color: C.ink0, background: nudge ? '#FFFDF6' : C.white, outline: 'none', resize: 'vertical', fontFamily: FONT, display: 'block' } }),
+                nudge ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 11, fontWeight: 600, color: C.warn } }, lucide('pencil', 11, 'currentColor', 2), 'Add the evidence for this answer') : null),
+            React.createElement("div", { style: { display: 'flex', gap: 4 } }, statuses.map(st => {
+                const on = v.status === st.key;
+                return React.createElement("span", { key: st.key, onClick: () => setRow(r, { status: on ? null : st.key }), title: st.label, style: { flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', padding: '6px 4px', borderRadius: 2, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', border: `1px solid ${on ? st.colour : C.line}`, background: on ? st.soft : C.white, color: on ? st.colour : C.g500, fontFamily: FONT } }, st.short);
+            })),
+            React.createElement("div", { style: { textAlign: 'right', fontSize: 11.5, color: C.g500, lineHeight: 1.35, paddingTop: 7 } }, (() => {
+                if (!v.updated_at)
+                    return v.status ? 'unsaved' : '';
+                const u = users.find(x => x.id === v.updated_by);
+                return formatMeetingDate(v.updated_at.slice(0, 10)) + (u ? ' · ' + (u.initials || initialsFromName(u.display_name)) : '');
+            })()));
+    };
+    // ---------- register ----------
+    const register = React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: '0 1px 2px rgba(24,59,79,.06), 0 1px 3px rgba(24,59,79,.08)', overflow: 'hidden' } },
+        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: CHECKLIST_COLS, gap: 12, padding: '10px 22px', background: C.bg, borderBottom: `1px solid ${C.line}` } },
+            React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, cfg.colItem || 'Item'),
+            React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, cfg.colInput || 'Notes'),
+            React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, cfg.colStatus || 'Status'),
+            React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500, textAlign: 'right' } }, cfg.colMeta || 'Last updated')),
+        sections.map(sec => {
+            const shown = sec.rows.filter(keep);
+            const isColl = !!collapsed[sec.index];
+            const done = sec.rows.filter(r => { const m = statusMeta(valueFor(r).status); return m && m.done; }).length;
+            const secNeeds = routable ? sec.rows.filter(r => { const v = valueFor(r); const m = statusMeta(v.status); return m && m.attention && !v.flag_id && !v.action_id; }).length : 0;
+            if (filter !== 'all' && shown.length === 0)
+                return null;
+            return React.createElement("div", { key: sec.index, style: { borderBottom: `1px solid ${C.line}` } },
+                React.createElement("div", { onClick: () => setCollapsed(c => Object.assign(Object.assign({}, c), { [sec.index]: !c[sec.index] })), onMouseEnter: e => e.currentTarget.style.background = '#FAF9F8', onMouseLeave: e => e.currentTarget.style.background = C.white, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '13px 22px', background: C.white, cursor: 'pointer', userSelect: 'none', borderBottom: `1px solid ${C.bg}` } },
+                    React.createElement("span", { style: { display: 'inline-flex', color: C.carmine, transform: isColl ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 160ms ease-out' } }, lucide('chevron-down', 15, 'currentColor', 2.4)),
+                    React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.13em', textTransform: 'uppercase', color: C.ink0, flex: 1, minWidth: 0 } }, sec.title),
+                    secNeeds > 0 ? React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.redStatus, border: `1px solid ${C.redStatus}`, borderRadius: 2, padding: '2px 7px' } }, secNeeds + ' to route') : null,
+                    React.createElement("span", { style: { fontSize: 11.5, fontWeight: 600, color: C.g500, letterSpacing: '0.04em' } }, done + '/' + sec.rows.length),
+                    React.createElement("span", { style: { display: 'flex', gap: 3 } }, sec.rows.map(r => { const m = statusMeta(valueFor(r).status); return React.createElement("span", { key: r.id, style: { width: 6, height: 12, borderRadius: 1, background: m ? m.colour : C.g200 } }); }))),
+                !isColl ? React.createElement("div", null, shown.map(renderRow)) : null);
+        }),
+        React.createElement("div", { style: { padding: '20px 22px' } },
+            React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.ink0, marginBottom: 9 } }, "Notes"),
+            React.createElement("textarea", { value: notes, onChange: e => setNotes(e.target.value), placeholder: "Free notes for this tab — carried through with the checklist record.", style: { width: '100%', boxSizing: 'border-box', minHeight: 84, resize: 'vertical', border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 13px', fontSize: 13.5, lineHeight: 1.55, color: C.ink0, background: C.white, outline: 'none', fontFamily: FONT } })),
+        cfg.signOff ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, padding: '18px 22px', background: C.bg, borderTop: `1px solid ${C.line}`, flexWrap: 'wrap' } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.ink0 } }, "Sign off"),
+                React.createElement("div", { style: { fontSize: 12.5, color: C.g500, marginTop: 3 } }, cfg.signOffCaption || '')),
+            React.createElement("span", { onClick: isSenior ? toggleSignOff : undefined, title: isSenior ? '' : 'Seniors sign off', style: { cursor: isSenior ? 'pointer' : 'not-allowed', opacity: isSenior ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', gap: 9, border: `1.5px solid ${signedOff ? C.green : C.line}`, background: signedOff ? C.greenLight : C.white, color: signedOff ? C.green : C.g500, borderRadius: 2, padding: '10px 16px', fontWeight: 600, fontSize: 13, letterSpacing: '0.04em', fontFamily: FONT } }, lucide('check', 15, 'currentColor', 2.4), signedOff ? 'Signed off' : 'Sign off checklist')) : null);
+    // ---------- modal ----------
+    const targets = modal && modal.kind === 'flag'
+        ? MEETING_TYPE_OPTIONS.map(o => ({ key: o.value, label: o.label.replace(' Meeting', ''), sub: 'next meeting' }))
+        : (users || []).slice(0, 12).map(u => ({ key: u.id, label: u.display_name, sub: u.job_title || (u.role === 'senior' ? 'Senior' : 'Contributor') }));
+    const modalEl = modal ? React.createElement("div", { onClick: () => setModal(null), style: { position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(10,10,10,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 } },
+        React.createElement("div", { onClick: e => e.stopPropagation(), style: { width: 560, maxWidth: '100%', maxHeight: '86vh', overflowY: 'auto', background: C.white, borderRadius: 4, boxShadow: '0 18px 48px rgba(24,59,79,.24)' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '18px 22px', background: modal.kind === 'flag' ? C.carmine : C.prussian, color: '#fff' } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.8 } }, template.label),
+                    React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 18, marginTop: 3 } }, modal.kind === 'flag' ? 'Flag a team' : 'Assign an action')),
+                React.createElement("span", { onClick: () => setModal(null), style: { cursor: 'pointer', display: 'inline-flex', color: '#fff', opacity: 0.8 } }, lucide('x', 18, 'currentColor', 2))),
+            React.createElement("div", { style: { padding: '20px 22px' } },
+                React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 8 } }, "From checklist row"),
+                React.createElement("div", { style: { borderLeft: `3px solid ${C.line}`, padding: '2px 0 2px 12px', fontSize: 13.5, lineHeight: 1.45, color: C.ink, marginBottom: 20 } }, modal.row.text),
+                React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 9 } }, modal.kind === 'flag' ? 'Which team' : 'Who owns it'),
+                React.createElement("div", { style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 } }, targets.map(t => {
+                    const on = modal.target === t.key;
+                    return React.createElement("span", { key: t.key, onClick: () => setModal(Object.assign(Object.assign({}, modal), { target: t.key })), style: { cursor: 'pointer', display: 'inline-flex', flexDirection: 'column', gap: 2, border: `1px solid ${on ? (modal.kind === 'flag' ? C.carmine : C.prussian) : C.line}`, background: on ? (modal.kind === 'flag' ? C.carmineSoft : C.prussian10) : C.white, color: on ? (modal.kind === 'flag' ? C.carmine : C.prussian) : C.text, borderRadius: 2, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, fontFamily: FONT } },
+                        React.createElement("span", null, t.label),
+                        React.createElement("span", { style: { fontSize: 10.5, fontWeight: 500, opacity: 0.8 } }, t.sub));
+                })),
+                modal.kind === 'action' ? React.createElement("div", { style: { marginTop: 16, display: 'grid', gridTemplateColumns: '160px 1fr', gap: 14, alignItems: 'center' } },
+                    React.createElement("span", { style: { fontSize: 12.5, color: C.g500 } }, "Due date"),
+                    React.createElement("input", { type: "date", value: modal.due || '', onChange: e => setModal(Object.assign(Object.assign({}, modal), { due: e.target.value })), style: { width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 2, padding: '9px 11px', fontSize: 13.5, fontWeight: 600, color: C.ink0, background: C.white, outline: 'none', fontFamily: FONT } })) : null,
+                React.createElement("div", { style: { marginTop: 18 } },
+                    React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 8 } }, modal.kind === 'flag' ? 'What does that team need to know?' : 'What needs doing?'),
+                    React.createElement("textarea", { value: modal.note || '', onChange: e => setModal(Object.assign(Object.assign({}, modal), { note: e.target.value })), placeholder: modal.row.text, style: { width: '100%', boxSizing: 'border-box', minHeight: 76, resize: 'vertical', border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 13px', fontSize: 13.5, lineHeight: 1.5, color: C.ink0, background: C.white, outline: 'none', fontFamily: FONT } })),
+                React.createElement("div", { style: { marginTop: 18, display: 'flex', gap: 10, background: modal.kind === 'flag' ? C.carmineSoft : C.prussian10, borderLeft: `3px solid ${modal.kind === 'flag' ? C.carmine : C.prussian}`, padding: '11px 13px' } },
+                    React.createElement("span", { style: { fontSize: 12.5, color: modal.kind === 'flag' ? C.carmine : C.prussian, lineHeight: 1.5 } }, modal.kind === 'flag'
+                        ? 'This raises a real flag against the project — it surfaces for that team the next time they open this project in a meeting, and it stays open until acknowledged.'
+                        : 'This raises a real action against the project, owned by that person and visible in their My Actions and the open register.'))),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '16px 22px', background: C.bg, borderTop: `1px solid ${C.line}` } },
+                React.createElement("span", { onClick: () => setModal(null), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '10px 16px', border: `1.5px solid ${C.line}`, borderRadius: 2, fontSize: 13, fontWeight: 600, color: C.g500, background: C.white, fontFamily: FONT } }, "Cancel"),
+                React.createElement("span", { onClick: modal.target ? confirmRoute : undefined, style: { cursor: modal.target ? 'pointer' : 'not-allowed', opacity: modal.target ? 1 : 0.5, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 2, fontSize: 13, fontWeight: 600, color: '#fff', background: modal.kind === 'flag' ? C.carmine : C.prussian, fontFamily: FONT } }, modal.kind === 'flag' ? 'Raise flag' : 'Assign action')))) : null;
+    return React.createElement(React.Fragment, null,
+        header,
+        register,
+        cfg.routingNote ? React.createElement("div", { style: { marginTop: 16, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: C.g500, lineHeight: 1.5 } },
+            React.createElement("span", { style: { width: 3, alignSelf: 'stretch', background: C.prussian20 } }),
+            React.createElement("span", null, cfg.routingNote)) : null,
+        dirty ? React.createElement("div", { style: { position: 'sticky', bottom: 0, zIndex: 6, marginTop: 20, background: C.white, borderTop: `1px solid ${C.line}`, boxShadow: '0 -4px 12px rgba(24,59,79,.08)' } },
+            React.createElement("div", { style: { padding: '14px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' } },
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 11 } },
+                    React.createElement("span", { style: { width: 9, height: 9, borderRadius: '50%', background: C.amber } }),
+                    React.createElement("span", { style: { fontSize: 13, color: C.ink } }, "Unsaved changes on this checklist")),
+                React.createElement("div", { style: { display: 'flex', gap: 10 } },
+                    React.createElement("span", { onClick: discard, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '10px 16px', border: `1.5px solid ${C.line}`, borderRadius: 2, fontSize: 13, fontWeight: 600, color: C.g500, background: C.white, fontFamily: FONT } }, "Discard changes"),
+                    React.createElement("span", { onClick: saving ? undefined : save, style: { cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 2, fontSize: 13, fontWeight: 600, color: '#fff', background: C.carmine, opacity: saving ? 0.7 : 1, fontFamily: FONT } }, lucide('check', 15, 'currentColor', 2.4), saving ? 'Saving…' : 'Save checklist')))) : null,
+        modalEl,
+        toast ? React.createElement("div", { style: { position: 'fixed', left: '50%', bottom: 26, zIndex: 400, transform: 'translateX(-50%)', background: C.prussian, color: '#fff', borderRadius: 2, padding: '12px 20px', fontSize: 13, fontWeight: 600, letterSpacing: '0.03em', boxShadow: '0 18px 48px rgba(24,59,79,.24)', fontFamily: FONT } }, toast) : null);
+}
 // Standard module page — the reusable shell every module specialises. Until a
 // module's fields/schema are designed (workshopped per module), it renders the
 // standard chrome + an empty register placeholder.
@@ -3392,6 +3765,32 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const project = (projects || []).find(p => p.id === projectId);
     const [activeTab, setActiveTab] = React.useState('overview');
     const [activeModule, setActiveModule] = React.useState(null); // a MODULE_DEFS entry when a module page is open
+    const [moduleTemplates, setModuleTemplates] = React.useState([]); // built modules (checklists etc.)
+    const [moduleProgress, setModuleProgress] = React.useState({}); // { module_key: {answered,total,pct,ring} }
+    const loadModules = React.useCallback(async () => {
+        try {
+            const [tplRes, tItemRes, pItemRes] = await Promise.all([
+                sb.from('module_templates').select('*').eq('active', true).order('sort_order'),
+                sb.from('module_template_items').select('module_key, section_index, row_index'),
+                sb.from('project_checklist_items').select('module_key, section_index, row_index, status').eq('project_id', projectId),
+            ]);
+            const tpls = tplRes.data || [];
+            setModuleTemplates(tpls);
+            const totals = {};
+            (tItemRes.data || []).forEach(r => { totals[r.module_key] = (totals[r.module_key] || 0) + 1; });
+            const prog = {};
+            tpls.forEach(t => {
+                const set = CHECKLIST_STATUS_SETS[t.status_set] || CHECKLIST_STATUS_SETS.rag;
+                const mine = (pItemRes.data || []).filter(r => r.module_key === t.module_key && r.status);
+                const total = totals[t.module_key] || 0;
+                const tallies = set.map(st => ({ colour: st.colour, n: mine.filter(r => r.status === st.key).length }));
+                prog[t.module_key] = { answered: mine.length, total: total, pct: total ? Math.round((mine.length / total) * 100) : 0, ring: ringSegments(tallies, total), tallies: tallies };
+            });
+            setModuleProgress(prog);
+        }
+        catch (_) { /* module tables may be absent on older schemas */ }
+    }, [projectId]);
+    React.useEffect(() => { loadModules(); }, [loadModules]);
     const [saving, setSaving] = React.useState(null);
     const [kdOpen, setKdOpen] = React.useState(false);
     const [importMsg, setImportMsg] = React.useState('');
@@ -3547,12 +3946,27 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                 React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3 } }, kdOpen ? 'Collapse' : 'Expand key dates')),
             kdOpen && React.createElement("div", { style: { marginTop: 16 } }, (isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } })))));
     // ----- MODULES tab ---------------------------------------------------------
+    const builtCount = MODULE_DEFS.filter(d => moduleTemplates.some(t => t.module_key === d.key)).length;
     const modulesCard = card(React.createElement(React.Fragment, null,
-        sectionHead('MODULES', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, MODULE_DEFS.length, " modules · in design")),
-        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 } }, MODULE_DEFS.map(def => React.createElement("button", { key: def.key, onClick: () => setActiveModule(def), onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmineMid; e.currentTarget.style.boxShadow = '0 2px 10px rgba(24,59,79,.10)'; }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.boxShadow = 'none'; }, style: { display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', border: `1px solid ${C.line}`, borderRadius: 4, padding: '14px 16px', background: C.white, cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out' } },
-            React.createElement("span", { style: { width: 32, height: 32, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide(def.icon, 16, 'currentColor', 2)),
-            React.createElement("span", { style: { flex: 1, minWidth: 0 } }, React.createElement("span", { style: { display: 'block', fontSize: 14, fontWeight: 600, color: C.ink0 } }, def.label), React.createElement("span", { style: { display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.g500, marginTop: 2 } }, "In design")),
-            lucide('arrow-right', 15, C.g300, 2))))));
+        sectionHead('MODULES', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, builtCount, " of ", MODULE_DEFS.length, " built")),
+        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 } }, MODULE_DEFS.map(def => {
+            const tpl = moduleTemplates.find(t => t.module_key === def.key);
+            const prog = moduleProgress[def.key];
+            const pct = prog ? prog.pct : null;
+            const stateLabel = !tpl ? 'In design' : (pct >= 100 ? 'Complete' : (pct > 0 ? 'In progress' : 'Not started'));
+            return React.createElement("button", { key: def.key, onClick: () => setActiveModule(def), onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmineMid; e.currentTarget.style.boxShadow = '0 2px 10px rgba(24,59,79,.10)'; }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.boxShadow = 'none'; }, style: { display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', border: `1px solid ${C.line}`, borderRadius: 4, padding: '14px 16px', background: C.white, cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out' } },
+                React.createElement("span", { style: { width: 32, height: 32, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide(def.icon, 16, 'currentColor', 2)),
+                React.createElement("span", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("span", { style: { display: 'block', fontSize: 14, fontWeight: 600, color: C.ink0 } }, def.label),
+                    React.createElement("span", { style: { display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: tpl ? (pct >= 100 ? C.green : C.g500) : C.prussian, marginTop: 2 } }, stateLabel),
+                    prog ? React.createElement("span", { style: { display: 'flex', marginTop: 8, height: 4, borderRadius: 1, overflow: 'hidden', background: C.g100 } }, prog.tallies.map((t, i) => t.n ? React.createElement("span", { key: i, style: { height: 4, width: (prog.total ? (t.n / prog.total) * 100 : 0) + '%', background: t.colour } }) : null)) : null),
+                prog ? React.createElement("span", { style: { position: 'relative', width: 40, height: 40, flexShrink: 0 } },
+                    React.createElement("svg", { width: 40, height: 40, viewBox: "0 0 120 120", style: { display: 'block', transform: 'rotate(-90deg)' } },
+                        React.createElement("circle", { cx: 60, cy: 60, r: 52, fill: "none", stroke: C.g100, strokeWidth: 15 }),
+                        prog.ring.map((s, i) => React.createElement("circle", { key: i, cx: 60, cy: 60, r: 52, fill: "none", stroke: s.colour, strokeWidth: 15, strokeDasharray: s.dash, strokeDashoffset: s.offset }))),
+                    React.createElement("span", { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: pct >= 100 ? C.green : C.g500 } }, pct + '%'))
+                    : lucide('arrow-right', 15, C.g300, 2));
+        }))));
     // ----- ACTIONS & FLAGS tab -------------------------------------------------
     const actionsCard = card(React.createElement(React.Fragment, null,
         sectionHead('OPEN ACTIONS', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, myActions.length, " open")),
@@ -3577,7 +3991,14 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                 React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 13, letterSpacing: '0.14em', color: C.carmine, borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 8 } }, "PROJECT DIRECTORY"),
                 React.createElement("div", { style: { fontSize: 12.5, color: C.g500, marginBottom: 20 } }, "External people on this project — clients, client-appointed managers, subcontractors and consultants. These feed the people fields across the modules."),
                 React.createElement(ProjectDirectory, { projectId: projectId, currentUser: currentUser }))),
-            activeTab === 'modules' && (activeModule ? React.createElement(ProjectModulePage, { moduleDef: activeModule, project: project, isSenior: isSenior, onBack: () => setActiveModule(null) }) : modulesCard),
+            activeTab === 'modules' && (activeModule
+                ? (() => {
+                    const tpl = moduleTemplates.find(t => t.module_key === activeModule.key);
+                    if (tpl && tpl.kind === 'checklist')
+                        return React.createElement(ChecklistModule, { key: tpl.module_key, project: project, template: tpl, currentUser: currentUser, users: users, isSenior: isSenior, onBack: () => { setActiveModule(null); loadModules(); }, onDataChanged: () => { loadModules(); if (onActionsChange) onActionsChange(); } });
+                    return React.createElement(ProjectModulePage, { moduleDef: activeModule, project: project, isSenior: isSenior, onBack: () => setActiveModule(null) });
+                })()
+                : modulesCard),
             activeTab === 'actions' && React.createElement(React.Fragment, null, actionsCard, flagsCard)), teamWarn && (() => {
             const outUser = users.find(u => u.id === teamWarn.outgoing);
             const inUser = teamWarn.newUserId ? users.find(u => u.id === teamWarn.newUserId) : null;

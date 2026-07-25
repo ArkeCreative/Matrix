@@ -1,0 +1,150 @@
+-- Checklist module templates — seeded from the Claude Design handoff (4 designed tabs).
+
+delete from public.module_template_items where module_key in ('building-regs','bd','adjudication','close-out');
+
+delete from public.module_templates where module_key in ('building-regs','bd','adjudication','close-out');
+
+insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'building-regs', 'Building Regulations Checklist', 'Building Regs', 'record', 'rag', '{"blurb":"Part-by-part compliance review against the proposed works. This one is a historic record — every answer is evidence, so it is populated rather than skimmed.","registerTitle":"Building regs register","colItem":"Item","colInput":"Notes / evidence","colStatus":"Status","colMeta":"Last updated","inputPlaceholder":"Notes, drawing ref, who confirmed…","modeBadge":"Record","owner":"Justin Charlton","ownerInitials":"JC","ownerRole":"Technical Services Director","signOff":true,"signOffCaption":"Technical sign-off locks the record and stamps it into the project audit trail.","flagOnAttention":true,"defaultTeam":"technical","requireDetail":true,"stage":"building control sign-off","expected":85,"routingNote":"Record tab — an item left as “further info required” is a warning for a team, so it prompts a flag onto that team’s next meeting. Anything owned by one person becomes an action instead.","progressLabel":"Record populated"}'::jsonb, 0 from public.organisations limit 1;
+
+insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
+  ('building-regs',0,'High Risk Buildings',0,'Is the building suspected to be HRB?',null),
+  ('building-regs',0,'High Risk Buildings',1,'Does it meet the criteria: above 18m in height/consist of 7 storeys? Or contain at least 2 residential units?',null),
+  ('building-regs',0,'High Risk Buildings',2,'Has the postcode of the building been check and input into the HRB register? https://www.gov.uk/guidance/find-a-high-rise-residential-building',null),
+  ('building-regs',0,'High Risk Buildings',3,'Has the landlord/building owner confirmed if the building is categorised at higher risk?',null),
+  ('building-regs',0,'High Risk Buildings',4,'Is the demise of the Client deemed to be a separate section and has this been confirmed in writing by the building owner?',null),
+  ('building-regs',1,'Part A: Structure',0,'Do any of the proposed works present a risk to compromising the load bearing capacity of fire resistant structural elements?',null),
+  ('building-regs',1,'Part A: Structure',1,'Is there a requirement for a structural engineer?',null),
+  ('building-regs',1,'Part A: Structure',2,'Are they competent to meet the requirements of Part A with their design/consultation?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',0,'Is the fire alarm standard under BS 5389 and suitable for building/occupants?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',1,'Is the fire alarm to be extended and do we have adequate coverage for the new layout?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',2,'Do we have access control and are overrides in place for relevant doors?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',3,'Are there any dead end situations/corridors? What is our compliance strategy if so?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',4,'Are there any inner rooms created by the new layout? What is our compliance strategy if so?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',5,'Are travel distance limits adhered to? (18m single direction, 45m more than one direction)',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',6,'Are the storey/final exit widths, the number and location of, suitable for occupancy numbers imposed by new layout?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',7,'Are number of compartment exit paths suitable for the height of the building/occupancy/evacuation strategy?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',8,'Are occupancy levels in line with the fire strategy?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',9,'Is fire signage provided compliant with BS 5499?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',10,'Is emergency lighting provided compliant with BS 5266?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',11,'Are cavity barriers/dampers/fire stopping in place where concealed spaces are present and where services pass through fire seperating elements?',null),
+  ('building-regs',2,'Part B1: Means of Warning & Escape',12,'Does building have sprinklers/smoke control/pressurised stairs?',null),
+  ('building-regs',3,'Part B2: Internal Fire Spread (Linings)',0,'Do new wall/ceiling finishes meet minimum requirement of B-s3, d2 for reaction to fire classification?',null),
+  ('building-regs',3,'Part B2: Internal Fire Spread (Linings)',1,'If the information is not readily available has it been requested from the supplier and filed for future reference?',null),
+  ('building-regs',4,'Part B3: Internal Fire Spread (Structure)',0,'Is any of the existing building''s compartmentation affected by the proposed works? (penetrations to walls, floors, ceilings etc.)',null),
+  ('building-regs',4,'Part B3: Internal Fire Spread (Structure)',1,'Are any basebuild core doors to be relocated or replaced? Fire rating to be investigated and maintained',null),
+  ('building-regs',4,'Part B3: Internal Fire Spread (Structure)',2,'Are service risers affected by the works? Must remain sealed and fire resisting',null),
+  ('building-regs',4,'Part B3: Internal Fire Spread (Structure)',3,'Are any new MEP penetrations suitable fire stopped?',null),
+  ('building-regs',5,'Part B4: External Fire Spread',0,'Are we carrying out any external works? (i.e. planters, signage, terrace elements) Do these have any impact on external fire load?',null),
+  ('building-regs',5,'Part B4: External Fire Spread',1,'Are we adjoining or disturbing the façade of the building or any cladding system?',null),
+  ('building-regs',6,'Part B5: Access & Facilities for the Fire Service',0,'Is clear access maintained to fire service equipment: dry risers, wet risers, opening vents, fire alarm panels?',null),
+  ('building-regs',6,'Part B5: Access & Facilities for the Fire Service',1,'Have we ensured that no new construction obstructs fire-fighting shafts or lobbies?',null),
+  ('building-regs',7,'Part F: Ventilation',0,'Does the ventilation strategy remain functional following imposition of the new layout?',null),
+  ('building-regs',7,'Part F: Ventilation',1,'Are new enclosed rooms receiving adequate natural or mechanical ventilation?',null),
+  ('building-regs',7,'Part F: Ventilation',2,'Is there a tea point and does it require extract?',null),
+  ('building-regs',8,'Part G: Sanitation, Hot Water Safety, Water Efficiency',0,'Is the scale and provision of toilets suitable for occupancy levels?',null),
+  ('building-regs',8,'Part G: Sanitation, Hot Water Safety, Water Efficiency',1,'For new tea points or sanitary provisions, is hot water delivery safe?',null),
+  ('building-regs',8,'Part G: Sanitation, Hot Water Safety, Water Efficiency',2,'Is water efficiency achieved with chosen sanitary fittings?',null),
+  ('building-regs',9,'Part H: Drainage & Waste Disposal',0,'Does new drainage (for tea points, toilets etc.) have correct falls and venting?',null),
+  ('building-regs',9,'Part H: Drainage & Waste Disposal',1,'Are any penetrations created by new drainage through fire resisting construction properly sealed and compliant?',null),
+  ('building-regs',9,'Part H: Drainage & Waste Disposal',2,'Is the waste route compatible with the location of existing foul drainage? (location of soil pipes)',null),
+  ('building-regs',10,'Part K: Protection from Falling, Collision & Impact',0,'Are any new balustrades, barriers, slab edges or stair modifications compliant in height and load?',null),
+  ('building-regs',10,'Part K: Protection from Falling, Collision & Impact',1,'Are glazing and internal partitions in risk zones impact-safe?',null),
+  ('building-regs',10,'Part K: Protection from Falling, Collision & Impact',2,'Do circulation routes avoid creating collision hazards (e.g. door swings, narrow pinch points?)',null),
+  ('building-regs',10,'Part K: Protection from Falling, Collision & Impact',3,'Have we allowed for internal glazing to have manifestation? Is the design confirmed?',null),
+  ('building-regs',10,'Part K: Protection from Falling, Collision & Impact',4,'If the proposed works include a new staircase, does the rise/going, number of risers, landings etc. comply with Part K?',null),
+  ('building-regs',11,'Part L: Conservation of Fuel & Power',0,'What is the strategy for lighting controls?',null),
+  ('building-regs',11,'Part L: Conservation of Fuel & Power',1,'Are new mechanical components compliant with energy performance standards?',null),
+  ('building-regs',11,'Part L: Conservation of Fuel & Power',2,'Are we affecting the thermal performance of any element of the existing building and what is the strategy for maintaining the standard?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',0,'Is the accessible WC provision sufficient?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',1,'Are any new changes in level compliant with Part M?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',2,'Are door widths compliant with Part M and are there any deviations (smaller doors to cupboards etc.)?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',3,'Do we have 300mm clear leading edge to all new doors?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',4,'Has the scheme been designed to ensure minimum 30 points in LRV between finishes?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',5,'Are we installing a new reception desk and what is the compliance strategy with Part M? If to be included in access statement please state and confirm that the Client has been made aware',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',6,'Are we installing new Tea Points and what is the compliance strategy with Part M? If to be included in access statement please state and confirm that the Client has been made aware',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',7,'Are all new controls to be installed between 450-1200mm from finished floor level?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',8,'Are we installing any new accessible changing/shower or WC facilties and have they been designed to comply with Part M?',null),
+  ('building-regs',12,'Part M: Access to and Use of Buildings',9,'Do we require an access statement to be drafted for signature?',null)
+) as v(module_key, section_index, section_title, row_index, text, who);
+
+insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'bd', 'BD Checklist', 'BD Checklist', 'reference', 'yesno', '{"blurb":"The questions to have answered before an opportunity moves on. A team reference — read it at the stage, not a register to police.","registerTitle":"Initial meeting reference","colItem":"Question","colInput":"Answer","colStatus":"Covered","colMeta":"Last updated","inputPlaceholder":"What did the client say…","modeBadge":"Reference","owner":"Ellie Marsden","ownerInitials":"EM","ownerRole":"Business Development","signOff":false,"flagOnAttention":false,"defaultTeam":"pre-con","requireDetail":false,"stage":"first meeting","expected":60,"routingNote":"Reference tab — nothing routes out of here by default. It exists so the team can ask “have we covered this yet at this stage?” Raise a flag or action from a row only if you choose to.","progressLabel":"Questions covered"}'::jsonb, 1 from public.organisations limit 1;
+
+insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
+  ('bd',0,'Initial Meeting Questions',0,'Is the property a high risk building?',null),
+  ('bd',0,'Initial Meeting Questions',1,'Do we have a copy of the fit-out guide and has this been checked?',null),
+  ('bd',0,'Initial Meeting Questions',2,'What are the Client’s property plans?',null),
+  ('bd',0,'Initial Meeting Questions',3,'What is the key driver?',null),
+  ('bd',0,'Initial Meeting Questions',4,'Who are the decision makers and project team?',null),
+  ('bd',0,'Initial Meeting Questions',5,'What is the timing?',null),
+  ('bd',1,'Property Search',0,'When is the Client’s lease expiry/break date?',null),
+  ('bd',1,'Property Search',1,'Have they done any test fits?',null),
+  ('bd',1,'Property Search',2,'Have they started their property search?',null),
+  ('bd',1,'Property Search',3,'Have they viewed any offices that are of interest?',null),
+  ('bd',1,'Property Search',4,'Who is the property agent?',null),
+  ('bd',1,'Property Search',5,'Are they interested in workplace consultancy?',null),
+  ('bd',1,'Property Search',6,'What is the ideal building and location?',null),
+  ('bd',2,'Competition & Context',0,'Who is the incumbent?',null),
+  ('bd',2,'Competition & Context',1,'Who else are they speaking to?',null),
+  ('bd',2,'Competition & Context',2,'Have they worked with other fit-out companies in the past?',null),
+  ('bd',2,'Competition & Context',3,'Are they using a project manager or have they in the past?',null),
+  ('bd',2,'Competition & Context',4,'What is the Client’s experience of dealing with relocation/refurb?',null),
+  ('bd',3,'Social Proof',0,'Have we worked in or planned the building they are looking at?',null),
+  ('bd',3,'Social Proof',1,'What industry does the Client work in?',null),
+  ('bd',3,'Social Proof',2,'Current/proposed SQFT',null),
+  ('bd',3,'Social Proof',3,'Is staying put an option?',null)
+) as v(module_key, section_index, section_title, row_index, text, who);
+
+insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'adjudication', 'Adjudication Checklist', 'Adjudication', 'record', 'rag', '{"blurb":"Completed by PM/CM for pre-adjudication, then reviewed through to adjudication. Package by package, does the cost cover it?","registerTitle":"Adjudication register","colItem":"Item","colInput":"Response","colStatus":"Status","colMeta":"Last updated","inputPlaceholder":"Response…","modeBadge":"Record","owner":"Andy Demetriou","ownerInitials":"AD","ownerRole":"Commercial Manager","signOff":true,"signOffCaption":"Commercial sign-off marks the checklist complete for the adjudication meeting.","flagOnAttention":true,"defaultTeam":"pre-con","requireDetail":true,"stage":"pre-adjudication","expected":90,"routingNote":"Record tab — “further info required” is deliberately not a resting state: it means a team needs warning, so the row prompts a flag onto that team’s next meeting agenda. The pre-adjudication agenda is built from exactly those rows.","progressLabel":"Items resolved"}'::jsonb, 2 from public.organisations limit 1;
+
+insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
+  ('adjudication',0,'Space Planning & Design Consultancy',0,'External designer fees covered in cost sheet',null),
+  ('adjudication',0,'Space Planning & Design Consultancy',1,'All external consultant fees covered (fire engineer, façade consultant)',null),
+  ('adjudication',0,'Space Planning & Design Consultancy',2,'Acoustic ER requirements? If so acoustic consultant to be appointed',null),
+  ('adjudication',0,'Space Planning & Design Consultancy',3,'Does the project require an EPC (or SBEM)?',null),
+  ('adjudication',0,'Space Planning & Design Consultancy',4,'Measured survey / matterport completed',null),
+  ('adjudication',0,'Space Planning & Design Consultancy',5,'Building control instructed & schedule of comments received and reviewed',null),
+  ('adjudication',0,'Space Planning & Design Consultancy',6,'LTA submitted / approval status?',null),
+  ('adjudication',1,'Site Preliminaries & Supervision',0,'Have overall site requirements been reviewed by delivery team?',null),
+  ('adjudication',1,'Site Preliminaries & Supervision',1,'Have site set up costs been reviewed by the delivery team?',null),
+  ('adjudication',1,'Site Preliminaries & Supervision',2,'Has the fit-out guide been reviewed — additional prelims may be required',null),
+  ('adjudication',1,'Site Preliminaries & Supervision',3,'Are waste clearance costs enough?',null),
+  ('adjudication',1,'Site Preliminaries & Supervision',4,'Asbestos survey if an R&D survey is not available',null),
+  ('adjudication',1,'Site Preliminaries & Supervision',5,'Fire watch if required',null),
+  ('adjudication',2,'Partitioning',0,'Has the contractor been issued the take-offs, cost plan, drawings and finishes schedule for review?',null),
+  ('adjudication',2,'Partitioning',1,'Has the correct partition system been allowed for against the ER specification and acoustic performance?',null),
+  ('adjudication',2,'Partitioning',2,'Do any new partitions have shadow gap details? If so do costs allow',null),
+  ('adjudication',2,'Partitioning',3,'Do we need a deflection head? If so do costs allow',null),
+  ('adjudication',2,'Partitioning',4,'Are any walls fire rated? Has the fire strategy been reviewed?',null),
+  ('adjudication',2,'Partitioning',5,'Have we agreed quants/costs for fire stopping, acoustic stopping and builders work',null),
+  ('adjudication',3,'Heating, Ventilation & Air Conditioning',0,'Commissioning prov sum costs agreed as fixed sums for adjudication',null),
+  ('adjudication',3,'Heating, Ventilation & Air Conditioning',1,'Tech subs submitted by pre-con and agreed with M&E consultant before construction starts',null),
+  ('adjudication',3,'Heating, Ventilation & Air Conditioning',2,'Fire dampers where any new services cross fire barriers',null),
+  ('adjudication',3,'Heating, Ventilation & Air Conditioning',3,'Allowance for relocation of Fan Coil Units that cross above any new partition walls',null),
+  ('adjudication',3,'Heating, Ventilation & Air Conditioning',4,'Has a mechanical power schedule been done for the electrical PM and are costs in the electrical quote?',null),
+  ('adjudication',3,'Heating, Ventilation & Air Conditioning',5,'Have all provisional sums been fixed',null),
+  ('adjudication',4,'Miscellaneous',0,'Tenant fit-out guide sent to contractors and fully understood',null),
+  ('adjudication',4,'Miscellaneous',1,'Contractors quoted against agreed programme dates and aware of LAD value',null),
+  ('adjudication',4,'Miscellaneous',2,'Check that all items on the finishes schedule are not discontinued and on acceptable lead times',null),
+  ('adjudication',4,'Miscellaneous',3,'Has a clarifications document been produced',null),
+  ('adjudication',4,'Miscellaneous',4,'Is there a requirement to produce a derogation schedule?',null)
+) as v(module_key, section_index, section_title, row_index, text, who);
+
+insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'close-out', '70–100% Close Out', '70% Close Out', 'signoff', 'complete', '{"blurb":"The actions that must be running from 70% through to handover, each against the discipline responsible for it.","registerTitle":"Close out actions","colItem":"Action","colInput":"Comment","colStatus":"Status","colMeta":"Last updated","inputPlaceholder":"Comment…","modeBadge":"Sign-off","owner":"Shaun McGuinness","ownerInitials":"SM","ownerRole":"Head of Projects","signOff":true,"signOffCaption":"MD sign-off closes the project out and releases the post-project review.","flagOnAttention":false,"defaultTeam":"pre-con","requireDetail":false,"stage":"70% complete","expected":70,"routingNote":"Sign-off tab — each row carries a responsible discipline, so a blocked row becomes an action against that individual rather than a flag to a whole team.","progressLabel":"Actions complete"}'::jsonb, 3 from public.organisations limit 1;
+
+insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
+  ('close-out',0,'Client & Commercial',0,'CEO/COO meeting with Client arranged','MD'),
+  ('close-out',0,'Client & Commercial',1,'Gifts','PM'),
+  ('close-out',0,'Client & Commercial',2,'Project to be fully invoiced and Client to pay in full','PM'),
+  ('close-out',0,'Client & Commercial',3,'All invoice disputes to be resolved','PM'),
+  ('close-out',0,'Client & Commercial',4,'Have we requested a client reference letter or testimonial?','MD'),
+  ('close-out',1,'Delivery & Handover',0,'Detailed close out programme','PM'),
+  ('close-out',1,'Delivery & Handover',1,'Ensure Client has been introduced to the Aftercare Manager','PM'),
+  ('close-out',1,'Delivery & Handover',2,'Have you started gathering information for the Client supplied PC checklist?','PM'),
+  ('close-out',1,'Delivery & Handover',3,'Building Control tracker resolved (apart from commissioning, certifications and duty holder forms)','PM'),
+  ('close-out',1,'Delivery & Handover',4,'Book snagging review in anticipation of handover','PM'),
+  ('close-out',1,'Delivery & Handover',5,'As Built survey arranged','TD'),
+  ('close-out',2,'Marketing & Review',0,'Photography to be booked in','GD'),
+  ('close-out',2,'Marketing & Review',1,'LinkedIn post put together?','GD'),
+  ('close-out',2,'Marketing & Review',2,'Online survey issued to Client for feedback?','GD'),
+  ('close-out',2,'Marketing & Review',3,'Post Project Review and Lessons Learnt meeting to be booked in','MD')
+) as v(module_key, section_index, section_title, row_index, text, who);
