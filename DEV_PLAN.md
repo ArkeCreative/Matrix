@@ -94,7 +94,16 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
     `project_contacts` table (org-scoped RLS + set_org/touch triggers; SQL at
     `db/migrations/project_directory_contacts.sql`, **applied to live DB**). `ProjectDirectory`
     component: two groups (Client/Building, Subcontractors & Consultants), add/edit/remove rows
-    (Role · Company · Address · Contact · Tel · Email), role suggestions from the workbook taxonomy.
+    (Role · Company · Address · Contact · Tel · Email). **Role is an inline dropdown** (chevron, flush
+    with the row — same treatment as the project-detail status control) over the workbook taxonomy,
+    with "Other…" for custom roles.
+    **Company memory:** the same subs recur across projects, so the Company field suggests firms used
+    before and pre-fills that firm's blank company-level details (address/tel/role); the *person* is
+    never assumed — contacts differ between jobs — but once a known contact name is picked their
+    tel/email fill in. Auto-filled cells tint briefly so the fill is visible, not magic.
+    **Seed:** `seed/2026-07-25-project-directory-history.sql` (applied) — 143 subcontractor + 52
+    client-side rows over 19 projects, 10 recurring firms with rotating contacts (e.g. Lineform
+    Interiors on 14 projects across 3 people) so the auto-fill has real history to work against.
     **Next:** wire directory contacts into module people-fields (pickers) as modules are built.
   - ⬜ Per module: design → typed table + schema → specialise the register → audit trigger into the hub.
 
