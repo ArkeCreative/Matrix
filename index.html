@@ -3290,6 +3290,74 @@ function ProjectModulePage({ moduleDef, project, isSenior, onBack }) {
                 React.createElement("div", { style: { fontSize: 14, color: C.g500, marginBottom: 6 } }, moduleDef.label + " is being designed."),
                 React.createElement("div", { style: { fontSize: 12.5, color: C.mist, maxWidth: 460, margin: '0 auto', lineHeight: 1.5 } }, "Its fields, workflow and schema are workshopped per module and wired in as we go. The register — and its activity feed into the notifications hub — will populate here once built."))));
 }
+// ============================================================
+// PROJECT DIRECTORY (Phase 4) — external people (client-side + subs/consultants)
+// per project. Feeds module people-fields the way project info feeds every tab.
+// ============================================================
+const DIRECTORY_GROUPS = [
+    { key: 'client', label: 'Client / Building', roles: ['Client', 'Client PM', 'Building Manager', 'Facilities Manager'] },
+    { key: 'subcontractor', label: 'Subcontractors & Consultants', roles: ['Health and Safety', 'Building Control', 'Electrical', 'Fire Alarm', 'Data Cabling', 'Partitions, Doors & Ceilings', 'Joinery', 'Mechanical & Plumbing', 'Flooring', 'Audio Visual', 'Decorations', 'Fabric Panelling', 'Acoustic Wall Treatments', 'Acoustician', 'Structural Engineer', 'Access Control', 'Blinds & Curtains', 'Sprinklers', 'Manifestation & Signage'] },
+];
+const DIR_COLS = '150px minmax(130px,1fr) minmax(130px,1fr) 140px 112px minmax(150px,1fr) 30px';
+function ProjectDirectory({ projectId, currentUser }) {
+    const [contacts, setContacts] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    React.useEffect(() => {
+        let on = true;
+        (async () => {
+            try {
+                const { data } = await sb.from('project_contacts').select('*').eq('project_id', projectId).order('contact_group', { ascending: true }).order('sort_order', { ascending: true });
+                if (on) setContacts(data || []);
+            }
+            catch (_) { /* table may be absent on older schemas */ }
+            if (on) setLoading(false);
+        })();
+        return () => { on = false; };
+    }, [projectId]);
+    const addRow = async (group) => {
+        const maxSort = contacts.filter(c => c.contact_group === group).reduce((m, c) => Math.max(m, c.sort_order || 0), 0);
+        try {
+            const { data, error } = await sb.from('project_contacts').insert({ project_id: projectId, contact_group: group, role: '', sort_order: maxSort + 1, created_by: currentUser ? currentUser.id : null }).select().single();
+            if (error) throw error;
+            setContacts(prev => [...prev, data]);
+        }
+        catch (e) { alert('Failed to add row: ' + e.message); }
+    };
+    const updateField = async (id, field, value) => {
+        setContacts(prev => prev.map(c => c.id === id ? Object.assign(Object.assign({}, c), { [field]: value }) : c));
+        try { await sb.from('project_contacts').update({ [field]: value }).eq('id', id); }
+        catch (e) { alert('Save failed: ' + e.message); }
+    };
+    const remove = async (id) => {
+        if (!window.confirm('Remove this contact from the directory?')) return;
+        setContacts(prev => prev.filter(c => c.id !== id));
+        try { await sb.from('project_contacts').delete().eq('id', id); }
+        catch (e) { alert('Delete failed: ' + e.message); }
+    };
+    const cellInput = (c, field, placeholder, listId) => React.createElement("input", { defaultValue: c[field] || '', placeholder: placeholder, list: listId, onBlur: e => { if (e.target.value !== (c[field] || '')) updateField(c.id, field, e.target.value); }, style: { width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 2, padding: '7px 9px', fontSize: 13, fontFamily: FONT, color: C.ink0, background: '#fff', outline: 'none' } });
+    const headerCell = (t) => React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.g500 } }, t);
+    if (loading) return React.createElement("div", { style: { padding: 30, textAlign: 'center', color: C.mist } }, "Loading directory…");
+    return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 20 } }, DIRECTORY_GROUPS.map(group => {
+        const rows = contacts.filter(c => c.contact_group === group.key);
+        return React.createElement("div", { key: group.key, style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, boxShadow: '0 1px 2px rgba(24,59,79,.06)', overflow: 'hidden' } },
+            React.createElement("datalist", { id: 'dir-roles-' + group.key }, group.roles.map(r => React.createElement("option", { key: r, value: r }))),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${C.line}` } },
+                React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.carmine } }, group.label),
+                React.createElement("button", { onClick: () => addRow(group.key), style: { padding: '7px 13px', background: C.carmine, color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: 'pointer' } }, "+ Add row")),
+            rows.length === 0
+                ? React.createElement("div", { style: { padding: '28px 20px', textAlign: 'center', color: C.mist, fontSize: 13 } }, "No " + group.label.toLowerCase() + " added yet — use “+ Add row”.")
+                : React.createElement(React.Fragment, null,
+                    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: DIR_COLS, gap: 8, padding: '9px 20px', background: C.g50, borderBottom: `1px solid ${C.line}` } }, headerCell('Role'), headerCell('Company'), headerCell('Address'), headerCell('Contact name'), headerCell('Tel'), headerCell('Email'), React.createElement("span", null)),
+                    rows.map(c => React.createElement("div", { key: c.id, style: { display: 'grid', gridTemplateColumns: DIR_COLS, gap: 8, padding: '8px 20px', borderBottom: `1px solid ${C.line}`, alignItems: 'center' } },
+                        cellInput(c, 'role', 'Role / discipline', 'dir-roles-' + group.key),
+                        cellInput(c, 'company', 'Company'),
+                        cellInput(c, 'address', 'Address'),
+                        cellInput(c, 'contact_name', 'Contact name'),
+                        cellInput(c, 'tel', 'Tel'),
+                        cellInput(c, 'email', 'Email'),
+                        React.createElement("button", { onClick: () => remove(c.id), title: "Remove", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 2, cursor: 'pointer', color: C.g300, padding: 0 }, onMouseEnter: e => e.currentTarget.style.color = C.carmine, onMouseLeave: e => e.currentTarget.style.color = C.g300 }, lucide('x', 15, 'currentColor', 2))))));
+    }));
+}
 function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onSaveTeam, onProjectSave, onActionsChange, onKeyDatesChange, onBack }) {
     const project = (projects || []).find(p => p.id === projectId);
     const [activeTab, setActiveTab] = React.useState('overview');
@@ -3392,7 +3460,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         plannedCard('Open RFIs', '—', 'Planned', false),
         plannedCard('Long lead', '—', 'Planned', false));
     // ----- TABS ----------------------------------------------------------------
-    const TABS = [['overview', 'OVERVIEW'], ['modules', 'MODULES'], ['actions', 'ACTIONS & FLAGS']];
+    const TABS = [['overview', 'OVERVIEW'], ['directory', 'DIRECTORY'], ['modules', 'MODULES'], ['actions', 'ACTIONS & FLAGS']];
     const tabStrip = React.createElement("div", { style: { display: 'flex', borderBottom: `1px solid ${C.line}`, marginBottom: 22 } }, TABS.map(([key, label]) => React.createElement("span", { key: key, onClick: () => setActiveTab(key), style: { display: 'inline-flex', alignItems: 'center', fontFamily: FONT, fontWeight: activeTab === key ? 700 : 600, fontSize: 13, letterSpacing: '0.12em', color: activeTab === key ? C.carmine : C.g500, padding: '12px 4px', borderBottom: activeTab === key ? `3px solid ${C.carmine}` : '3px solid transparent', marginBottom: -1, marginRight: 36, cursor: 'pointer', transition: `color 240ms ${EASE}` } }, label, (key === 'actions' && (myActions.length + myFlags.length) > 0) && React.createElement("span", { style: { marginLeft: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9999, background: activeTab === key ? C.carmine : C.g100, color: activeTab === key ? C.white : C.g700, fontSize: 10, fontWeight: 700, letterSpacing: 0 } }, myActions.length + myFlags.length))));
     // ----- PROJECT INFORMATION card --------------------------------------------
     const statusControl = isSenior
@@ -3475,6 +3543,10 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             plannedStrip,
             tabStrip,
             activeTab === 'overview' && React.createElement(React.Fragment, null, React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 } }, infoCard, teamCard), constructionCard),
+            activeTab === 'directory' && card(React.createElement(React.Fragment, null,
+                React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 13, letterSpacing: '0.14em', color: C.carmine, borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 8 } }, "PROJECT DIRECTORY"),
+                React.createElement("div", { style: { fontSize: 12.5, color: C.g500, marginBottom: 20 } }, "External people on this project — clients, client-appointed managers, subcontractors and consultants. These feed the people fields across the modules."),
+                React.createElement(ProjectDirectory, { projectId: projectId, currentUser: currentUser }))),
             activeTab === 'modules' && (activeModule ? React.createElement(ProjectModulePage, { moduleDef: activeModule, project: project, isSenior: isSenior, onBack: () => setActiveModule(null) }) : modulesCard),
             activeTab === 'actions' && React.createElement(React.Fragment, null, actionsCard, flagsCard)), teamWarn && (() => {
             const outUser = users.find(u => u.id === teamWarn.outgoing);

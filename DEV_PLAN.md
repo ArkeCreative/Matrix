@@ -70,18 +70,33 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 
 ### Phase 4 — Project detail pane build-out  *(large, iterative — in progress)*
 - ✅ **4a / 4c** merged/live (see DONE above).
-- ↪ **4b — Audit trail → per-user activity** was expanded by Tom into the permission-scoped
-  Register & activity hub and **folded into Phase 5** (below).
-- ⬜ **Modules build-out** — the 8 modules (Building Regs, Adjudication, Risk Register, Long Lead
-  Items, RFI Schedule, Budget Movement, Close Out, Lessons Learned). **Workflow:** Tom workshops each
-  module's design in Claude Design and passes it back; each is **custom** (its own fields/info types)
-  and needs **its own schema** to be functional. Build one at a time.
-  - ✅ **Standard module-page skeleton** in place: the MODULES tab is now 8 clickable cards
-    (`MODULE_DEFS`) opening a reusable `ProjectModulePage` shell (back nav, title + "In design" pill,
-    blurb, stat tiles, register table shell + empty state). Each module specialises this shell.
-  - ⬜ Per module: design (Claude Design) → typed table + schema → specialise the register (columns,
-    add/edit form, statuses) → audit trigger so its events flow into the hub (e.g. `rfi-raised` /
-    `rfi-answered`; a "Modules" hub category may be added). No per-module data yet.
+- ↪ **4b — Audit trail → per-user activity** was expanded into the Register & activity hub (Phase 5).
+- **Source of truth for the modules:** Tom's Excel process matrix `CLIENT_NAME_Arke_Process_Matrix.xlsm`
+  (29 tabs). Examined — the tabs collapse into a **handful of reusable module _types_**, not 29 bespoke
+  builds:
+  - **Overview** (Summary tab — have it) · **Directory** (Project Directory tab — built, below)
+  - **Checklist** type: BD / Designer / Technical Designer / Graphics / Building Regs / Legal Process /
+    PM Checklist / Adjudication Checklist / Legal Kick Off / WPB Kick Off / Onsite Handover / 70% Close
+    Out / Accountant — task rows with action-by · date · response · traffic-light status.
+  - **Register/log** type: RFI Schedule / Risk Register / Long Lead Items / Budget Movement Log /
+    Quotes / Additional Sales Opportunities / Schedule of Derogation — typed rows, own columns each.
+  - **Agenda/meeting** type: Kick Off / Pre-Adjudication / Adjudication agendas — overlaps our Meetings.
+  - **Documents/links** type: Hyperlink Page (K-drive links).
+  - **Programme**: Programme Links → extend our programme component into a **work-span (date-range)**
+    view — "Partitions – first fix" etc., not just point key-dates.
+  - **Form/sign-off**: Bond Application, Leadership Sign Off.
+  - Decision: build **~6 reusable module types**, each Excel tab a **configured instance** (own
+    columns/fields/statuses); Tom workshops each in Claude Design, passes it back. Every tab shares the
+    auto-fed **Project Information** header (from the project record) + **Directory** people.
+  - ✅ **Standard module-page skeleton** in place (`MODULE_DEFS` + `ProjectModulePage`). *(The 8-name
+    `MODULE_DEFS` list will be reconciled to the full tab set as types are built.)*
+  - ✅ **Project Directory** — new dashboard tab (Overview · **Directory** · Modules · Actions & Flags).
+    `project_contacts` table (org-scoped RLS + set_org/touch triggers; SQL at
+    `db/migrations/project_directory_contacts.sql`, **applied to live DB**). `ProjectDirectory`
+    component: two groups (Client/Building, Subcontractors & Consultants), add/edit/remove rows
+    (Role · Company · Address · Contact · Tel · Email), role suggestions from the workbook taxonomy.
+    **Next:** wire directory contacts into module people-fields (pickers) as modules are built.
+  - ⬜ Per module: design → typed table + schema → specialise the register → audit trigger into the hub.
 
 ### Phase 5 — Register & activity: notifications hub + site-wide audit  *(large — in progress, branch `claude/phase-5-notifications-hub`)*
 Reworked with Tom from a pure notifications hub into a **"Register & activity"** page (nav tab) with
