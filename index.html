@@ -3247,9 +3247,50 @@ function SecureProjectModal({ project, users, currentUser, onClose, onSave }) {
 // Drill-in surface from the home projects page. Tabs structure
 // laid down for future modules; this build ships the Team tab.
 // ============================================================
+// ============================================================
+// PROJECT MODULES (Phase 4) — the 8 planned modules. Each is designed and
+// schema'd per module and wired in as we go; this is the shared skeleton
+// (standard module page) they all slot into.
+// ============================================================
+const MODULE_DEFS = [
+    { key: 'building-regs', label: 'Building Regs', icon: 'check-square', singular: 'reg item', blurb: 'Building regulation submissions, approvals and sign-offs.' },
+    { key: 'adjudication', label: 'Adjudication', icon: 'flag', singular: 'matter', blurb: 'Adjudication matters and their status.' },
+    { key: 'risk-register', label: 'Risk Register', icon: 'flag', singular: 'risk', blurb: 'Project risks with likelihood, impact, owner and mitigation.' },
+    { key: 'long-lead', label: 'Long Lead Items', icon: 'calendar-plus', singular: 'item', blurb: 'Procurement items with long lead times and order-by dates.' },
+    { key: 'rfi-schedule', label: 'RFI Schedule', icon: 'message-square', singular: 'RFI', blurb: 'Requests for information — raised, answered and closed.' },
+    { key: 'budget-movement', label: 'Budget Movement', icon: 'arrow-right', singular: 'movement', blurb: 'Budget variations and movements against the baseline.' },
+    { key: 'close-out', label: 'Close Out', icon: 'check', singular: 'task', blurb: 'Project close-out checklist and handover items.' },
+    { key: 'lessons-learned', label: 'Lessons Learned', icon: 'message-square', singular: 'lesson', blurb: 'Lessons captured for future projects.' },
+];
+// Standard module page — the reusable shell every module specialises. Until a
+// module's fields/schema are designed (workshopped per module), it renders the
+// standard chrome + an empty register placeholder.
+function ProjectModulePage({ moduleDef, project, isSenior, onBack }) {
+    const cols = ['Ref', 'Detail', 'Owner', 'Status', 'Updated'];
+    const miniTile = (label) => React.createElement("div", { style: { flex: 1, background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: '14px 18px' } },
+        React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, label),
+        React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 26, color: C.g300, lineHeight: 1, marginTop: 8 } }, "—"));
+    return React.createElement(React.Fragment, null,
+        React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: C.carmine, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0, marginBottom: 14 } }, lucide('arrow-left', 14, 'currentColor', 2), "All modules"),
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6 } },
+            React.createElement("span", { style: { width: 40, height: 40, borderRadius: 8, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide(moduleDef.icon, 20, 'currentColor', 2)),
+            React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 22, color: C.ink0 } }, moduleDef.label),
+            React.createElement("span", { style: { fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.prussian, background: C.prussian10, border: `1px solid ${C.prussian20}`, borderRadius: 3, padding: '3px 8px' } }, "In design")),
+        React.createElement("div", { style: { fontSize: 13, color: C.g500, marginBottom: 20 } }, moduleDef.blurb),
+        React.createElement("div", { style: { display: 'flex', gap: 14, marginBottom: 18 } }, miniTile('Open'), miniTile('In progress'), miniTile('Closed')),
+        React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.line}` } },
+                React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.12em', color: C.carmine, textTransform: 'uppercase' } }, moduleDef.label + " register"),
+                isSenior ? React.createElement("button", { disabled: true, title: "This module is being designed", style: { padding: '8px 14px', background: C.g100, color: C.g500, border: 'none', borderRadius: 3, fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: 'not-allowed' } }, "+ New " + moduleDef.singular) : null),
+            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: `repeat(${cols.length}, 1fr)`, gap: 14, padding: '10px 20px', background: C.g50, borderBottom: `1px solid ${C.line}` } }, cols.map(c => React.createElement("span", { key: c, style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500 } }, c))),
+            React.createElement("div", { style: { padding: '48px 24px', textAlign: 'center' } },
+                React.createElement("div", { style: { fontSize: 14, color: C.g500, marginBottom: 6 } }, moduleDef.label + " is being designed."),
+                React.createElement("div", { style: { fontSize: 12.5, color: C.mist, maxWidth: 460, margin: '0 auto', lineHeight: 1.5 } }, "Its fields, workflow and schema are workshopped per module and wired in as we go. The register — and its activity feed into the notifications hub — will populate here once built."))));
+}
 function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onSaveTeam, onProjectSave, onActionsChange, onKeyDatesChange, onBack }) {
     const project = (projects || []).find(p => p.id === projectId);
     const [activeTab, setActiveTab] = React.useState('overview');
+    const [activeModule, setActiveModule] = React.useState(null); // a MODULE_DEFS entry when a module page is open
     const [saving, setSaving] = React.useState(null);
     const [kdOpen, setKdOpen] = React.useState(false);
     const [importMsg, setImportMsg] = React.useState('');
@@ -3405,10 +3446,12 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                 React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3 } }, kdOpen ? 'Collapse' : 'Expand key dates')),
             kdOpen && React.createElement("div", { style: { marginTop: 16 } }, (isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } })))));
     // ----- MODULES tab ---------------------------------------------------------
-    const PLANNED_MODULES = ['Building Regs', 'Adjudication', 'Risk Register', 'Long Lead Items', 'RFI Schedule', 'Budget Movement', 'Close Out', 'Lessons Learned'];
     const modulesCard = card(React.createElement(React.Fragment, null,
-        sectionHead('MODULE STATUS', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, PLANNED_MODULES.length, " modules · all planned")),
-        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 } }, PLANNED_MODULES.map(m => React.createElement("div", { key: m, style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: `1px dashed ${C.g300}`, borderRadius: 2, padding: '14px 16px' } }, React.createElement("span", { style: { fontSize: 14, color: C.ink0 } }, m), React.createElement("span", { style: { fontWeight: 600, fontSize: 10, letterSpacing: '0.1em', color: C.g500 } }, "PLANNED"))))));
+        sectionHead('MODULES', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, MODULE_DEFS.length, " modules · in design")),
+        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 } }, MODULE_DEFS.map(def => React.createElement("button", { key: def.key, onClick: () => setActiveModule(def), onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmineMid; e.currentTarget.style.boxShadow = '0 2px 10px rgba(24,59,79,.10)'; }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.boxShadow = 'none'; }, style: { display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', border: `1px solid ${C.line}`, borderRadius: 4, padding: '14px 16px', background: C.white, cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out' } },
+            React.createElement("span", { style: { width: 32, height: 32, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide(def.icon, 16, 'currentColor', 2)),
+            React.createElement("span", { style: { flex: 1, minWidth: 0 } }, React.createElement("span", { style: { display: 'block', fontSize: 14, fontWeight: 600, color: C.ink0 } }, def.label), React.createElement("span", { style: { display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.g500, marginTop: 2 } }, "In design")),
+            lucide('arrow-right', 15, C.g300, 2))))));
     // ----- ACTIONS & FLAGS tab -------------------------------------------------
     const actionsCard = card(React.createElement(React.Fragment, null,
         sectionHead('OPEN ACTIONS', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, myActions.length, " open")),
@@ -3429,7 +3472,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             plannedStrip,
             tabStrip,
             activeTab === 'overview' && React.createElement(React.Fragment, null, React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 } }, infoCard, teamCard), constructionCard),
-            activeTab === 'modules' && modulesCard,
+            activeTab === 'modules' && (activeModule ? React.createElement(ProjectModulePage, { moduleDef: activeModule, project: project, isSenior: isSenior, onBack: () => setActiveModule(null) }) : modulesCard),
             activeTab === 'actions' && React.createElement(React.Fragment, null, actionsCard, flagsCard)), teamWarn && (() => {
             const outUser = users.find(u => u.id === teamWarn.outgoing);
             const inUser = teamWarn.newUserId ? users.find(u => u.id === teamWarn.newUserId) : null;

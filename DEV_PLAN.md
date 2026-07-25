@@ -72,9 +72,16 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 - ✅ **4a / 4c** merged/live (see DONE above).
 - ↪ **4b — Audit trail → per-user activity** was expanded by Tom into the permission-scoped
   Register & activity hub and **folded into Phase 5** (below).
-- ⬜ **Modules build-out** — the 8 "PLANNED" placeholder tiles (Building Regs, Adjudication, Risk
-  Register, Long Lead Items, RFI Schedule, Budget Movement, Close Out, Lessons Learned). Each is a
-  real feature needing its own schema + design — **dedicated per-module scoping pass, own session.**
+- ⬜ **Modules build-out** — the 8 modules (Building Regs, Adjudication, Risk Register, Long Lead
+  Items, RFI Schedule, Budget Movement, Close Out, Lessons Learned). **Workflow:** Tom workshops each
+  module's design in Claude Design and passes it back; each is **custom** (its own fields/info types)
+  and needs **its own schema** to be functional. Build one at a time.
+  - ✅ **Standard module-page skeleton** in place: the MODULES tab is now 8 clickable cards
+    (`MODULE_DEFS`) opening a reusable `ProjectModulePage` shell (back nav, title + "In design" pill,
+    blurb, stat tiles, register table shell + empty state). Each module specialises this shell.
+  - ⬜ Per module: design (Claude Design) → typed table + schema → specialise the register (columns,
+    add/edit form, statuses) → audit trigger so its events flow into the hub (e.g. `rfi-raised` /
+    `rfi-answered`; a "Modules" hub category may be added). No per-module data yet.
 
 ### Phase 5 — Register & activity: notifications hub + site-wide audit  *(large — in progress, branch `claude/phase-5-notifications-hub`)*
 Reworked with Tom from a pure notifications hub into a **"Register & activity"** page (nav tab) with
