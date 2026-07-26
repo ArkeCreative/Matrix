@@ -119,9 +119,18 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
     **Seeded 4 tabs, 125 rows / 25 sections:** Building Regs (record/rag, 58), BD (reference/yesno,
     22), Adjudication (record/rag, 30), 70% Close Out (signoff/complete, 15 — rows carry a
     responsible discipline). PDF/XLSX buttons render but defer to a dedicated export pass.
-  - ⬜ Remaining checklist tabs (8 more extracted in the handoff scraps: Designer, Graphics, PM,
-    Legal Kick Off, WPB Kick Off, Onsite Handover, Accountant, Legal Process) — same component, just
-    seed the templates.
+  - ✅ **Batch 2 — 7 further tabs seeded, 133 rows / 26 sections** (`seed/2026-07-26-checklist-templates-batch2.sql`,
+    applied to live DB): Designer (record/rag, 29 — Key Risks / Weekly / Design Checklist / Adjudication
+    items), Graphics (reference/yesno, 22), Legal Kick Off (record/rag, 33), Legal Process (record/rag,
+    35), WPB Kick Off (signoff/complete, 6 — steps carry a responsible role), Onsite Handover
+    (signoff/complete, 4), Accountant On Site (signoff/complete, 4). All render through the same
+    `ChecklistModule` (no code change beyond MODULE_DEFS cards). Owners map to real app_users where a
+    role matches. **11 checklist templates now live.**
+  - ⬜ **PM Checklist (workbook tab 22) is a register, not a checklist** — a blank per-project
+    information-required log (Item / Work Package / Information Required / Action By / Comments / Date
+    Required / Response / Status; 117 empty numbered rows, no fixed questions). Deliberately NOT forced
+    into the checklist component; carried as a `pm-info` MODULE_DEFS card routing to the skeleton until
+    the **register module type** is built. Same for Risk / Long Lead / RFI / Budget Movement.
   - ⬜ Per module: design → typed table + schema → specialise the register → audit trigger into the hub.
   - ⬜ **Checklist follow-ups:** audit trigger so checklist saves/sign-offs emit into the notifications
     hub (currently only the flags/actions they raise do); "Attach evidence" row action; export.
