@@ -105,7 +105,26 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
     client-side rows over 19 projects, 10 recurring firms with rotating contacts (e.g. Lineform
     Interiors on 14 projects across 3 people) so the auto-fill has real history to work against.
     **Next:** wire directory contacts into module people-fields (pickers) as modules are built.
+  - ✅ **Checklist module type — BUILT** (first real module type, from Tom's Claude Design handoff
+    `App modules checklist template`). One `ChecklistModule` component driven by a template row:
+    `mode` (reference/record/signoff/tracked) · `status_set` (rag/yesno/complete) · `requireDetail`
+    (nudges for evidence) · `flagOnAttention` (routes a stuck row out). Sticky header (donut +
+    clickable status-count tiles + owner + expand/collapse + "not routed"/"answered without detail"
+    filters), collapsible sections with tally + status pips, rows with status spine, note field,
+    status buttons, stamp, hover actions, per-tab notes, sign-off, sticky save/discard bar, toast.
+    **Row routing is real:** "Flag a team" writes a `meeting_handoffs` row, "Assign an action" writes
+    an `actions` row, and the row then shows the tie chip. MODULES grid cards gained state + progress
+    bar + donut. Schema: `module_templates`, `module_template_items`, `project_checklists`,
+    `project_checklist_items` (applied; `db/migrations/` + `seed/2026-07-25-checklist-templates.sql`).
+    **Seeded 4 tabs, 125 rows / 25 sections:** Building Regs (record/rag, 58), BD (reference/yesno,
+    22), Adjudication (record/rag, 30), 70% Close Out (signoff/complete, 15 — rows carry a
+    responsible discipline). PDF/XLSX buttons render but defer to a dedicated export pass.
+  - ⬜ Remaining checklist tabs (8 more extracted in the handoff scraps: Designer, Graphics, PM,
+    Legal Kick Off, WPB Kick Off, Onsite Handover, Accountant, Legal Process) — same component, just
+    seed the templates.
   - ⬜ Per module: design → typed table + schema → specialise the register → audit trigger into the hub.
+  - ⬜ **Checklist follow-ups:** audit trigger so checklist saves/sign-offs emit into the notifications
+    hub (currently only the flags/actions they raise do); "Attach evidence" row action; export.
 
 ### Phase 5 — Register & activity: notifications hub + site-wide audit  *(large — in progress, branch `claude/phase-5-notifications-hub`)*
 Reworked with Tom from a pure notifications hub into a **"Register & activity"** page (nav tab) with
