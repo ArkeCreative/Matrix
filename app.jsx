@@ -3180,14 +3180,22 @@ function SecureProjectModal({ project, users, currentUser, onClose, onSave }) {
 // (standard module page) they all slot into.
 // ============================================================
 const MODULE_DEFS = [
-    { key: 'building-regs', label: 'Building Regs', icon: 'check-square', singular: 'reg item', blurb: 'Building regulation submissions, approvals and sign-offs.' },
     { key: 'bd', label: 'BD Checklist', icon: 'check-square', singular: 'question', blurb: 'The questions to have answered before an opportunity moves on.' },
+    { key: 'graphics', label: 'Graphics Checklist', icon: 'layout-grid', singular: 'item', blurb: 'Everything the graphics team needs lined up before a pitch deadline.' },
+    { key: 'legal-kick-off', label: 'Legal Kick Off', icon: 'check-square', singular: 'query', blurb: 'The questions legal needs answered to review the contract.' },
+    { key: 'designer', label: 'Designer Checklist', icon: 'pencil', singular: 'design gate', blurb: 'The design checkpoints carried through the project to sign-off.' },
+    { key: 'building-regs', label: 'Building Regs', icon: 'check-square', singular: 'reg item', blurb: 'Building regulation submissions, approvals and sign-offs.' },
+    { key: 'wpb-kick-off', label: 'WPB Kick Off', icon: 'calendar-plus', singular: 'step', blurb: 'The workplace-build kick-off sequence from brief to detailed design.' },
     { key: 'adjudication', label: 'Adjudication', icon: 'flag', singular: 'matter', blurb: 'Adjudication matters and their status.' },
+    { key: 'legal-process', label: 'Legal Process', icon: 'list', singular: 'item', blurb: 'The running legal record from contracting entity through to signing.' },
+    { key: 'pm-info', label: 'PM Checklist', icon: 'list', singular: 'info item', blurb: 'The information-required register the PM builds per project.' },
     { key: 'risk-register', label: 'Risk Register', icon: 'flag', singular: 'risk', blurb: 'Project risks with likelihood, impact, owner and mitigation.' },
     { key: 'long-lead', label: 'Long Lead Items', icon: 'calendar-plus', singular: 'item', blurb: 'Procurement items with long lead times and order-by dates.' },
     { key: 'rfi-schedule', label: 'RFI Schedule', icon: 'message-square', singular: 'RFI', blurb: 'Requests for information — raised, answered and closed.' },
     { key: 'budget-movement', label: 'Budget Movement', icon: 'arrow-right', singular: 'movement', blurb: 'Budget variations and movements against the baseline.' },
+    { key: 'onsite-handover', label: 'Onsite Handover', icon: 'calendar-check', singular: 'item', blurb: 'The Week -4 onsite handover preparation and follow-up.' },
     { key: 'close-out', label: 'Close Out', icon: 'check', singular: 'task', blurb: 'Project close-out checklist and handover items.' },
+    { key: 'accountant', label: 'Accountant On Site', icon: 'check', singular: 'responsibility', blurb: 'The accountant’s on-site responsibilities through the project.' },
     { key: 'lessons-learned', label: 'Lessons Learned', icon: 'message-square', singular: 'lesson', blurb: 'Lessons captured for future projects.' },
 ];
 // ---- Checklist module (first real module type) -----------------------------
