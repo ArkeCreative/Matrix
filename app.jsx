@@ -2910,457 +2910,204 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
     return React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(10,10,10,0.42)', zIndex: 300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '38px 20px', overflow: 'auto' } },
         React.createElement("div", { onClick: e => e.stopPropagation(), style: { width: '100%', maxWidth: 940, maxHeight: 'calc(100vh - 76px)', background: '#fff', borderTop: `3px solid ${MA.carmine}`, boxShadow: '0 24px 60px rgba(10,10,10,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, body));
 }
-// Top-of-page panel: queries needing my answer + queries I'm waiting on.
-function QueriesPanel({ needsMyAnswer, awaitingMine, actionLookup, projectLookup, users, onAnswer, onWithdraw }) {
-    if (needsMyAnswer.length === 0 && awaitingMine.length === 0)
-        return null;
-    const nameOf = (id) => { const u = (users || []).find(x => x.id === id); return u ? u.display_name : 'Someone'; };
-    return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 28 } },
-        needsMyAnswer.length > 0 && React.createElement("div", null,
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, borderTop: `2px solid ${C.amber}`, paddingTop: 10 } },
-                React.createElement("span", { style: { fontFamily: FONT, fontSize: 14, fontWeight: 700, color: C.amber, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Queries for you"),
-                React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, needsMyAnswer.length, " awaiting your answer")),
-            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, needsMyAnswer.map(q => React.createElement(QueryAnswerCard, { key: q.id, query: q, action: actionLookup[q.action_id], project: (actionLookup[q.action_id] && projectLookup[actionLookup[q.action_id].project_id]) || null, raiserName: nameOf(q.raised_by), onAnswer: onAnswer })))),
-        awaitingMine.length > 0 && React.createElement("div", null,
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, borderTop: `2px solid ${C.carmine}`, paddingTop: 10 } },
-                React.createElement("span", { style: { fontFamily: FONT, fontSize: 14, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Your queries"),
-                React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, awaitingMine.length, " awaiting a reply")),
-            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, awaitingMine.map(q => React.createElement(QueryWaitingCard, { key: q.id, query: q, action: actionLookup[q.action_id], project: (actionLookup[q.action_id] && projectLookup[actionLookup[q.action_id].project_id]) || null, targetName: nameOf(q.target_user_id), onWithdraw: onWithdraw })))));
+// ============================================================
+// MY ACTIONS (rework PR3) — the daily queue page
+// ============================================================
+// Collapse-state persistence, keyed per user (private browsing throws → guard).
+function maLoadCollapsed(userId) { try { return JSON.parse(localStorage.getItem('arke.myactions.collapsed.v1.' + userId) || '{}') || {}; } catch (e) { return {}; } }
+function maSaveCollapsed(userId, map) { try { localStorage.setItem('arke.myactions.collapsed.v1.' + userId, JSON.stringify(map)); } catch (e) { /* private mode */ } }
+function maDaysTo(dateStr) { return Math.round((new Date(dateStr + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / 86400000); }
+// A single action card — the whole card opens the item modal.
+function MAActionCard({ action, project, users, currentUser, ball, query, msgCount }) {
+    const closed = action.status === 'closed';
+    const od = !closed && action.due_date && action.due_date < todayISO();
+    const accent = closed ? MA.green : (od ? MA.carmine : (query ? MA.amber : MA.line));
+    const iAmBall = ball && ball === currentUser.id;
+    const ballTxt = closed ? ('Closed' + (action.completed_at ? ' ' + formatMeetingDate(action.completed_at.slice(0, 10)) : '')) : (!ball ? 'Settled' : (iAmBall ? 'Ball with you' : 'Ball with ' + (users.find(u => u.id === ball) || {}).display_name));
+    const ballCol = closed ? MA.grey : (iAmBall ? MA.carmine : (query ? MA.amberText : MA.prussianMid));
+    const reached = closed ? 4 : (query ? (ball === query.target_user_id ? 2 : 3) : 1);
+    const dueLabel = closed ? '' : (action.due_date ? (od ? 'Was due ' + formatMeetingDate(action.due_date) : 'Due ' + formatMeetingDate(action.due_date)) : 'No date');
+    const srcMap = { meeting: ['From meeting', MA.prussianMid, MA.prussianTint], module: ['From module', MA.carmine, MA.carmineTint], project: ['From project', MA.muted, MA.page], flag: ['From flag', MA.carmine, MA.carmineTint], date: ['From date', MA.prussian, MA.prussianTint], manual: ['Added directly', MA.muted, MA.page] };
+    const src = srcMap[action.source_type] || null;
+    return React.createElement("div", { onClick: () => openItem('action', action.id), role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItem('action', action.id); } }, style: { background: action._relation === 'collaborator' ? MA.carmineTint : '#fff', border: `1px solid ${query ? MA.amber : (action._relation === 'collaborator' ? MA.carmineMid : MA.line)}`, borderLeft: `4px solid ${accent}`, marginBottom: 12, cursor: 'pointer' } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderBottom: `1px solid ${MA.lineLight}`, minHeight: 29 } },
+            React.createElement(StateRibbon, { steps: ACTION_RIBBON, reachedIndex: reached, desaturated: closed }),
+            React.createElement("span", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 } }, ball && React.createElement(Avatar, { user: users.find(u => u.id === ball), size: 20 }), React.createElement("span", { style: { fontSize: 9.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: ballCol } }, ballTxt))),
+        React.createElement("div", { style: { padding: '15px 18px' } },
+            od && React.createElement("span", { style: { display: 'inline-block', background: MA.carmine, color: '#fff', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '4px 9px', marginBottom: 9 } }, "Overdue " + Math.abs(maDaysTo(action.due_date)) + " days"),
+            React.createElement("div", { style: { fontSize: 16, fontWeight: 600, lineHeight: 1.3, color: closed ? MA.grey : MA.ink, textDecoration: closed ? 'line-through' : 'none', fontFamily: FONT } }, action.description),
+            React.createElement("div", { style: { display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 } },
+                project && React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: MA.carmine } }, project.name),
+                dueLabel && React.createElement("span", { style: { fontSize: 11, color: od ? MA.carmine : MA.muted, fontWeight: od ? 600 : 400 } }, "· " + dueLabel),
+                src && React.createElement("span", { style: { fontSize: 9.5, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: src[1], background: src[2], padding: '4px 8px' } }, src[0]),
+                query && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: MA.amberText, background: MA.amberFill, padding: '4px 8px' } }, lucide('pause', 11, MA.amberText, 2), iAmBall ? 'Query — your answer' : 'Query open'),
+                action._relation === 'collaborator' && React.createElement("span", { style: { fontSize: 10.5, color: MA.muted } }, "· Owner " + ((users.find(u => u.id === action.owner_user_id) || {}).display_name || '—')))));
 }
-// ============================================================
-// MY ACTIONS VIEW
-// ============================================================
+// A query card — first-class, opens the query modal.
+function MAQueryCard({ query, parent, project, users, currentUser, msgCount, question }) {
+    const ball = queryBall(query, msgCount);
+    const iAmBall = ball && ball === currentUser.id;
+    const spent = querySpent(msgCount);
+    const reached = query.status === 'resolved' ? 2 : (ball === query.raised_by ? 1 : 0);
+    const parentKindChip = { action: ['On action', MA.carmine, MA.carmineTint], flag: ['On flag', MA.amberText, MA.amberFill], date: ['On key date', MA.prussian, MA.prussianTint] }[query.parent_type] || ['On item', MA.muted, MA.page];
+    const parentTitle = parent ? (query.parent_type === 'action' ? parent.description : (query.parent_type === 'flag' ? parent.note : parent.event_name)) : query.parent_type;
+    return React.createElement("div", { onClick: () => openItem('query', query.id), role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItem('query', query.id); } }, style: { background: '#fff', border: `1px solid ${iAmBall ? MA.amber : MA.line}`, borderLeft: `4px solid ${MA.amber}`, marginBottom: 12, cursor: 'pointer' } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderBottom: `1px solid ${MA.lineLight}`, minHeight: 29 } },
+            React.createElement(StateRibbon, { steps: QUERY_RIBBON, reachedIndex: reached }),
+            React.createElement("span", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 } }, ball && React.createElement(Avatar, { user: users.find(u => u.id === ball), size: 20 }), React.createElement("span", { style: { fontSize: 9.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: iAmBall ? MA.carmine : MA.prussianMid } }, iAmBall ? 'Ball with you' : 'Ball with ' + ((users.find(u => u.id === ball) || {}).display_name || '—')))),
+        React.createElement("div", { style: { padding: '15px 18px' } },
+            React.createElement("div", { style: { fontSize: 15, fontWeight: 600, lineHeight: 1.3, color: MA.ink, fontFamily: FONT } }, question || 'Query'),
+            React.createElement("div", { style: { display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 } },
+                project && React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: MA.carmine } }, project.name),
+                React.createElement("span", { style: { fontSize: 11, color: MA.muted } }, "· " + (query.raised_by === currentUser.id ? 'You asked ' + ((users.find(u => u.id === query.target_user_id) || {}).display_name || '—') : 'Asked by ' + ((users.find(u => u.id === query.raised_by) || {}).display_name || '—'))),
+                React.createElement("span", { style: { fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: spent ? MA.carmine : MA.prussian, background: spent ? MA.carmineTint : MA.prussianTint, padding: '4px 8px' } }, spent ? 'Ping-pong spent' : 'Exchange ' + queryExchange(msgCount) + ' of 2')),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, background: MA.page, border: `1px solid ${MA.line}`, padding: '9px 12px' } },
+                React.createElement("span", { style: { fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: parentKindChip[1], background: parentKindChip[2], padding: '3px 7px' } }, parentKindChip[0]),
+                React.createElement("span", { style: { fontSize: 12, color: MA.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, parentTitle),
+                query.parent_type === 'action' && React.createElement("span", { style: { fontSize: 11, color: MA.grey, marginLeft: 'auto', whiteSpace: 'nowrap' } }, "— blocked while open"))));
+}
 function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting }) {
-    const [actions, setActions] = useState([]);
-    const [meetings, setMeetings] = useState({});
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [actionFilter, setActionFilter] = useState('all'); // 'all'|'overdue'|'due-soon'|'open'|'closed'
-    const [showClosedActions, setShowClosedActions] = useState(false);
-    // Open queries involving the current user (as target or raiser) + a
-    // lookup of the actions those queries sit on (some may be on actions the
-    // user neither owns nor collaborates on — e.g. routed to a senior).
-    const [queries, setQueries] = useState([]);
-    const [actionCtx, setActionCtx] = useState({});
-    // Build project lookup
-    const projectLookup = useMemo(() => {
-        const m = {};
-        projects.forEach(p => { m[p.id] = p; });
-        return m;
-    }, [projects]);
-    // Load all actions assigned to this user
-    useEffect(() => {
-        let mounted = true;
+    const [actions, setActions] = React.useState([]);
+    const [teamActions, setTeamActions] = React.useState([]);
+    const [myQueries, setMyQueries] = React.useState([]);
+    const [parentActions, setParentActions] = React.useState({});
+    const [msgCounts, setMsgCounts] = React.useState({});
+    const [questions, setQuestions] = React.useState({});
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState(null);
+    const [filter, setFilter] = React.useState('all');
+    const [showClosed, setShowClosed] = React.useState(false);
+    const [collapsed, setCollapsed] = React.useState(() => maLoadCollapsed(currentUser.id));
+    const users2 = users || [];
+    const userById = React.useMemo(() => { const m = {}; users2.forEach(u => { m[u.id] = u; }); return m; }, [users]);
+    const projectById = React.useMemo(() => { const m = {}; (projects || []).forEach(p => { m[p.id] = p; }); return m; }, [projects]);
+    const dept = currentUser.department || (profile && profile.department) || null;
+    const isSenior = (profile && profile.role === 'senior') || currentUser.role === 'senior';
+    const today = todayISO();
+    React.useEffect(() => {
+        let on = true;
         (async () => {
             try {
-                // Fetch actions owned by this user PLUS actions where this user
-                // is a collaborator (via action_assignees).
-                const [ownedRes, assigneeRes] = await Promise.all([
+                const [ownedRes, asgRes] = await Promise.all([
                     sb.from('actions').select('*').eq('owner_user_id', currentUser.id),
                     sb.from('action_assignees').select('action_id').eq('user_id', currentUser.id),
                 ]);
-                if (ownedRes.error)
-                    throw ownedRes.error;
-                // Collaborator rows tell us which other action IDs to fetch
-                const collabActionIds = ((assigneeRes && assigneeRes.data) || []).map(r => r.action_id);
-                const ownedIds = new Set((ownedRes.data || []).map(a => a.id));
-                const extraIds = collabActionIds.filter(id => !ownedIds.has(id));
-                let extraActions = [];
-                if (extraIds.length > 0) {
-                    const { data: extraData, error: extraErr } = await sb
-                        .from('actions')
-                        .select('*')
-                        .in('id', extraIds);
-                    if (extraErr)
-                        throw extraErr;
-                    extraActions = extraData || [];
+                if (ownedRes.error) throw ownedRes.error;
+                const owned = (ownedRes.data || []).map(a => Object.assign({ _relation: 'owner' }, a));
+                const ownedIds = new Set(owned.map(a => a.id));
+                const collabIds = ((asgRes && asgRes.data) || []).map(r => r.action_id).filter(id => !ownedIds.has(id));
+                let collab = [];
+                if (collabIds.length) { const { data } = await sb.from('actions').select('*').in('id', collabIds); collab = (data || []).map(a => Object.assign({ _relation: 'collaborator' }, a)); }
+                let team = [];
+                if (isSenior && dept) {
+                    const deptIds = users2.filter(u => u.department === dept && u.id !== currentUser.id).map(u => u.id);
+                    if (deptIds.length) { const { data } = await sb.from('actions').select('*').in('owner_user_id', deptIds).eq('status', 'open'); team = (data || []).map(a => Object.assign({ _relation: 'team' }, a)); }
                 }
-                // Mark each action's relationship to the current user so the UI
-                // can distinguish "you own this" from "you collaborate on this".
-                const merged = [
-                    ...(ownedRes.data || []).map(a => Object.assign({}, a, { _relation: 'owner' })),
-                    ...extraActions.map(a => Object.assign({}, a, { _relation: 'collaborator' })),
-                ].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-                // Fetch meeting details for all unique meeting IDs
-                const meetingIds = [...new Set(merged.map(a => a.meeting_id).filter(Boolean))];
-                let meetingsMap = {};
-                if (meetingIds.length > 0) {
-                    const { data: meetingsData, error: meetingsErr } = await sb
-                        .from('meetings')
-                        .select('id, meeting_type, meeting_date, status')
-                        .in('id', meetingIds);
-                    if (meetingsErr)
-                        throw meetingsErr;
-                    (meetingsData || []).forEach(m => {
-                        meetingsMap[m.id] = Object.assign(Object.assign({}, m), { meeting_type: m.meeting_type === 'master-resource' ? 'pre-con' : m.meeting_type });
-                    });
+                const { data: qData } = await sb.from('queries').select('*').eq('status', 'open').or(`raised_by.eq.${currentUser.id},target_user_id.eq.${currentUser.id},escalated_to.eq.${currentUser.id}`);
+                const qs = qData || [];
+                const parentIds = [...new Set(qs.filter(q => q.parent_type === 'action').map(q => q.parent_id))];
+                let parents = {};
+                if (parentIds.length) { const { data } = await sb.from('actions').select('id, description, project_id, owner_user_id, status').in('id', parentIds); (data || []).forEach(a => { parents[a.id] = a; }); }
+                const qIds = qs.map(q => q.id);
+                let counts = {}; let questions = {};
+                if (qIds.length) {
+                    const { data } = await sb.from('query_messages').select('query_id, body, created_at').in('query_id', qIds).order('created_at');
+                    (data || []).forEach(m => { counts[m.query_id] = (counts[m.query_id] || 0) + 1; if (questions[m.query_id] === undefined) questions[m.query_id] = m.body; });
                 }
-                // Open queries involving this user — either routed to them
-                // (need an answer) or raised by them (awaiting a reply).
-                const { data: qData, error: qErr } = await sb
-                    .from('action_queries')
-                    .select('*')
-                    .is('answered_at', null)
-                    .or(`target_user_id.eq.${currentUser.id},raised_by.eq.${currentUser.id}`);
-                if (qErr)
-                    throw qErr;
-                const myQueries = qData || [];
-                // Some of those queries may sit on actions not in `merged`
-                // (e.g. a query routed to a senior who doesn't own/collab the
-                // action). Fetch those so we can show context in the panel.
-                const ctxLookup = {};
-                merged.forEach(a => { ctxLookup[a.id] = a; });
-                const missingActionIds = [...new Set(myQueries.map(q => q.action_id))].filter(id => !ctxLookup[id]);
-                if (missingActionIds.length > 0) {
-                    const { data: ctxData, error: ctxErr } = await sb
-                        .from('actions')
-                        .select('*')
-                        .in('id', missingActionIds);
-                    if (ctxErr)
-                        throw ctxErr;
-                    (ctxData || []).forEach(a => { ctxLookup[a.id] = a; });
-                }
-                if (mounted) {
-                    setActions(merged);
-                    setMeetings(meetingsMap);
-                    setQueries(myQueries);
-                    setActionCtx(ctxLookup);
-                    setLoading(false);
-                }
+                if (on) { setActions([...owned, ...collab]); setTeamActions(team); setMyQueries(qs); setParentActions(parents); setMsgCounts(counts); setQuestions(questions); setLoading(false); }
             }
-            catch (e) {
-                if (mounted) {
-                    setError(e.message);
-                    setLoading(false);
-                }
-            }
+            catch (e) { if (on) { setError(e.message); setLoading(false); } }
         })();
-        return () => { mounted = false; };
+        return () => { on = false; };
     }, [currentUser.id]);
-    // Toggle action status between open/closed
-    const toggleStatus = async (action, note) => {
-        // Owner-only close. Collaborators see the action and can update
-        // progress through the meeting screens but can't close it from here.
-        if (action.owner_user_id && currentUser && action.owner_user_id !== currentUser.id) {
-            alert("Only the action's owner can mark it complete.");
-            return;
-        }
-        const newStatus = action.status === 'open' ? 'closed' : 'open';
-        const updates = { status: newStatus };
-        if (newStatus === 'closed') {
-            updates.completed_note = note || null;
-            updates.completed_at = new Date().toISOString();
-            updates.completed_by = currentUser ? currentUser.id : null;
-        }
-        else {
-            updates.completed_note = null;
-            updates.completed_at = null;
-            updates.completed_by = null;
-        }
-        try {
-            const { data, error } = await sb
-                .from('actions')
-                .update(updates)
-                .eq('id', action.id)
-                .select()
-                .single();
-            if (error)
-                throw error;
-            // Preserve _relation tag so the row keeps its "Collaborating" badge
-            setActions(prev => prev.map(a => a.id === action.id ? Object.assign({}, data, { _relation: a._relation }) : a));
-        }
-        catch (e) {
-            alert('Failed to update action: ' + e.message);
-        }
+    const toggle = (title) => setCollapsed(prev => { const next = Object.assign({}, prev, { [title]: !prev[title] }); maSaveCollapsed(currentUser.id, next); return next; });
+    const openQueryByAction = React.useMemo(() => { const m = {}; myQueries.forEach(q => { if (q.parent_type === 'action') m[q.parent_id] = q; }); return m; }, [myQueries]);
+    const actionBall = (a) => { if (a.status !== 'open') return null; const q = openQueryByAction[a.id]; if (q) return queryBall(q, msgCounts[q.id] || 1); return a.owner_user_id; };
+    const owned = actions.filter(a => a._relation === 'owner');
+    const collab = actions.filter(a => a._relation === 'collaborator');
+    const inMyLists = (id) => actions.some(a => a.id === id) || teamActions.some(a => a.id === id);
+    // Header counts
+    const openOwned = owned.filter(a => a.status === 'open');
+    const overdueCount = [...owned, ...collab].filter(a => a.status === 'open' && a.due_date && a.due_date < today).length;
+    let waiting = 0;
+    [...actions, ...teamActions].forEach(a => { if (actionBall(a) === currentUser.id) waiting++; });
+    myQueries.forEach(q => { const b = queryBall(q, msgCounts[q.id] || 1); const dupe = q.parent_type === 'action' && inMyLists(q.parent_id); if (b === currentUser.id && !dupe) waiting++; });
+    const roleWord = isSenior ? 'Senior' : 'Contributor';
+    // Filters
+    const filters = [['all', 'All', actions.filter(a => a.status === 'open').length + myQueries.length], ['queries', 'Queries', myQueries.length], ['overdue', 'Overdue', overdueCount], ['due-week', 'Due this week', [...owned, ...collab].filter(a => a.status === 'open' && a.due_date && a.due_date >= today && maDaysTo(a.due_date) <= 7).length], ['chasing', 'Chasing others', myQueries.filter(q => { const b = queryBall(q, msgCounts[q.id] || 1); return b && b !== currentUser.id && q.raised_by === currentUser.id; }).length], ['closed', 'Closed', [...owned, ...collab].filter(a => a.status === 'closed').length]];
+    const actionPasses = (a) => {
+        if (filter === 'closed') return a.status === 'closed';
+        if (a.status !== 'open') return false;
+        const od = a.due_date && a.due_date < today;
+        const soon = a.due_date && !od && maDaysTo(a.due_date) <= 7;
+        if (filter === 'overdue') return od;
+        if (filter === 'due-week') return soon;
+        if (filter === 'chasing') { const b = actionBall(a); return b && b !== currentUser.id; }
+        if (filter === 'queries') return false;
+        return true;
     };
-    // ----- Query handlers -----
-    // Raise a query against an action, routed to a target user. The action's
-    // own status is untouched — a query is an overlay.
-    const raiseQuery = async (action, text, targetId) => {
-        try {
-            const { data, error } = await sb.from('action_queries').insert({
-                action_id: action.id,
-                org_id: profile.org_id, // explicit; trigger also backstops NULL
-                raised_by: currentUser.id,
-                target_user_id: targetId,
-                query_text: text,
-            }).select().single();
-            if (error)
-                throw error;
-            setQueries(prev => [...prev, data]);
-            // Ensure the action is in the context lookup for the panel.
-            setActionCtx(prev => prev[action.id] ? prev : Object.assign({}, prev, { [action.id]: action }));
-        }
-        catch (e) {
-            // UNIQUE partial index violation => a query is already open.
-            const msg = /duplicate key|unique/i.test(e.message || '')
-                ? 'There is already an open query on this action. Resolve it before raising another.'
-                : 'Failed to raise query: ' + e.message;
-            alert(msg);
-            throw e;
-        }
+    const queryPasses = (q) => { if (filter === 'chasing') { const b = queryBall(q, msgCounts[q.id] || 1); return b && b !== currentUser.id && q.raised_by === currentUser.id; } return filter === 'all' || filter === 'queries'; };
+    const sortByBall = (list, ballFn) => list.slice().sort((a, b) => (ballFn(a) === currentUser.id ? 0 : 1) - (ballFn(b) === currentUser.id ? 0 : 1));
+    if (loading) return React.createElement(SplashScreen, { message: "Loading your actions…" });
+    if (error) return React.createElement("main", { style: { padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 4, maxWidth: 500, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load actions: ", error));
+    // Build the rendered section list (respecting filter + role) so Collapse-all
+    // scopes to what's actually on screen.
+    const rendered = [];
+    const qItems = sortByBall(myQueries.filter(queryPasses), q => queryBall(q, msgCounts[q.id] || 1));
+    if (filter === 'all' || filter === 'queries' || filter === 'chasing') rendered.push({ key: 'Queries', accent: MA.amber, caption: 'Someone is blocked until you answer', kind: 'query', items: qItems });
+    if (filter !== 'queries') {
+        rendered.push({ key: 'Your actions', accent: MA.ink, caption: 'You close these', kind: 'action', items: sortByBall(owned.filter(actionPasses), actionBall) });
+        rendered.push({ key: 'Collaborating', accent: MA.carmine, caption: 'The owner closes these — you can query and add notes', kind: 'action', items: sortByBall(collab.filter(actionPasses), actionBall) });
+        if (isSenior) rendered.push({ key: 'Your team', accent: MA.prussian, caption: (dept || 'Team') + ' · visible because you are a senior', kind: 'action', items: teamActions.filter(actionPasses) });
+    }
+    const collapsedCount = rendered.filter(s => collapsed[s.key]).length;
+    const renderItem = (s, it) => s.kind === 'query'
+        ? React.createElement(MAQueryCard, { key: it.id, query: it, parent: parentActions[it.parent_id] || null, project: projectById[it.project_id], users: users2, currentUser: currentUser, msgCount: msgCounts[it.id] || 1, question: questions[it.id] })
+        : React.createElement(MAActionCard, { key: it.id, action: it, project: projectById[it.project_id], users: users2, currentUser: currentUser, ball: actionBall(it), query: openQueryByAction[it.id] || null, msgCount: openQueryByAction[it.id] ? (msgCounts[openQueryByAction[it.id].id] || 1) : 0 });
+    const sectionEl = (s) => {
+        const shut = !!collapsed[s.key];
+        const onCount = s.items.filter(it => (s.kind === 'query' ? queryBall(it, msgCounts[it.id] || 1) : actionBall(it)) === currentUser.id).length;
+        return React.createElement("div", { key: s.key, style: { marginBottom: shut ? 18 : 34 } },
+            React.createElement("button", { onClick: () => toggle(s.key), "aria-expanded": !shut, style: { width: '100%', background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } },
+                React.createElement("span", { style: { display: 'inline-flex', color: s.accent, transform: shut ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 160ms ease-out' } }, lucide('chevron-down', 12, 'currentColor', 2.4)),
+                React.createElement("span", { style: { width: 22, height: 3, background: s.accent === MA.ink ? '#000' : s.accent, flexShrink: 0 } }),
+                React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase', color: MA.ink } }, s.key),
+                s.items.length > 0 && React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: s.accent } }, s.items.length),
+                React.createElement("span", { style: { fontSize: 12, fontWeight: 300, fontStyle: 'italic', color: MA.grey } }, s.caption),
+                shut && React.createElement("span", { style: { marginLeft: 'auto', fontSize: 10.5, color: MA.grey, whiteSpace: 'nowrap' } }, s.items.length ? (s.items.length + ' item' + (s.items.length === 1 ? '' : 's') + (onCount ? ' · ' + onCount + ' on you' : '')) : 'None')),
+            React.createElement("div", { style: { height: 1, background: MA.line, margin: '10px 0 16px' } }),
+            !shut && (s.items.length === 0
+                ? React.createElement("div", { style: { border: `1px dashed ${MA.dashed}`, padding: 22, textAlign: 'center', fontSize: 12.5, fontWeight: 300, color: MA.grey } }, "All clear — nothing in this filter is waiting on you.")
+                : React.createElement("div", null, s.items.map(it => renderItem(s, it)))));
     };
-    // Answer (resolve) a query routed to the current user.
-    const answerQuery = async (query, answerText) => {
-        try {
-            const { data, error } = await sb.from('action_queries').update({
-                answer_text: answerText,
-                answered_by: currentUser.id,
-                answered_at: new Date().toISOString(),
-            }).eq('id', query.id).select().single();
-            if (error)
-                throw error;
-            setQueries(prev => prev.filter(q => q.id !== query.id));
-        }
-        catch (e) {
-            alert('Failed to answer query: ' + e.message);
-            throw e;
-        }
-    };
-    // Withdraw a query the current user raised (removes it).
-    const withdrawQuery = async (query) => {
-        if (!window.confirm('Withdraw this query? It will be removed.'))
-            return;
-        try {
-            const { error } = await sb.from('action_queries').delete().eq('id', query.id);
-            if (error)
-                throw error;
-            setQueries(prev => prev.filter(q => q.id !== query.id));
-        }
-        catch (e) {
-            alert('Failed to withdraw query: ' + e.message);
-        }
-    };
-    const today = new Date().toISOString().slice(0, 10);
-    // Split into two top-level sections by relation: actions you own (full
-    // close authority) vs. actions you collaborate on (the owner closes).
-    const ownedAll = actions.filter(a => a._relation !== 'collaborator');
-    const collabAll = actions.filter(a => a._relation === 'collaborator');
-    // Bucket helper — same status-tiering applied to each relation set.
-    const bucket = (list) => {
-        const open = list.filter(a => a.status === 'open');
-        const overdue = open.filter(a => a.due_date && a.due_date < today);
-        const dueSoon = open.filter(a => {
-            if (!a.due_date || a.due_date < today)
-                return false;
-            const diff = (new Date(a.due_date) - new Date()) / (1000 * 60 * 60 * 24);
-            return diff <= 7;
-        });
-        const other = open.filter(a => {
-            if (!a.due_date)
-                return true;
-            if (a.due_date < today)
-                return false;
-            const diff = (new Date(a.due_date) - new Date()) / (1000 * 60 * 60 * 24);
-            return diff > 7;
-        });
-        const closed = list.filter(a => a.status === 'closed');
-        return { open, overdue, dueSoon, other, closed };
-    };
-    const owned = bucket(ownedAll);
-    const collab = bucket(collabAll);
-    // Header summary metrics combine both relation sets.
-    const openActions = [...owned.open, ...collab.open];
-    const overdueActions = [...owned.overdue, ...collab.overdue];
-    const dueSoonActions = [...owned.dueSoon, ...collab.dueSoon];
-    const otherOpenActions = [...owned.other, ...collab.other];
-    const closedActions = [...owned.closed, ...collab.closed];
-    // ----- Query-derived values -----
-    // Combined action lookup: actions in this view plus any context actions
-    // a query sits on. Used by the panel and by raiseQuery.
-    const actionLookup = useMemo(() => {
-        const m = Object.assign({}, actionCtx);
-        actions.forEach(a => { m[a.id] = a; });
-        return m;
-    }, [actions, actionCtx]);
-    // One open query per action (enforced by the partial unique index), so a
-    // simple action_id -> query map is sufficient for card pills.
-    const openQueriesByAction = useMemo(() => {
-        const m = {};
-        queries.forEach(q => { m[q.action_id] = q; });
-        return m;
-    }, [queries]);
-    const needsMyAnswer = queries.filter(q => q.target_user_id === currentUser.id);
-    const awaitingMine = queries.filter(q => q.raised_by === currentUser.id && q.target_user_id !== currentUser.id);
-    // Bundle passed down through ActionSection to each card.
-    const queryCtx = {
-        currentUser, users,
-        openQueriesByAction,
-        onRaiseQuery: raiseQuery,
-    };
-    if (loading)
-        return React.createElement(SplashScreen, { message: "Loading your actions\u2026" });
-    if (error)
-        return (React.createElement("main", { style: { padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 4, maxWidth: 500, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load actions: ", error)));
-    // Pill definitions — always show all so they're always clickable
-    const filterPills = [
-        { key: 'overdue', label: 'Overdue', count: overdueActions.length, bg: C.warn, fg: '#fff', labelFg: '#fff' },
-        { key: 'due-soon', label: 'Due soon', count: dueSoonActions.length, bg: C.prussian20, fg: C.prussian, labelFg: C.prussian80 },
-        { key: 'open', label: 'Open', count: otherOpenActions.length, bg: C.prussian20, fg: C.prussian, labelFg: C.prussian80 },
-        { key: 'closed', label: 'Closed', count: closedActions.length, ghost: true },
-    ];
-    // Relation-group renderer: returns the ActionSections for one side
-    // (owned or collaborator) with an optional eyebrow heading.
-    const renderRelationGroup = (kind, b) => {
-        if (b.open.length === 0 && b.closed.length === 0)
-            return null;
-        const isCollab = kind === 'collab';
-        const heading = isCollab ? 'Collaborating' : 'Your actions';
-        const headingHint = isCollab
-            ? "Actions you're working on with someone else. Only the owner (named on each card) can close these."
-            : 'Actions where you have closing authority.';
-        const headingColour = isCollab ? C.carmine : C.carmine;
-        // Within the all-view, render the same status subgroupings.
-        const tertiary = React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
-            b.overdue.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.carmine, actions: b.overdue, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
-            b.dueSoon.length > 0 && (React.createElement(ActionSection, { title: "Due this week", accentColour: C.warn, actions: b.dueSoon, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
-            b.other.length > 0 && (React.createElement(ActionSection, { title: b.overdue.length === 0 && b.dueSoon.length === 0 ? 'Open actions' : 'Upcoming', accentColour: C.g500, actions: b.other, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })));
-        return React.createElement("div", { key: kind, style: { display: 'flex', flexDirection: 'column' } },
-            React.createElement("div", null,
-                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } },
-                    React.createElement("div", { style: { width: 22, height: 3, background: '#000', flexShrink: 0 } }),
-                    React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 13, fontWeight: 600, color: C.ink0, textTransform: 'uppercase', letterSpacing: '0.18em' } }, heading),
-                    React.createElement("span", { style: { fontSize: 13, fontWeight: 300, color: C.g500, fontStyle: 'italic', fontFamily: FONT } }, headingHint)),
-                React.createElement("div", { style: { height: 1, background: C.line, margin: '10px 0 18px' } })),
-            tertiary);
-    };
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.carmine, padding: '18px 28px 20px', borderTop: '1px solid rgba(255,255,255,0.15)' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontSize: 28, color: C.white, fontWeight: 700, letterSpacing: '-0.02em' } }, "My Actions"), React.createElement("div", { style: { fontSize: 13, fontWeight: 300, color: 'rgba(255,255,255,0.75)', marginTop: 5, fontFamily: FONT } }, profile.display_name, " \u00B7 ", owned.open.length, " open", owned.overdue.length > 0 ? ` · ${owned.overdue.length} overdue` : '', collab.open.length > 0 ? ` · ${collab.open.length} collaborating` : '')), React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } }, filterPills.map(p => {
-        const active = actionFilter === p.key;
-        return (React.createElement("button", { key: p.key, onClick: () => setActionFilter(active ? 'all' : p.key), onMouseEnter: e => { if (p.ghost) { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderStyle = 'solid'; } else { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.28)'; } }, onMouseLeave: e => { if (p.ghost) { e.currentTarget.style.background = active ? 'rgba(255,255,255,0.08)' : 'transparent'; e.currentTarget.style.borderStyle = active ? 'solid' : 'dashed'; } else { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; } }, style: {
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
-                width: 78, padding: p.ghost ? '10px 8px 9px' : '11px 8px 10px',
-                background: p.ghost ? (active ? 'rgba(255,255,255,0.08)' : 'transparent') : p.bg,
-                border: p.ghost ? '1px dashed rgba(255,255,255,0.35)' : 'none',
-                borderStyle: p.ghost ? (active ? 'solid' : 'dashed') : undefined,
-                borderRadius: 2, cursor: 'pointer', fontFamily: FONT,
-                outline: (active && !p.ghost) ? '2px solid #fff' : '2px solid transparent', outlineOffset: 2,
-                transition: 'all 160ms ease-out',
-            } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, lineHeight: 1, fontFamily: FONT, color: p.ghost ? 'rgba(255,255,255,0.5)' : p.fg } }, p.count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', fontFamily: FONT, color: p.ghost ? 'rgba(255,255,255,0.5)' : p.labelFg } }, p.label)));
-    })))), React.createElement("main", { style: { padding: '24px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, React.createElement(QueriesPanel, { needsMyAnswer: needsMyAnswer, awaitingMine: awaitingMine, actionLookup: actionLookup, projectLookup: projectLookup, users: users, onAnswer: answerQuery, onWithdraw: withdrawQuery }), (() => {
-        const show = actionFilter;
-        // Within a filter view, render owned section and collab section
-        // (skipping each if empty) so the visual structure mirrors the
-        // 'all' view.
-        const renderFiltered = (bucketKey, title, accent, dimmed) => {
-            const ownedSet = owned[bucketKey];
-            const collabSet = collab[bucketKey];
-            if (ownedSet.length === 0 && collabSet.length === 0)
-                return React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, `No ${title.toLowerCase()} actions.`);
-            return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
-                ownedSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 your actions (${ownedSet.length})`, accentColour: accent, actions: ownedSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: dimmed }),
-                collabSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 collaborating (${collabSet.length})`, accentColour: C.carmine, actions: collabSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: dimmed, showOwnerNameAs: 'collaborator' }));
-        };
-        if (show === 'overdue')
-            return renderFiltered('overdue', 'Overdue', C.carmine, false);
-        if (show === 'due-soon')
-            return renderFiltered('dueSoon', 'Due this week', C.warn, false);
-        if (show === 'open')
-            return renderFiltered('other', 'Open', C.g500, false);
-        if (show === 'closed')
-            return renderFiltered('closed', 'Closed', C.g500, true);
-        return null; // fall through to 'all' render
-    })(), actionFilter === 'all' && actions.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 } }, "No actions assigned to you yet"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Actions raised in meetings and assigned to you will appear here."))) : actionFilter === 'all' ? (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 28 } },
-        renderRelationGroup('owned', owned),
-        renderRelationGroup('collab', collab),
-        closedActions.length > 0 && (React.createElement("div", null, React.createElement("button", { onClick: () => setShowClosedActions(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0', fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT, marginBottom: showClosedActions ? 10 : 0 } }, React.createElement("span", { style: { display: 'inline-block', transform: showClosedActions ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 10 } }, "\u25B6"), showClosedActions ? `Hide closed actions` : `Show ${closedActions.length} closed action${closedActions.length !== 1 ? 's' : ''}`), showClosedActions && (React.createElement(ActionSection, { title: `Closed (${closedActions.length})`, accentColour: C.muted, actions: closedActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: true })))),
-        openActions.length === 0 && overdueActions.length === 0 && (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 6 } }, "All clear"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "No open actions. Switch to \"All\" to see your history."))))) : null))));
-}
-// ============================================================
-// ACTION SECTION — grouped block within My Actions
-// ============================================================
-function ActionSection({ title, accentColour, actions, projectLookup, meetings, today, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs, queryCtx }) {
-    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } }, React.createElement("div", { style: { width: 3, height: 14, background: accentColour, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: accentColour, fontFamily: FONT } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column' } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users, showOwnerNameAs: showOwnerNameAs, queryCtx: queryCtx }))))));
-}
-// ============================================================
-// MY ACTION CARD — single action row
-// ============================================================
-function MyActionCard({ action, project, meeting, today, accentColour, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs, queryCtx }) {
-    const [toggling, setToggling] = useState(false);
-    const [showRaise, setShowRaise] = useState(false);
-    const isClosed = action.status === 'closed';
-    const openQuery = queryCtx && queryCtx.openQueriesByAction ? queryCtx.openQueriesByAction[action.id] : null;
-    const canRaiseQuery = queryCtx && typeof queryCtx.onRaiseQuery === 'function' && !isClosed && !openQuery;
-    const queryNameOf = (id) => { const list = (queryCtx && queryCtx.users) || users || []; const u = list.find(x => x.id === id); return u ? u.display_name : 'someone'; };
-    const isOverdue = !isClosed && action.due_date && action.due_date < today;
-    const priority = action.priority || 'normal';
-    const isHighPriority = priority === 'high' || priority === 'urgent';
-    const meetingCfg = meeting ? (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }) : null;
-    const [showCloseForm, setShowCloseForm] = useState(false);
-    const [closeNote, setCloseNote] = useState('');
-    // Collaborator cards: no close authority, owner displayed prominently.
-    const isCollaboratorView = showOwnerNameAs === 'collaborator';
-    const ownerUser = isCollaboratorView && action.owner_user_id
-        ? (users || []).find(u => u.id === action.owner_user_id)
-        : null;
-    const ownerLabel = ownerUser ? ownerUser.display_name : (action.owner_name_fallback || 'Unknown owner');
-    const handleToggle = async () => {
-        if (isCollaboratorView)
-            return; // collaborators can't close
-        if (!isClosed) {
-            // Opening close form for note — don't toggle directly
-            setShowCloseForm(true);
-            return;
-        }
-        // Reopening — no note needed
-        setToggling(true);
-        await onToggle(action, null);
-        setToggling(false);
-    };
-    const handleConfirmClose = async () => {
-        if (!closeNote.trim())
-            return;
-        setToggling(true);
-        await onToggle(action, closeNote.trim());
-        setShowCloseForm(false);
-        setCloseNote('');
-        setToggling(false);
-    };
-    // Priority colours — matching the arke [matrix] status palette
-    const priorityStyle = {
-        urgent: { bg: C.redStatus, fg: '#fff', label: 'Urgent' },
-        high: { bg: C.warn, fg: '#fff', label: 'High' },
-        medium: { bg: C.prussian60, fg: '#fff', label: 'Medium' },
-        normal: { bg: C.fog, fg: C.g500, label: 'Normal' },
-        low: { bg: C.prussian10, fg: C.prussian, label: 'Low' },
-    }[priority] || { bg: C.fog, fg: C.g500, label: priority };
-    // ----- Restyle (arke-matrix-actions-restyle §4/§5) -----
-    const collab = isCollaboratorView;
-    const daysUntil = action.due_date ? Math.round((new Date(action.due_date + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000) : null;
-    const dueThisWeek = !isClosed && !isOverdue && daysUntil !== null && daysUntil <= 7;
-    // Left edge encodes urgency: overdue=carmine, due-this-week=warn, else neutral. Collaborating cards always carmine.
-    const edgeColour = collab ? C.carmine : (isClosed ? C.line : isOverdue ? C.carmine : dueThisWeek ? C.warn : C.line);
-    const restShadow = '0 1px 2px rgba(24,59,79,0.06)';
-    const hoverShadow = '0 4px 14px rgba(24,59,79,0.14)';
-    const queryFooterBg = collab ? 'rgba(255,255,255,0.6)' : C.g50;
-    const queryFooterBorder = collab ? C.carmineMid : C.line;
-    const linkHover = e => { e.currentTarget.style.color = C.carmineDark; e.currentTarget.style.borderBottomColor = C.carmine; };
-    const linkLeave = e => { e.currentTarget.style.color = C.carmine; e.currentTarget.style.borderBottomColor = C.carmine40; };
-    return (React.createElement("div", { onMouseEnter: e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = hoverShadow; }, onMouseLeave: e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = restShadow; }, style: {
-            display: 'flex', flexDirection: 'column', borderRadius: 2, overflow: 'hidden',
-            background: collab ? C.carmineSoft : C.white,
-            border: `1px solid ${collab ? C.carmine40 : C.line}`,
-            borderLeft: `4px solid ${edgeColour}`,
-            boxShadow: restShadow, transition: 'transform 200ms ease-out, box-shadow 200ms ease-out',
-            opacity: dimmed ? 0.6 : 1, marginBottom: 14,
-        } }, React.createElement("div", { style: { display: 'flex', gap: 16, padding: '20px 22px', alignItems: 'flex-start' } }, collab
-        ? React.createElement("div", { title: `Only ${ownerLabel} (the owner) can close this action`, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${C.g300}`, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }, React.createElement("span", { style: { fontSize: 11, color: C.g500, lineHeight: 1 } }, "\u{1F512}"))
-        : React.createElement("button", { onClick: handleToggle, disabled: toggling, title: isClosed ? 'Mark as open' : 'Mark as done', onMouseEnter: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; } }, onMouseLeave: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.g300; e.currentTarget.style.background = 'transparent'; } }, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isClosed ? C.green : C.g300}`, background: isClosed ? C.green : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, padding: 0, transition: 'all 160ms ease-out' } }, isClosed && React.createElement("span", { style: { color: C.white, fontSize: 13, fontWeight: 700, lineHeight: 1 } }, "✓")), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, isOverdue && React.createElement("div", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, background: C.carmine, color: '#fff', padding: '5px 10px', borderRadius: 2, marginBottom: 10, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: FONT } }, "⚠ Overdue · ", formatMeetingDateLong(action.due_date)), React.createElement("div", { onClick: () => openItem('action', action.id), title: "Open details, audit trail and queries", style: { fontSize: 17, fontWeight: 600, color: isClosed ? C.g500 : C.ink0, textDecoration: isClosed ? 'line-through' : 'none', lineHeight: 1.25, fontFamily: FONT, cursor: 'pointer' } }, action.description), collab && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 14px', background: C.white, border: `1px solid ${C.carmineMid}`, borderRadius: 2 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Owner"), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: C.ink0, fontFamily: FONT } }, ownerLabel), React.createElement("span", { style: { fontSize: 12, color: C.g500, fontStyle: 'italic', marginLeft: 'auto', fontFamily: FONT } }, "Only the owner can close")), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 12 } }, priority !== 'normal' && React.createElement("span", { style: { background: priorityStyle.bg, color: priorityStyle.fg, padding: '4px 8px', borderRadius: 2, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, priorityStyle.label), project && React.createElement("span", { onMouseEnter: linkHover, onMouseLeave: linkLeave, style: { fontSize: 13, fontWeight: 600, color: C.carmine, borderBottom: `1px solid ${C.carmine40}`, paddingBottom: 1, fontFamily: FONT } }, project.name), project && project.project_number && React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, "#", project.project_number), meetingCfg && meeting && React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.carmine, fontFamily: FONT, padding: 0, textDecoration: 'underline' } }, meetingCfg.short, " · ", formatMeetingDate(meeting.meeting_date), " →"))), !collab && !isOverdue && React.createElement("div", { style: { textAlign: 'right', flexShrink: 0, minWidth: 90 } }, action.due_date ? React.createElement("div", { style: { fontSize: 14, fontWeight: 400, color: isClosed ? C.g500 : C.ink0, whiteSpace: 'nowrap', fontFamily: FONT } }, formatMeetingDateLong(action.due_date)) : React.createElement("span", { style: { fontSize: 13, color: C.g500, fontFamily: FONT } }, "No date"))), 
-isClosed && action.completed_note && (React.createElement("div", { style: { padding: '6px 14px 10px', fontSize: 11, color: C.green, fontStyle: 'italic', borderTop: `1px solid ${C.greenLight}`, background: '#F0FBF4' } }, "\u2713 ", action.completed_note, (() => {
-        const closer = users && action.completed_by ? users.find(u => u.id === action.completed_by) : null;
-        const datePart = action.completed_at ? formatMeetingDate(action.completed_at.slice(0, 10)) : '';
-        const byPart = closer ? `by ${closer.display_name}` : '';
-        const tail = [datePart, byPart].filter(Boolean).join(' \u00B7 ');
-        return tail ? React.createElement("span", { style: { color: C.muted } }, ` \u00B7 ${tail}`) : '';
-    })())), showCloseForm && (React.createElement("div", { style: { background: C.greenLight, border: `1px solid ${C.green}`, borderTop: 'none', padding: 12 } }, React.createElement("div", { style: { fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 6 } }, "Close-out note required \u00B7 Completed: ", new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("input", { value: closeNote, onChange: e => setCloseNote(e.target.value), placeholder: "What was done to resolve this?", style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), autoFocus: true, onKeyDown: e => {
-            if (e.key === 'Enter' && closeNote.trim())
-                handleConfirmClose();
-        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { padding: '11px 22px', borderTop: `1px solid ${queryFooterBorder}`, background: queryFooterBg } }, openQuery
-        ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-            React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? C.amber : C.carmine, background: openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? '#FFF6E6' : C.carmineSoft, border: `1px solid ${openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? C.amber : C.carmineMid}`, padding: '2px 8px', borderRadius: 3 } }, "\u2753 Open query"),
-            React.createElement("span", { style: { fontSize: 11, color: C.muted } }, openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? `from ${queryNameOf(openQuery.raised_by)} \u00B7 needs your answer` : `routed to ${queryNameOf(openQuery.target_user_id)}`))
-        : !showRaise
-            ? React.createElement("button", { onClick: () => setShowRaise(true), onMouseEnter: linkHover, onMouseLeave: linkLeave, style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, color: C.carmine, padding: 0, borderBottom: `1px solid ${C.carmine40}`, fontFamily: FONT } }, "\u2753 Raise a query")
-            : React.createElement(RaiseQueryForm, { users: (queryCtx && queryCtx.users) || users, currentUser: queryCtx && queryCtx.currentUser, onSubmit: async (text, targetId) => { await queryCtx.onRaiseQuery(action, text, targetId); setShowRaise(false); }, onCancel: () => setShowRaise(false) }))));
+    const closedList = [...owned, ...collab].filter(a => a.status === 'closed');
+    return React.createElement(React.Fragment, null,
+        React.createElement("div", { style: { background: C.carmine, padding: '20px 28px 0' } },
+            React.createElement("div", { style: { maxWidth: 1040, margin: '0 auto' } },
+                React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' } },
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontFamily: FONT, fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: '#fff' } }, "My Actions"),
+                        React.createElement("div", { style: { fontSize: 13, fontWeight: 300, color: 'rgba(255,255,255,0.72)', marginTop: 5, fontFamily: FONT } }, [profile.display_name, dept, roleWord, openOwned.length + ' action' + (openOwned.length === 1 ? '' : 's'), myQueries.length + ' quer' + (myQueries.length === 1 ? 'y' : 'ies')].filter(Boolean).join(' · '))),
+                    React.createElement("div", { style: { textAlign: 'right' } },
+                        React.createElement("div", { style: { fontFamily: FONT, fontSize: 34, fontWeight: 700, color: '#fff', lineHeight: 1 } }, waiting),
+                        React.createElement("div", { style: { fontSize: 9, fontWeight: 500, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)', marginTop: 3 } }, "Waiting on you"))),
+                React.createElement("div", { style: { display: 'flex', gap: 26, marginTop: 22, flexWrap: 'wrap' } }, filters.map(f => {
+                    const active = filter === f[0];
+                    return React.createElement("button", { key: f[0], onClick: () => setFilter(f[0]), style: { background: 'none', border: 'none', borderBottom: `3px solid ${active ? '#fff' : 'transparent'}`, padding: '0 0 11px', margin: 0, cursor: 'pointer', fontFamily: FONT, fontWeight: active ? 600 : 500, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: active ? '#fff' : 'rgba(255,255,255,0.6)' } }, f[1], React.createElement("span", { style: { fontWeight: 300, opacity: 0.75, marginLeft: 6 } }, f[2]));
+                })))),
+        React.createElement("main", { style: { background: MA.page, minHeight: '70vh' } },
+            React.createElement("div", { style: { maxWidth: 1040, margin: '0 auto', padding: '22px 28px 80px' } },
+                rendered.length > 1 && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 } },
+                    React.createElement("span", { style: { fontSize: 10.5, color: MA.grey } }, collapsedCount === 0 ? 'All sections open' : (collapsedCount + ' of ' + rendered.length + ' sections collapsed')),
+                    React.createElement("span", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 } },
+                        React.createElement("button", { onClick: () => { const m = {}; rendered.forEach(s => { m[s.key] = true; }); const next = Object.assign({}, collapsed, m); setCollapsed(next); maSaveCollapsed(currentUser.id, next); }, style: { background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: MA.muted } }, "Collapse all"),
+                        React.createElement("span", { style: { width: 1, height: 11, background: MA.dashed } }),
+                        React.createElement("button", { onClick: () => { const next = Object.assign({}, collapsed); rendered.forEach(s => { delete next[s.key]; }); setCollapsed(next); maSaveCollapsed(currentUser.id, next); }, style: { background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: MA.muted } }, "Expand all"))),
+                rendered.map(sectionEl),
+                filter === 'all' && closedList.length > 0 && React.createElement("div", { style: { marginTop: 8 } },
+                    React.createElement("button", { onClick: () => setShowClosed(v => !v), style: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 700, fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: MA.grey } }, React.createElement("span", { style: { display: 'inline-flex', transform: showClosed ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 160ms ease-out' } }, lucide('chevron-right', 12, 'currentColor', 2.4)), (showClosed ? 'Hide' : 'Show ' + closedList.length) + ' closed action' + (closedList.length === 1 ? '' : 's')),
+                    showClosed && React.createElement("div", { style: { marginTop: 14 } }, closedList.map(a => React.createElement(MAActionCard, { key: a.id, action: a, project: projectById[a.project_id], users: users2, currentUser: currentUser, ball: null, query: null, msgCount: 0 })))),
+                React.createElement("div", { style: { marginTop: 22, fontSize: 11, color: MA.faint, fontStyle: 'italic' } }, "Flags for your team and key dates arrive in the next update."))));
 }
 // ============================================================
 // USER PICKER FIELD — reusable single-user dropdown
