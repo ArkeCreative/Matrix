@@ -70,7 +70,15 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 All four were found by querying the live database on 2026-07-26. Re-verification queries are in the
 appendix. **Ship these as one small batch/PR before anything else.**
 
-### P0-1 — SECURITY DEFINER revoke never took effect (live security hole)
+> **P0-1 — ✅ FIXED 2026-07-27** (folded into the My Actions rework PR1, `db/migrations/myactions_audit_spine.sql`).
+> Revoked EXECUTE from `public, anon, authenticated` on all the helper + audit-trigger functions
+> (`record_activity`, `notify_user`, `project_audience`, `actor_name`, the `notify_*`/`audit_*`
+> trigger functions, `set_org_id_on_insert`, `handle_new_auth_user`). **Verified:** `proacl` now shows
+> only `postgres`/`service_role`; `get_advisors(security)` returns just `current_org_id` (the accepted
+> exception — returns the caller's own org id, RLS needs it) and the separate
+> `auth_leaked_password_protection` toggle. P0-2/P0-3/P0-4 remain open.
+
+### P0-1 — SECURITY DEFINER revoke never took effect (live security hole)  *(✅ fixed — see box above)*
 The Phase 5 notes claimed *"SECURITY DEFINER helpers had direct-RPC EXECUTE revoked."* That is
 **false as deployed.** `pg_proc.proacl` shows `record_activity`, `project_audience` and `notify_user`
 lost their explicit `anon` / `authenticated` grants but **retain `=X/postgres`, the grant to
@@ -312,10 +320,29 @@ The RLS answer differs (a senior-only column set vs a normal one) so decide befo
   Consider a one-off back-population. Verify actor attribution from the live app with a real JWT —
   the dev-org test ran without a user context, and `record_activity` writes `auth.uid()`, which is
   null for non-app writes.
-- ⬜ **Deferred to a cross-app "tie-back" pass:** item detail modal (chevron); register cross-app
-  buttons (Reassign / Chase / Acknowledge / Convert / Raise a query).
 - ⬜ **Deferred:** flag **severity** field (`meeting_handoffs` has no severity column — the register
   buckets by age as a stand-in); external transport (email/Teams via M365).
+
+#### ▶ My Actions rework  *(in progress — from Tom's Claude Design handoff `design_handoff_my_actions`)*
+Rebuild `MyActionsView` into three categories (your actions / collaborating / your team), with **ball
+in court**, a **state ribbon** (Raised→Working→Queried→Answered→Complete), a capped **query ping-pong**
+that blocks completion, and a **reusable site-wide item modal** (`openItem(kind,id)`) that **delivers
+the deferred Phase 5 item-detail modal** and will replace every list's row-click app-wide. Decisions
+(2026-07-27): **5 incremental PRs**; **P0-1 folded into PR1**; **manual escalation only** now (timed
+auto-escalation + Monday digest deferred to when a serverless scheduler exists — same gap as
+programme-import; banner copy reworded, no false promise); **flags stay acknowledge-*or*-convert**.
+Escalation targets: lead = active `is_team_lead` in the ball-holder's `department`, else the project's
+`project_manager_user_id`.
+- ✅ **PR1 — audit spine + query schema + P0-1** (`db/migrations/myactions_audit_spine.sql`, applied):
+  `item_events` append-only audit table (org-scoped select; insert forces `actor_id = auth.uid()`, no
+  update/delete — genuinely tamper-evident); `action_query_messages` thread table + `action_queries`
+  escalation columns (`status/escalated_to/by/at/resolved_at/by`); `actions.source_type`+`source_ref`
+  for the provenance chip; `meeting_handoffs.acknowledged_note`. Backfilled 71 historical events
+  (`seed/2026-07-27-item-events-backfill.sql`). P0-1 closed + verified (box in the P0 section).
+- ⬜ PR2 reusable item modal + query state machine (wired to actions) · PR3 the My Actions page
+  (header/flat filters/sections/cards) · PR4 flags + dates rails · PR5 app-wide `openItem` rollout +
+  role gating. (Schema note: the handoff listed `from_meeting_type` on `actions` — it isn't there;
+  replaced by the `source_type`/`source_ref` added in PR1, set at every creation point in PR2+.)
 
 ### Phase 6 — Organisation & permissions layer  *(large — GO-LIVE GATE)*
 - Org dashboard (add/edit users incl. title + team-lead; per-member project visibility; per-team
