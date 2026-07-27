@@ -1125,6 +1125,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const [error, setError] = useState(null);
     const [showNewProject, setShowNewProject] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
+    const [itemModal, setItemModal] = useState(null); // { kind, id } — the site-wide item modal (My Actions rework)
     const [profileTargetUserId, setProfileTargetUserId] = useState(null); // null = editing self
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('active');
@@ -1548,6 +1549,11 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     useEffect(() => {
         writeHash(currentView, currentMeetingId, currentProjectId);
     }, [currentView, currentMeetingId, currentProjectId]);
+    // Register the site-wide item-modal opener so any view can call openItem(kind, id).
+    useEffect(() => {
+        _openItemHandler = (payload) => setItemModal(payload);
+        return () => { _openItemHandler = null; };
+    }, []);
     // This ensures meetings list, notes, and actions are always current
     // regardless of what happened in previous views
     useEffect(() => {
@@ -1630,7 +1636,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3 } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Register & activity", active: currentView === 'register', onClick: () => { setRegisterInitialTab('register'); setCurrentView('register'); } }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setRegisterInitialTab('activity'); setCurrentView('register'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: projectActions, projectFlags: projectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onDeferredAction: deferredRegisterAction, onBack: () => setCurrentView('tracker') })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3 } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Register & activity", active: currentView === 'register', onClick: () => { setRegisterInitialTab('register'); setCurrentView('register'); } }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setRegisterInitialTab('activity'); setCurrentView('register'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: projectActions, projectFlags: projectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onDeferredAction: deferredRegisterAction, onBack: () => setCurrentView('tracker') })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
@@ -1988,6 +1994,10 @@ function lucide(name, size, color, sw) {
         'message-square': [['path', { d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' }]],
         'check-square': [['polyline', { points: '9 11 12 14 22 4' }], ['path', { d: 'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' }]],
         'calendar-check': [['path', { d: 'M8 2v4' }], ['path', { d: 'M16 2v4' }], ['rect', { x: 3, y: 4, width: 18, height: 18, rx: 2 }], ['path', { d: 'M3 10h18' }], ['path', { d: 'm9 16 2 2 4-4' }]],
+        'pause': [['rect', { x: 14, y: 4, width: 4, height: 16, rx: 1 }], ['rect', { x: 6, y: 4, width: 4, height: 16, rx: 1 }]],
+        'lock': [['rect', { x: 3, y: 11, width: 18, height: 11, rx: 2 }], ['path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' }]],
+        'chevron-right': [['path', { d: 'm9 18 6-6-6-6' }]],
+        'help-circle': [['circle', { cx: 12, cy: 12, r: 10 }], ['path', { d: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3' }], ['path', { d: 'M12 17h.01' }]],
     };
     const kids = (P[name] || []).map((p, i) => React.createElement(p[0], Object.assign({ key: i }, p[1])));
     return React.createElement('svg', S, kids);
@@ -2467,6 +2477,439 @@ function QueryWaitingCard({ query, action, project, targetName, onWithdraw }) {
             action && React.createElement("span", { style: { fontStyle: 'italic' } }, "\u00B7 ", action.description),
             React.createElement("button", { onClick: () => onWithdraw(query), style: { marginLeft: 'auto', background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 11, fontWeight: 600, textDecoration: 'underline' }, title: "Withdraw this query" }, "Withdraw")));
 }
+// ============================================================
+// My Actions rework (PR2) — site-wide item modal + query state machine
+// ============================================================
+// Design-handoff palette (exact hexes from design_handoff_my_actions), kept local
+// so the rework doesn't depend on uncertain token names in C.
+const MA = {
+    carmine: '#8C002A', carmineDark: '#6E0021', carmineTint: '#F4E6EA', carmineBorder: '#E8CCD4', carmineMid: '#D199AA',
+    prussian: '#183B4F', prussianMid: '#466272', prussianLight: '#748995', prussianTint: '#E8ECEE', prussianBorder: '#D1D8DC',
+    amber: '#C47D11', amberText: '#A5741C', amberFill: '#FEF3C7', amberSoft: '#FFFBF2', amberBorder: '#EAD08A',
+    green: '#1E6B45', greenMid: '#2D7A5F', greenFill: '#E7F0EA', greenBorder: '#CFE3D6',
+    ink: '#0A0A0A', text: '#2A2E2C', muted: '#6B7270', grey: '#767676', disabled: '#B5B5B5', faint: '#9BA3A0',
+    line: '#E2E2DF', lineLight: '#F0EFEC', dashed: '#D6D6D6', page: '#F6F6F4', offwhite: '#FCFCFB', white: '#fff',
+};
+// Any view can pop the modal via the module-level openItem(kind, id); App registers
+// the handler at mount. No prop-drilling, no state manager.
+let _openItemHandler = null;
+function openItem(kind, id) { if (_openItemHandler) _openItemHandler({ kind: kind, id: id }); }
+// Append-only audit write. RLS forces actor_id = auth.uid(), so actorId is always the
+// current user. Best-effort at the UI layer — never blocks the action it records.
+async function logItemEvent(itemType, itemId, eventType, opts) {
+    opts = opts || {};
+    try {
+        await sb.from('item_events').insert({
+            org_id: opts.orgId || null, item_type: itemType, item_id: itemId,
+            event_type: eventType, actor_id: opts.actorId,
+            subject_id: opts.subjectId || null, body: opts.body || null,
+        });
+    }
+    catch (e) { /* audit best-effort */ }
+}
+// Query ball-in-court / exchange maths, derived from the thread (never cached).
+function queryReplies(messageCount) { return Math.max(0, (messageCount || 1) - 1); }
+function queryBall(query, messageCount) {
+    if (!query || query.status === 'resolved') return null;
+    if (query.escalated_to) return query.escalated_to;
+    return (queryReplies(messageCount) % 2 === 0) ? query.target_user_id : query.raised_by;
+}
+function queryExchange(messageCount) { return Math.min(2, queryReplies(messageCount) + 1); }
+function querySpent(messageCount) { return queryReplies(messageCount) >= 2; }
+// Escalation target: the ball-holder's department lead; if they ARE the lead (or
+// there's none), the project's PM. Returns a user id or null.
+function escalationTarget(ballHolderId, users, project) {
+    const holder = (users || []).find(u => u.id === ballHolderId);
+    const pm = project ? project.project_manager_user_id : null;
+    if (!holder) return pm || null;
+    const lead = (users || []).find(u => u.department === holder.department && u.is_team_lead && u.active && u.id !== holder.id);
+    if (lead) return lead.id;
+    return (pm && pm !== holder.id) ? pm : null;
+}
+// Initials avatar on the per-user colour.
+function Avatar({ user, size, ring }) {
+    const s = size || 22;
+    const initials = user ? (user.initials || (user.display_name || '?').slice(0, 2).toUpperCase()) : '?';
+    const bg = user ? pmColourFor(user.initials || initials) : MA.disabled;
+    return React.createElement("span", { style: { width: s, height: s, borderRadius: '50%', background: bg, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(s * 0.4), fontWeight: 700, fontFamily: FONT, flexShrink: 0, boxShadow: ring ? `0 0 0 2px ${ring}` : 'none' } }, initials);
+}
+// State ribbon — chevron segments. steps: [{label, colour}]; reachedIndex is the last
+// filled segment. Unreached segments are muted; desaturated dims a completed action.
+function StateRibbon({ steps, reachedIndex, big, desaturated }) {
+    const padV = big ? 7 : 6;
+    return React.createElement("span", { role: "img", "aria-label": "State: " + ((steps[reachedIndex] || {}).label || ''), style: { display: 'inline-flex', alignItems: 'center' } }, steps.map((st, i) => {
+        const reached = i <= reachedIndex;
+        const fill = reached ? (desaturated ? MA.prussianLight : st.colour) : '#ECECEC';
+        const fg = reached ? '#fff' : '#B5B5B5';
+        const first = i === 0;
+        return React.createElement("span", { key: i, style: { background: fill, color: fg, fontFamily: FONT, fontWeight: 600, fontSize: big ? 9 : 8.5, letterSpacing: '0.14em', textTransform: 'uppercase', padding: `${padV}px ${big ? 17 : 15}px ${padV}px ${first ? (big ? 16 : 11) : 16}px`, marginLeft: first ? 0 : -7, clipPath: first ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)' : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 8px 100%, 0 50%)', whiteSpace: 'nowrap' } }, st.label);
+    }));
+}
+// Ribbon step definitions.
+const ACTION_RIBBON = [{ label: 'Raised', colour: MA.prussian }, { label: 'Working', colour: MA.prussianMid }, { label: 'Queried', colour: MA.amber }, { label: 'Answered', colour: MA.carmine }, { label: 'Complete', colour: MA.green }];
+const QUERY_RIBBON = [{ label: 'Asked', colour: MA.amber }, { label: 'Answered', colour: MA.carmine }, { label: 'Resolved', colour: MA.green }];
+// Audit dot colour by event type.
+function eventDot(t) {
+    if (t === 'raised') return MA.prussian;
+    if (t === 'query' || t === 'counter' || t === 'nudge') return MA.amber;
+    if (t === 'answer' || t === 'escalate' || t === 'convert') return MA.carmine;
+    if (t === 'resolve' || t === 'complete' || t === 'acknowledge') return MA.green;
+    return MA.prussianMid; // chase, reassign, date_change, collaborator_add
+}
+function fmtStamp(ts) {
+    if (!ts) return '';
+    try { return new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch (e) { return ts; }
+}
+function todayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); }
+// ---- The reusable site-wide item modal ------------------------------------
+// Opens for { kind: 'action' | 'query', id }. Flag/date kinds arrive in PR4/PR6.
+function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, onClose }) {
+    const [item, setItem] = React.useState(null);
+    const [parent, setParent] = React.useState(null);
+    const [collaborators, setCollaborators] = React.useState([]);
+    const [query, setQuery] = React.useState(null);
+    const [messages, setMessages] = React.useState([]);
+    const [events, setEvents] = React.useState([]);
+    const [related, setRelated] = React.useState([]);
+    const [tab, setTab] = React.useState('thread');
+    const [loading, setLoading] = React.useState(true);
+    const [busy, setBusy] = React.useState(false);
+    const [draftNote, setDraftNote] = React.useState('');
+    const [draftReply, setDraftReply] = React.useState('');
+    const [showRaise, setShowRaise] = React.useState(false);
+    const [queryText, setQueryText] = React.useState('');
+    const [queryTo, setQueryTo] = React.useState('');
+    const [reassignTo, setReassignTo] = React.useState('');
+    const [dueDraft, setDueDraft] = React.useState('');
+    const userById = React.useMemo(() => { const m = {}; (users || []).forEach(u => { m[u.id] = u; }); return m; }, [users]);
+    const nameOf = (uid) => { const u = userById[uid]; return u ? u.display_name : 'someone'; };
+    const projectOf = (pid) => (projects || []).find(p => p.id === pid);
+    const orgId = profile ? profile.org_id : null;
+    const load = React.useCallback(async () => {
+        setLoading(true);
+        try {
+            if (kind === 'action') {
+                const { data: a } = await sb.from('actions').select('*').eq('id', id).maybeSingle();
+                setItem(a || null);
+                const { data: asg } = await sb.from('action_assignees').select('user_id').eq('action_id', id);
+                setCollaborators((asg || []).map(r => userById[r.user_id]).filter(Boolean));
+                const { data: qs } = await sb.from('queries').select('*').eq('parent_type', 'action').eq('parent_id', id).eq('status', 'open').limit(1);
+                const q = (qs && qs[0]) || null;
+                setQuery(q);
+                if (q) { const { data: msgs } = await sb.from('query_messages').select('*').eq('query_id', q.id).order('created_at'); setMessages(msgs || []); }
+                else setMessages([]);
+                const { data: ev } = await sb.from('item_events').select('*').eq('item_type', 'action').eq('item_id', id).order('created_at', { ascending: false });
+                setEvents(ev || []);
+                if (a) {
+                    const [raRes, rfRes] = await Promise.all([
+                        sb.from('actions').select('id, description, owner_user_id, due_date, status').eq('project_id', a.project_id).eq('status', 'open').neq('id', id).limit(20),
+                        sb.from('meeting_handoffs').select('id, note, to_department, status').eq('project_id', a.project_id).neq('status', 'converted').limit(20),
+                    ]);
+                    setRelated([...(raRes.data || []).map(r => Object.assign({ _kind: 'action' }, r)), ...(rfRes.data || []).map(r => Object.assign({ _kind: 'flag' }, r))]);
+                }
+            }
+            else if (kind === 'query') {
+                const { data: q } = await sb.from('queries').select('*').eq('id', id).maybeSingle();
+                setItem(q || null); setQuery(q || null);
+                if (q) {
+                    const { data: msgs } = await sb.from('query_messages').select('*').eq('query_id', q.id).order('created_at'); setMessages(msgs || []);
+                    const { data: ev } = await sb.from('item_events').select('*').eq('item_type', 'query').eq('item_id', id).order('created_at', { ascending: false }); setEvents(ev || []);
+                    if (q.parent_type === 'action') { const { data: p } = await sb.from('actions').select('*').eq('id', q.parent_id).maybeSingle(); setParent(p ? Object.assign({ _kind: 'action' }, p) : null); }
+                    else if (q.parent_type === 'flag') { const { data: p } = await sb.from('meeting_handoffs').select('*').eq('id', q.parent_id).maybeSingle(); setParent(p ? Object.assign({ _kind: 'flag' }, p) : null); }
+                    else if (q.parent_type === 'date') { const { data: p } = await sb.from('project_key_dates').select('*').eq('id', q.parent_id).maybeSingle(); setParent(p ? Object.assign({ _kind: 'date' }, p) : null); }
+                }
+            }
+        }
+        catch (e) { /* surfaced via empty state */ }
+        setLoading(false);
+    }, [kind, id, userById, projects]);
+    React.useEffect(() => { load(); }, [load]);
+    React.useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+    const aq = kind === 'query' ? item : query;      // the query in play, if any
+    const msgCount = messages.length;
+    const ball = aq ? queryBall(aq, msgCount) : (kind === 'action' && item ? (item.status === 'closed' ? null : item.owner_user_id) : null);
+    const projForItem = kind === 'action' ? (item ? projectOf(item.project_id) : null) : (aq ? projectOf(aq.project_id) : null);
+    const isOwner = kind === 'action' && item && currentUser && item.owner_user_id === currentUser.id;
+    const blockedByQuery = kind === 'action' && !!query;
+    const isClosed = kind === 'action' && item && item.status === 'closed';
+    const iAmBall = ball && currentUser && ball === currentUser.id;
+    const reload = async () => { await load(); };
+    // ---- state-machine handlers ----
+    const doComplete = async () => {
+        if (!draftNote.trim() || blockedByQuery || busy) return;
+        setBusy(true);
+        try {
+            await sb.from('actions').update({ status: 'closed', completed_note: draftNote.trim(), completed_at: new Date().toISOString(), completed_by: currentUser.id }).eq('id', id);
+            await logItemEvent('action', id, 'complete', { actorId: currentUser.id, orgId: orgId, body: 'Completed with a close-out note' });
+            setDraftNote('');
+        }
+        catch (e) { alert('Could not complete: ' + e.message); }
+        setBusy(false); reload();
+    };
+    const doRaiseQuery = async () => {
+        if (!queryText.trim() || !queryTo || busy) return;
+        setBusy(true);
+        try {
+            const parentType = kind === 'action' ? 'action' : aq.parent_type;
+            const parentId = kind === 'action' ? id : aq.parent_id;
+            const projId = kind === 'action' ? item.project_id : aq.project_id;
+            const { data: q, error } = await sb.from('queries').insert({ org_id: orgId, parent_type: parentType, parent_id: parentId, project_id: projId, raised_by: currentUser.id, target_user_id: queryTo, status: 'open' }).select().single();
+            if (error) throw error;
+            await sb.from('query_messages').insert({ org_id: orgId, query_id: q.id, author_id: currentUser.id, body: queryText.trim() });
+            await logItemEvent('query', q.id, 'raised', { actorId: currentUser.id, orgId: orgId, subjectId: queryTo, body: 'Query raised, routed to ' + nameOf(queryTo) });
+            await logItemEvent(parentType, parentId, 'query', { actorId: currentUser.id, orgId: orgId, subjectId: queryTo, body: 'Query raised by ' + nameOf(currentUser.id) + ', routed to ' + nameOf(queryTo) });
+            setQueryText(''); setShowRaise(false);
+        }
+        catch (e) { alert(/duplicate|unique/i.test(e.message || '') ? 'There is already an open query on this item. Resolve it before raising another.' : ('Could not raise query: ' + e.message)); }
+        setBusy(false); reload();
+    };
+    const doReply = async () => {
+        if (!draftReply.trim() || !aq || busy) return;
+        setBusy(true);
+        const isAnswer = currentUser.id === aq.target_user_id && !aq.escalated_to || (aq.escalated_to === currentUser.id);
+        const evType = isAnswer ? 'answer' : 'counter';
+        try {
+            await sb.from('query_messages').insert({ org_id: orgId, query_id: aq.id, author_id: currentUser.id, body: draftReply.trim() });
+            await logItemEvent('query', aq.id, evType, { actorId: currentUser.id, orgId: orgId, subjectId: aq.raised_by, body: (evType === 'answer' ? 'Answered' : 'Countered') + ', returned to ' + nameOf(evType === 'answer' ? aq.raised_by : aq.target_user_id) });
+            setDraftReply('');
+        }
+        catch (e) { alert('Could not send: ' + e.message); }
+        setBusy(false); reload();
+    };
+    const doResolve = async () => {
+        if (!draftReply.trim() || !aq || busy) return;
+        setBusy(true);
+        try {
+            await sb.from('queries').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: currentUser.id, resolution_note: draftReply.trim() }).eq('id', aq.id);
+            await logItemEvent('query', aq.id, 'resolve', { actorId: currentUser.id, orgId: orgId, body: 'Query resolved: ' + draftReply.trim() });
+            if (aq.parent_type === 'action') await logItemEvent('action', aq.parent_id, 'resolve', { actorId: currentUser.id, orgId: orgId, body: 'Query resolved, completion unblocked' });
+            setDraftReply('');
+        }
+        catch (e) { alert('Could not resolve: ' + e.message); }
+        setBusy(false); reload();
+    };
+    const doEscalate = async () => {
+        if (!aq || busy) return;
+        const target = escalationTarget(ball, users, projForItem);
+        if (!target) { alert('No escalation target available (no department lead or PM set).'); return; }
+        setBusy(true);
+        try {
+            await sb.from('queries').update({ escalated_to: target, escalated_by: currentUser.id, escalated_at: new Date().toISOString() }).eq('id', aq.id);
+            await logItemEvent('query', aq.id, 'escalate', { actorId: currentUser.id, orgId: orgId, subjectId: target, body: 'Escalated to ' + nameOf(target) + ' — unanswered by ' + nameOf(ball) });
+        }
+        catch (e) { alert('Could not escalate: ' + e.message); }
+        setBusy(false); reload();
+    };
+    const doChase = async () => {
+        if (!aq || !ball || busy) return;
+        setBusy(true);
+        try { await logItemEvent('query', aq.id, 'chase', { actorId: currentUser.id, orgId: orgId, subjectId: ball, body: 'Chased ' + nameOf(ball) }); }
+        catch (e) { /* */ }
+        setBusy(false); reload();
+    };
+    const doReassign = async () => {
+        if (!reassignTo || !item || busy) return;
+        setBusy(true);
+        try {
+            const from = item.owner_user_id;
+            await sb.from('actions').update({ owner_user_id: reassignTo }).eq('id', id);
+            await logItemEvent('action', id, 'reassign', { actorId: currentUser.id, orgId: orgId, subjectId: reassignTo, body: 'Reassigned ' + nameOf(from) + ' → ' + nameOf(reassignTo) });
+            setReassignTo('');
+        }
+        catch (e) { alert('Could not reassign: ' + e.message); }
+        setBusy(false); reload();
+    };
+    const doMoveDate = async () => {
+        if (!dueDraft || !item || busy) return;
+        setBusy(true);
+        try {
+            const from = item.due_date;
+            await sb.from('actions').update({ due_date: dueDraft }).eq('id', id);
+            await logItemEvent('action', id, 'date_change', { actorId: currentUser.id, orgId: orgId, body: 'Due date moved ' + (from ? formatMeetingDate(from) : '—') + ' → ' + formatMeetingDate(dueDraft) });
+            setDueDraft('');
+        }
+        catch (e) { alert('Could not move date: ' + e.message); }
+        setBusy(false); reload();
+    };
+    // ---- derived render values ----
+    const kindMeta = kind === 'query'
+        ? { label: 'Query', fg: MA.amberText, bg: MA.amberFill }
+        : { label: 'Action', fg: MA.carmine, bg: MA.carmineTint };
+    const title = !item ? '' : (kind === 'query' ? (messages.length ? messages[messages.length - 1].body : 'Query') : item.description);
+    const overdueDays = (kind === 'action' && item && !isClosed && item.due_date && item.due_date < todayISO()) ? Math.round((new Date(todayISO()) - new Date(item.due_date)) / 86400000) : 0;
+    let ribbonSteps, ribbonReached;
+    if (kind === 'query') {
+        ribbonSteps = QUERY_RIBBON;
+        ribbonReached = (aq && aq.status === 'resolved') ? 2 : (ball === (aq && aq.raised_by) ? 1 : 0);
+    }
+    else {
+        ribbonSteps = ACTION_RIBBON;
+        ribbonReached = isClosed ? 4 : (query ? (ball === (aq && aq.target_user_id) ? 2 : 3) : 1);
+    }
+    const ballLabel = !ball ? (isClosed ? 'Closed' : 'Settled') : (iAmBall ? 'Ball with you' : 'Ball with ' + nameOf(ball));
+    const ballColour = !ball ? MA.grey : (iAmBall ? MA.carmine : (query && kind === 'action' ? MA.amberText : MA.prussianMid));
+    const spent = querySpent(msgCount);
+    const exch = queryExchange(msgCount);
+    // ---- render ----
+    const chip = (label, fg, bg) => React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: fg, background: bg, padding: '4px 8px', borderRadius: 2 } }, label);
+    const factCell = (label, value, colour) => React.createElement("div", null, React.createElement("div", { style: { fontSize: 8.5, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: MA.grey } }, label), React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: colour || MA.ink, marginTop: 3 } }, value || '—'));
+    const sectionLabel = (t) => React.createElement("div", { style: { fontSize: 8.5, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: MA.grey, marginBottom: 8 } }, t);
+    const body = loading
+        ? React.createElement("div", { style: { padding: 60, textAlign: 'center', color: MA.grey, fontSize: 13 } }, "Loading…")
+        : !item
+            ? React.createElement("div", { style: { padding: 60, textAlign: 'center', color: MA.grey, fontSize: 13 } }, "This item could not be found.")
+            : React.createElement(React.Fragment, null,
+                // header
+                React.createElement("div", { style: { padding: '20px 26px 18px', borderBottom: `1px solid ${MA.line}` } },
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } },
+                        chip(kindMeta.label, kindMeta.fg, kindMeta.bg),
+                        projForItem && React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: MA.carmine, textDecoration: 'underline', textDecorationColor: MA.carmineMid, textUnderlineOffset: 2 } }, projForItem.name),
+                        React.createElement("span", { style: { marginLeft: 'auto' } }),
+                        React.createElement("button", { onClick: onClose, "aria-label": "Close", style: { background: 'none', border: 'none', cursor: 'pointer', color: MA.grey, padding: 2, display: 'inline-flex' } }, lucide('x', 18, 'currentColor', 2))),
+                    React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 22, lineHeight: 1.28, color: MA.ink } }, title)),
+                // ribbon bar
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 26px', background: MA.page, borderBottom: `1px solid ${MA.line}`, minHeight: 52, flexWrap: 'wrap' } },
+                    React.createElement(StateRibbon, { steps: ribbonSteps, reachedIndex: ribbonReached, big: true, desaturated: isClosed }),
+                    React.createElement("span", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 } },
+                        ball && React.createElement(Avatar, { user: userById[ball], size: 22 }),
+                        React.createElement("span", { style: { fontSize: 11.5, fontWeight: 600, color: ballColour } }, ballLabel)),
+                    overdueDays > 0 && React.createElement("span", { style: { background: MA.carmine, color: '#fff', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '4px 9px' } }, "Overdue " + overdueDays + " day" + (overdueDays === 1 ? '' : 's'))),
+                // two columns
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', minHeight: 0, flex: 1, overflow: 'hidden' } },
+                    // left column
+                    React.createElement("div", { style: { borderRight: `1px solid ${MA.line}`, padding: '20px 22px', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 16 } }, leftColumn()),
+                    // right column
+                    React.createElement("div", { style: { padding: '18px 24px', background: MA.offwhite, overflow: 'auto' } }, rightColumn())));
+    function leftColumn() {
+        if (kind === 'query') {
+            return React.createElement(React.Fragment, null,
+                React.createElement("div", { style: { border: `1px solid ${MA.prussianBorder}`, background: MA.prussianTint, padding: '11px 12px' } },
+                    sectionLabel('Raised against'),
+                    parent
+                        ? React.createElement("button", { onClick: () => openItem(parent._kind === 'flag' ? 'flag' : (parent._kind === 'date' ? 'date' : 'action'), parent.id), style: { background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: MA.prussian } }, parent._kind === 'action' ? parent.description : (parent._kind === 'flag' ? parent.note : parent.event_name))
+                        : React.createElement("span", { style: { fontSize: 12.5, color: MA.grey } }, aq.parent_type)),
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 } },
+                    factCell('Asked by', nameOf(aq.raised_by)),
+                    factCell('Routed to', nameOf(aq.escalated_to || aq.target_user_id)),
+                    factCell('Exchange', spent ? 'Ping-pong spent' : (exch + ' of 2')),
+                    factCell('Status', aq.status === 'resolved' ? 'Resolved' : 'Open')),
+                queryActions());
+        }
+        // action
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 } },
+                factCell('Owner', nameOf(item.owner_user_id)),
+                factCell('Priority', (item.priority || 'normal') === 'high' ? 'High' : (item.priority || 'Normal'), (item.priority === 'high' || item.priority === 'urgent') ? MA.amberText : null),
+                factCell('Due', item.due_date ? formatMeetingDate(item.due_date) : '—', overdueDays > 0 ? MA.carmine : null),
+                factCell('Source', item.source_type ? ('From ' + item.source_type) : '—')),
+            collaborators.length > 0 && React.createElement("div", null, sectionLabel('Collaborators'), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 7 } }, collaborators.map(u => React.createElement("div", { key: u.id, style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement(Avatar, { user: u, size: 22 }), React.createElement("span", { style: { fontSize: 12.5 } }, u.display_name), React.createElement("span", { style: { fontSize: 10, color: MA.grey } }, u.job_title || ''))))),
+            React.createElement("div", { style: { height: 1, background: MA.line } }),
+            completePanel(),
+            !isClosed && !showRaise && !query && React.createElement("button", { onClick: () => { setShowRaise(true); setQueryTo(item.created_by || item.owner_user_id || ''); }, style: Object.assign(Object.assign({}, btnSecondary()), { width: '100%', borderColor: MA.prussian, color: MA.prussian }) }, "Raise a query"),
+            showRaise && raiseForm(),
+            isSenior && !isClosed && seniorPanel());
+    }
+    function completePanel() {
+        if (isClosed) return React.createElement("div", { style: { background: MA.greenFill, borderLeft: `2px solid ${MA.green}`, padding: '10px 12px' } }, React.createElement("div", { style: { fontSize: 9.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: MA.green } }, "Close-out note · " + nameOf(item.completed_by) + (item.completed_at ? ' · ' + fmtStamp(item.completed_at) : '')), React.createElement("div", { style: { fontSize: 12.5, color: MA.text, marginTop: 4 } }, item.completed_note || '—'));
+        if (!isOwner) return React.createElement("div", { style: { border: `1px dashed ${MA.dashed}`, padding: 12, fontSize: 10.5, color: MA.grey } }, "Only " + nameOf(item.owner_user_id) + " (the owner) can complete this action. You can raise a query or add to the thread.");
+        return React.createElement("div", null,
+            sectionLabel('Complete this action'),
+            React.createElement("textarea", { value: draftNote, onChange: e => setDraftNote(e.target.value), disabled: blockedByQuery, placeholder: blockedByQuery ? 'Locked — the open query must be answered or resolved first.' : 'A note is required — what was done to resolve it?', style: { width: '100%', minHeight: 74, padding: '10px 12px', border: `1px solid ${MA.disabled}`, fontSize: 12.5, fontFamily: FONT, boxSizing: 'border-box', background: blockedByQuery ? MA.page : '#fff', resize: 'vertical' } }),
+            React.createElement("button", { onClick: doComplete, disabled: blockedByQuery || !draftNote.trim() || busy, style: { width: '100%', marginTop: 8, padding: '11px', border: 'none', cursor: (blockedByQuery || !draftNote.trim()) ? 'not-allowed' : 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', background: (blockedByQuery || !draftNote.trim()) ? MA.disabled : MA.green } }, blockedByQuery ? 'Locked by an open query' : 'Mark complete'),
+            React.createElement("div", { style: { fontSize: 10.5, color: MA.grey, marginTop: 6 } }, "A completed action keeps its note, its date and your name on the record permanently."));
+    }
+    function raiseForm() {
+        return React.createElement("div", { style: { border: `1px solid ${MA.amberBorder}`, background: MA.amberSoft, padding: 12 } },
+            sectionLabel('Raise a query'),
+            React.createElement("select", { value: queryTo, onChange: e => setQueryTo(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { marginBottom: 8 }) },
+                React.createElement("option", { value: '' }, "Route to…"),
+                (users || []).filter(u => u.active).map(u => React.createElement("option", { key: u.id, value: u.id }, u.display_name))),
+            React.createElement("textarea", { value: queryText, onChange: e => setQueryText(e.target.value), placeholder: "What is blocking you?", style: { width: '100%', minHeight: 60, padding: '9px 11px', border: `1px solid ${MA.amberBorder}`, fontSize: 12.5, fontFamily: FONT, boxSizing: 'border-box', resize: 'vertical' } }),
+            React.createElement("div", { style: { display: 'flex', gap: 8, marginTop: 8 } },
+                React.createElement("button", { onClick: doRaiseQuery, disabled: !queryText.trim() || !queryTo || busy, style: { flex: 1, padding: '9px', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', background: (!queryText.trim() || !queryTo) ? MA.disabled : MA.amber } }, "Send query"),
+                React.createElement("button", { onClick: () => { setShowRaise(false); setQueryText(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: MA.line, color: MA.grey }) }, "Cancel")),
+            React.createElement("div", { style: { fontSize: 10.5, color: MA.grey, marginTop: 6, fontStyle: 'italic' } }, "It routes to the person you pick and locks completion until it is answered or resolved."));
+    }
+    function seniorPanel() {
+        return React.createElement("div", { style: { border: `1px solid ${MA.line}`, background: MA.page, padding: '11px 12px' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 } }, chip('Senior only', MA.prussian, MA.prussianTint), React.createElement("span", { style: { fontSize: 9, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: MA.grey } }, "Reassign · Move date")),
+            React.createElement("select", { value: reassignTo, onChange: e => setReassignTo(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { marginBottom: 7 }) }, React.createElement("option", { value: '' }, "Reassign owner…"), (users || []).filter(u => u.active).map(u => React.createElement("option", { key: u.id, value: u.id }, u.display_name))),
+            reassignTo && React.createElement("button", { onClick: doReassign, disabled: busy, style: Object.assign(Object.assign({}, btnSecondary()), { width: '100%', marginBottom: 8, borderColor: MA.prussian, color: MA.prussian }) }, "Reassign this action"),
+            React.createElement("div", { style: { display: 'flex', gap: 6 } },
+                React.createElement("input", { type: 'date', value: dueDraft, onChange: e => setDueDraft(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { flex: 1 }) }),
+                React.createElement("button", { onClick: doMoveDate, disabled: !dueDraft || busy, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: MA.prussian, color: MA.prussian, whiteSpace: 'nowrap' }) }, "Move date")));
+    }
+    function queryActions() {
+        if (!aq || aq.status === 'resolved') return React.createElement("div", { style: { border: `1px dashed ${MA.dashed}`, padding: 12, fontSize: 11, color: MA.grey } }, aq && aq.status === 'resolved' ? ('Resolved ' + (aq.resolved_at ? fmtStamp(aq.resolved_at) : '') + (aq.resolution_note ? ' — ' + aq.resolution_note : '')) : 'No open query.');
+        return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+            iAmBall
+                ? React.createElement("div", { style: { display: 'flex', gap: 8 } },
+                    !spent && React.createElement("button", { onClick: () => { setTab('thread'); }, style: Object.assign(Object.assign({}, btnPrimary()), { flex: 1, background: MA.carmine, padding: '10px' }) }, "Answer in thread"),
+                    React.createElement("button", { onClick: doResolve, disabled: !draftReply.trim() || busy, title: "Type a resolution note in the thread first", style: { flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', background: draftReply.trim() ? MA.green : MA.disabled } }, "Resolve"))
+                : React.createElement("button", { onClick: doChase, disabled: busy, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: MA.prussian, color: MA.prussian }) }, "Chase " + nameOf(ball)),
+            React.createElement("button", { onClick: doEscalate, disabled: busy, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: MA.line, color: MA.grey }) }, "Escalate to lead"));
+    }
+    function rightColumn() {
+        const tabs = kind === 'query' ? [['thread', 'Thread'], ['audit', 'Audit trail']] : [['thread', 'Thread'], ['audit', 'Audit trail'], ['related', 'Related on this project']];
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { display: 'flex', gap: 18, borderBottom: `1px solid ${MA.line}`, marginBottom: 14 } }, tabs.map(t => React.createElement("button", { key: t[0], onClick: () => setTab(t[0]), style: { background: 'none', border: 'none', borderBottom: `2px solid ${tab === t[0] ? MA.carmine : 'transparent'}`, padding: '0 0 9px', margin: 0, cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: tab === t[0] ? MA.ink : MA.grey } }, t[1]))),
+            tab === 'thread' && threadTab(),
+            tab === 'audit' && auditTab(),
+            tab === 'related' && relatedTab());
+    }
+    function threadTab() {
+        if (!aq) return React.createElement("div", { style: { fontSize: 12.5, color: MA.grey, lineHeight: 1.6 } }, "No queries raised. If something is stopping you, raise one — it routes to whoever you pick and locks completion until it is answered.");
+        const banner = aq.status === 'resolved' ? { txt: 'Resolved', bg: MA.greenFill, bd: MA.greenBorder }
+            : spent ? { txt: 'Ping-pong spent — resolve or escalate', bg: MA.carmineTint, bd: MA.carmineBorder }
+                : { txt: 'Query open · exchange ' + exch + ' of 2', bg: MA.amberSoft, bd: MA.amberBorder };
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { background: banner.bg, border: `1px solid ${banner.bd}`, borderLeft: `3px solid ${MA.amber}`, padding: '9px 12px', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MA.amberText, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 } }, lucide('help-circle', 14, MA.amberText, 2), banner.txt, aq.escalated_to && React.createElement("span", { style: { marginLeft: 'auto', textTransform: 'none', letterSpacing: 0, fontWeight: 400, color: MA.grey } }, "Escalated to " + nameOf(aq.escalated_to))),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 } }, messages.map((m, i) => {
+                const mine = m.author_id === currentUser.id;
+                const isQ = i === 0;
+                return React.createElement("div", { key: m.id, style: { display: 'flex', gap: 10 } },
+                    React.createElement(Avatar, { user: userById[m.author_id], size: 26 }),
+                    React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                        React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: MA.ink } }, nameOf(m.author_id), React.createElement("span", { style: { fontWeight: 400, fontSize: 10, color: MA.grey, marginLeft: 8 } }, (isQ ? 'asked' : (i % 2 === 1 ? 'answered' : 'countered')) + ' · ' + fmtStamp(m.created_at))),
+                        React.createElement("div", { style: { marginTop: 4, padding: '11px 13px', fontSize: 12.5, color: MA.text, background: isQ ? MA.line : (i % 2 === 1 ? MA.carmineTint : MA.amberSoft), border: `1px solid ${isQ ? MA.line : (i % 2 === 1 ? MA.carmineBorder : MA.amberBorder)}` } }, m.body)));
+            })),
+            aq.status !== 'resolved' && composer());
+    }
+    function composer() {
+        const waiting = ball && !iAmBall;
+        return React.createElement("div", { style: { borderTop: `1px solid ${MA.line}`, paddingTop: 12 } },
+            React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: MA.ink, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 } }, waiting ? React.createElement(React.Fragment, null, React.createElement(Avatar, { user: userById[ball], size: 18 }), "Waiting on " + nameOf(ball)) : (spent ? 'Your resolution note' : (currentUser.id === aq.target_user_id ? 'Your answer' : 'Your counter'))),
+            React.createElement("textarea", { value: draftReply, onChange: e => setDraftReply(e.target.value), placeholder: waiting ? 'Add a note or chase them…' : 'Type your reply…', style: { width: '100%', minHeight: 62, padding: '9px 11px', border: `1px solid ${MA.line}`, fontSize: 12.5, fontFamily: FONT, boxSizing: 'border-box', resize: 'vertical' } }),
+            React.createElement("div", { style: { display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' } },
+                iAmBall && !spent && React.createElement("button", { onClick: doReply, disabled: !draftReply.trim() || busy, style: { padding: '9px 14px', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', background: draftReply.trim() ? MA.carmine : MA.disabled } }, "Send answer"),
+                React.createElement("button", { onClick: doResolve, disabled: !draftReply.trim() || busy, style: { padding: '9px 14px', border: 'none', cursor: 'pointer', fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', background: draftReply.trim() ? MA.green : MA.disabled } }, "Resolve query"),
+                waiting && React.createElement("button", { onClick: doChase, disabled: busy, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: MA.prussian, color: MA.prussian }) }, "Chase " + nameOf(ball)),
+                React.createElement("button", { onClick: doEscalate, disabled: busy, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: MA.line, color: MA.grey }) }, "Escalate")),
+            React.createElement("div", { style: { fontSize: 10.5, color: MA.grey, marginTop: 6, fontStyle: 'italic' } }, "Each answer may be countered once, then it must resolve or escalate."));
+    }
+    function auditTab() {
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { fontSize: 11, color: MA.grey, marginBottom: 12 } }, "Every state change is recorded with who did it and when. Nothing here can be edited or deleted."),
+            events.length === 0
+                ? React.createElement("div", { style: { fontSize: 12.5, color: MA.grey } }, "No events yet.")
+                : React.createElement("div", null, events.map(ev => React.createElement("div", { key: ev.id, style: { display: 'flex', gap: 12, padding: '9px 0', borderTop: `1px solid ${MA.lineLight}`, alignItems: 'flex-start' } },
+                    React.createElement("span", { style: { width: 6, height: 6, background: eventDot(ev.event_type), marginTop: 5, flexShrink: 0 } }),
+                    React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 11.5, color: MA.text } }, ev.body || ev.event_type), React.createElement("div", { style: { fontSize: 10, color: MA.grey, marginTop: 1 } }, fmtStamp(ev.created_at) + (ev.actor_id ? ' · ' + nameOf(ev.actor_id) : '')))))));
+    }
+    function relatedTab() {
+        if (!related.length) return React.createElement("div", { style: { fontSize: 12.5, color: MA.grey } }, "Nothing else open on this project.");
+        return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, related.map(r => React.createElement("button", { key: r._kind + r.id, onClick: () => openItem(r._kind, r.id), style: { textAlign: 'left', background: '#fff', border: `1px solid ${MA.line}`, padding: '10px 12px', cursor: 'pointer', fontFamily: FONT } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 } }, chip(r._kind === 'flag' ? 'Flag' : 'Action', r._kind === 'flag' ? MA.amberText : MA.carmine, r._kind === 'flag' ? MA.amberFill : MA.carmineTint), r._kind === 'action' && r.due_date && React.createElement("span", { style: { fontSize: 10, color: MA.grey } }, nameOf(r.owner_user_id) + ' · due ' + formatMeetingDate(r.due_date))),
+            React.createElement("div", { style: { fontSize: 12.5, color: MA.ink } }, r._kind === 'flag' ? r.note : r.description))));
+    }
+    return React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(10,10,10,0.42)', zIndex: 300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '38px 20px', overflow: 'auto' } },
+        React.createElement("div", { onClick: e => e.stopPropagation(), style: { width: '100%', maxWidth: 940, maxHeight: 'calc(100vh - 76px)', background: '#fff', borderTop: `3px solid ${MA.carmine}`, boxShadow: '0 24px 60px rgba(10,10,10,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, body));
+}
 // Top-of-page panel: queries needing my answer + queries I'm waiting on.
 function QueriesPanel({ needsMyAnswer, awaitingMine, actionLookup, projectLookup, users, onAnswer, onWithdraw }) {
     if (needsMyAnswer.length === 0 && awaitingMine.length === 0)
@@ -2901,7 +3344,7 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
             opacity: dimmed ? 0.6 : 1, marginBottom: 14,
         } }, React.createElement("div", { style: { display: 'flex', gap: 16, padding: '20px 22px', alignItems: 'flex-start' } }, collab
         ? React.createElement("div", { title: `Only ${ownerLabel} (the owner) can close this action`, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${C.g300}`, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }, React.createElement("span", { style: { fontSize: 11, color: C.g500, lineHeight: 1 } }, "\u{1F512}"))
-        : React.createElement("button", { onClick: handleToggle, disabled: toggling, title: isClosed ? 'Mark as open' : 'Mark as done', onMouseEnter: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; } }, onMouseLeave: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.g300; e.currentTarget.style.background = 'transparent'; } }, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isClosed ? C.green : C.g300}`, background: isClosed ? C.green : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, padding: 0, transition: 'all 160ms ease-out' } }, isClosed && React.createElement("span", { style: { color: C.white, fontSize: 13, fontWeight: 700, lineHeight: 1 } }, "✓")), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, isOverdue && React.createElement("div", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, background: C.carmine, color: '#fff', padding: '5px 10px', borderRadius: 2, marginBottom: 10, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: FONT } }, "⚠ Overdue · ", formatMeetingDateLong(action.due_date)), React.createElement("div", { style: { fontSize: 17, fontWeight: 600, color: isClosed ? C.g500 : C.ink0, textDecoration: isClosed ? 'line-through' : 'none', lineHeight: 1.25, fontFamily: FONT } }, action.description), collab && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 14px', background: C.white, border: `1px solid ${C.carmineMid}`, borderRadius: 2 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Owner"), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: C.ink0, fontFamily: FONT } }, ownerLabel), React.createElement("span", { style: { fontSize: 12, color: C.g500, fontStyle: 'italic', marginLeft: 'auto', fontFamily: FONT } }, "Only the owner can close")), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 12 } }, priority !== 'normal' && React.createElement("span", { style: { background: priorityStyle.bg, color: priorityStyle.fg, padding: '4px 8px', borderRadius: 2, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, priorityStyle.label), project && React.createElement("span", { onMouseEnter: linkHover, onMouseLeave: linkLeave, style: { fontSize: 13, fontWeight: 600, color: C.carmine, borderBottom: `1px solid ${C.carmine40}`, paddingBottom: 1, fontFamily: FONT } }, project.name), project && project.project_number && React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, "#", project.project_number), meetingCfg && meeting && React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.carmine, fontFamily: FONT, padding: 0, textDecoration: 'underline' } }, meetingCfg.short, " · ", formatMeetingDate(meeting.meeting_date), " →"))), !collab && !isOverdue && React.createElement("div", { style: { textAlign: 'right', flexShrink: 0, minWidth: 90 } }, action.due_date ? React.createElement("div", { style: { fontSize: 14, fontWeight: 400, color: isClosed ? C.g500 : C.ink0, whiteSpace: 'nowrap', fontFamily: FONT } }, formatMeetingDateLong(action.due_date)) : React.createElement("span", { style: { fontSize: 13, color: C.g500, fontFamily: FONT } }, "No date"))), 
+        : React.createElement("button", { onClick: handleToggle, disabled: toggling, title: isClosed ? 'Mark as open' : 'Mark as done', onMouseEnter: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; } }, onMouseLeave: e => { if (!isClosed) { e.currentTarget.style.borderColor = C.g300; e.currentTarget.style.background = 'transparent'; } }, style: { width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isClosed ? C.green : C.g300}`, background: isClosed ? C.green : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, padding: 0, transition: 'all 160ms ease-out' } }, isClosed && React.createElement("span", { style: { color: C.white, fontSize: 13, fontWeight: 700, lineHeight: 1 } }, "✓")), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, isOverdue && React.createElement("div", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, background: C.carmine, color: '#fff', padding: '5px 10px', borderRadius: 2, marginBottom: 10, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: FONT } }, "⚠ Overdue · ", formatMeetingDateLong(action.due_date)), React.createElement("div", { onClick: () => openItem('action', action.id), title: "Open details, audit trail and queries", style: { fontSize: 17, fontWeight: 600, color: isClosed ? C.g500 : C.ink0, textDecoration: isClosed ? 'line-through' : 'none', lineHeight: 1.25, fontFamily: FONT, cursor: 'pointer' } }, action.description), collab && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 14px', background: C.white, border: `1px solid ${C.carmineMid}`, borderRadius: 2 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.16em', color: C.g500, fontFamily: FONT } }, "Owner"), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: C.ink0, fontFamily: FONT } }, ownerLabel), React.createElement("span", { style: { fontSize: 12, color: C.g500, fontStyle: 'italic', marginLeft: 'auto', fontFamily: FONT } }, "Only the owner can close")), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 12 } }, priority !== 'normal' && React.createElement("span", { style: { background: priorityStyle.bg, color: priorityStyle.fg, padding: '4px 8px', borderRadius: 2, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, priorityStyle.label), project && React.createElement("span", { onMouseEnter: linkHover, onMouseLeave: linkLeave, style: { fontSize: 13, fontWeight: 600, color: C.carmine, borderBottom: `1px solid ${C.carmine40}`, paddingBottom: 1, fontFamily: FONT } }, project.name), project && project.project_number && React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, "#", project.project_number), meetingCfg && meeting && React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.carmine, fontFamily: FONT, padding: 0, textDecoration: 'underline' } }, meetingCfg.short, " · ", formatMeetingDate(meeting.meeting_date), " →"))), !collab && !isOverdue && React.createElement("div", { style: { textAlign: 'right', flexShrink: 0, minWidth: 90 } }, action.due_date ? React.createElement("div", { style: { fontSize: 14, fontWeight: 400, color: isClosed ? C.g500 : C.ink0, whiteSpace: 'nowrap', fontFamily: FONT } }, formatMeetingDateLong(action.due_date)) : React.createElement("span", { style: { fontSize: 13, color: C.g500, fontFamily: FONT } }, "No date"))), 
 isClosed && action.completed_note && (React.createElement("div", { style: { padding: '6px 14px 10px', fontSize: 11, color: C.green, fontStyle: 'italic', borderTop: `1px solid ${C.greenLight}`, background: '#F0FBF4' } }, "\u2713 ", action.completed_note, (() => {
         const closer = users && action.completed_by ? users.find(u => u.id === action.completed_by) : null;
         const datePart = action.completed_at ? formatMeetingDate(action.completed_at.slice(0, 10)) : '';

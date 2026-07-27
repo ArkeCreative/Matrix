@@ -349,9 +349,22 @@ else the project's `project_manager_user_id`.
   4 legacy `action_queries` into the polymorphic model (`seed/2026-07-27-item-events-backfill.sql`).
   P0-1 closed + verified (box in the P0 section). **Legacy `action_queries` kept until the app cuts
   over** (deployed app still uses it); a later PR migrates any interim rows and drops it.
-- ⬜ PR2 reusable item modal + query state machine (wired to actions) · PR3 the My Actions page
-  (collapsible sections, `Queries` section, header/flat filters/cards) · PR4 flags + dates rails
-  (+ flag "query it back") · PR5 app-wide `openItem` rollout + role gating + drop legacy `action_queries`.
+- ✅ **PR2 — reusable site-wide item modal + query state machine** (app.jsx): module-level
+  `openItem(kind,id)` (registered by `App`, no prop-drilling) mounts `ItemModal` at the root. Handles
+  `action` + `query` kinds: shell + kind chip + **state ribbon** (`StateRibbon`) + **ball chip**
+  (`queryBall`/`queryExchange`/`querySpent` derived, never cached); left column = fact grid,
+  collaborators, complete-with-mandatory-note (locked while a query is open), raise-query, senior
+  reassign/move-date panel; right column tabs Thread / Audit trail / Related. Full query machine —
+  raise / answer / counter / resolve (mandatory note) / escalate (`escalationTarget` → dept lead else
+  PM) / chase — every step writing an `item_events` row via `logItemEvent`. Icons via `lucide()`
+  (+4 paths). Entry point: the action title on the existing card opens the modal (the full page/card
+  rebuild is PR3). `MA` local palette holds the handoff's exact hexes. Parse + 0/0/0 verified;
+  live-interaction check is Tom's per the workflow. **Transitional:** the modal uses the new `queries`
+  table; the legacy inline QueriesPanel (on `action_queries`) still shows alongside until PR3 removes it.
+- ⬜ PR3 the My Actions page (collapsible sections, `Queries` section, header/flat filters, fully
+  clickable cards + card-level ribbons; retire the legacy QueriesPanel) · PR4 flags + dates rails
+  (+ flag "query it back"; extend ItemModal to `flag`/`date` kinds) · PR5 app-wide `openItem` rollout +
+  role gating + drop legacy `action_queries`.
   Notes: `parent_type` uses the modal's `kind` vocabulary (`action/flag/date`, not `key_date`) so it
   feeds `openItem` directly; the handoff's `from_meeting_type` on `actions` doesn't exist — replaced by
   `source_type`/`source_ref`, set at every creation point in PR2+.
