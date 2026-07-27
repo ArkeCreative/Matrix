@@ -371,8 +371,19 @@ else the project's `project_manager_user_id`.
   ribbon, parent anchor). Retired the legacy `QueriesPanel`/`ActionSection`/`MyActionCard`. Single
   column for now — the Flags/Dates **right rail is PR4**. Parse + 0/0/0 verified; visual/interaction
   check is Tom's on the live app.
-- ⬜ PR4 flags + dates **right rail** (+ flag "query it back"; extend ItemModal to `flag`/`date` kinds)
-  · PR5 app-wide `openItem` rollout + role gating + drop legacy `action_queries`.
+- ✅ **PR4 — Flags + Dates right rail + flag/date modal kinds** (app.jsx): My Actions is now
+  two-column (`minmax(0,1fr) 340px`). Right rail = **Flags** (addressed to the user's `department`,
+  open/acknowledged/converted states + age clock) and **Dates** (key dates on the user's projects,
+  overdue + next 14 days, urgency-coloured), both collapsible via the same persistence. Header context
+  line gained open-flag + dates counts. `ItemModal` extended to **`flag`** and **`date`** kinds:
+  flag modal has facts + FLAG_RIBBON + the team-lead-only **acknowledge-with-note / convert-to-action
+  (owner + due) / query-it-back**, non-leads get read-only + **nudge**; date modal has facts, an
+  overdue banner and **raise-a-recovery-action** (self-owned, `source_type='date'`). `doRaiseQuery`
+  generalised so query-it-back works on any parent kind. New `MARailFlag` / `MARailDate` cards open the
+  modal. Parse + 0/0/0 verified; visual/interaction check is Tom's.
+- ⬜ PR5 app-wide `openItem` rollout (replace list row-clicks in meetings / project pages / checklist /
+  live tracker / open register) + role gating pass + drop legacy `action_queries` (+ retire the
+  meeting-detail legacy query panel).
   Notes: `parent_type` uses the modal's `kind` vocabulary (`action/flag/date`, not `key_date`) so it
   feeds `openItem` directly; the handoff's `from_meeting_type` on `actions` doesn't exist — replaced by
   `source_type`/`source_ref`, set at every creation point in PR2+.
