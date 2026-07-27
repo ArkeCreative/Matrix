@@ -212,6 +212,84 @@ and every batch re-runs the appendix queries.** Assume any unverified claim in t
 
 ---
 
+# 🔍 Review findings — site-wide pass (Claude-in-Chrome, 2026-07-27)
+
+An external click-through of the deployed app. The good news it confirmed: the **single-source-of-truth
+chain works** — data written in a deep module checklist propagates to project KPIs, the Actions & Flags
+tab, and the global Register (on reload). The findings below harden and extend that. Renamed off the
+review's P-numbers into where they land in this plan; test artefacts it left (a "TEST FLAG (Claude)…"
+on #2305 and a "Claude Test Consultancy / Jane Tester" directory row) were **cleaned from the dev DB**.
+
+### RX — Live aggregate reactivity  *(the big one — WORKSHOP; core to the value prop)*
+Aggregated views don't update in place — they only refresh on a full page reload. Raise a flag from a
+checklist and the toast fires, but the project's Open Flags KPI, the Actions & Flags tab, and the
+Register counts stay stale until reload. **This directly undercuts the "single source of truth, live"
+pitch** — the propagation is correct, but it isn't *reactive*.
+- **Root cause (likely):** refresh is prop-drilled callbacks (`refreshProjectActions`, `onDataChanged`
+  etc.) that a deep write doesn't reach, and sibling views (Register, Live Tracker) hold their own
+  fetched copies that only re-run on mount. Not a data bug — a state-propagation architecture gap.
+- **Workshop the approach before building:** a lightweight shared reactive layer (a small store /
+  event bus that aggregate views subscribe to, invalidated on every write), vs. threading a single
+  `bumpVersion()` through every write path. Prefer the former — it's what makes this scale to more
+  modules. **Subsumes the "Last updated" staleness finding** (same root).
+- **Acceptance:** raising/resolving a flag moves the project KPI + Register count immediately, no reload.
+
+### RX-B — Checklist save atomicity  *(data-integrity bug — folds into Phase 4 checklist; pair with P0-3)*
+Flags persist the instant they're raised, but checklist RES/AWT/INFO/N-A answers persist only on
+explicit **Save checklist**. Navigate away and the answer is discarded — orphaning a flag that points at
+a row now showing no answer. **Invariant to enforce: no persisted flag/action may have an unsaved
+source row.** Recommended fix: **(a) persist the source row's answer atomically when a flag/action is
+raised from it** (the module already writes the flag/action — write the `project_checklist_item` in the
+same step). Do it alongside **P0-3** (the `template_item_id` FK), since both touch the checklist
+write path.
+
+### Surface-bug sweep  *(one small batch PR — quick wins)*
+- **Key Dates expander is dead** — on project Overview the `KEY DATES ›` chevron and "Expand key dates"
+  link do nothing; the dates never reveal. (Regression in the `kdOpen` wiring — cheap fix.)
+- **Register nav + deep-link** — the top-nav "Register & activity" link often needs two clicks (first
+  lands on Projects), and `#/register` isn't deep-linkable (loads Projects on refresh). Register the
+  route + fix the first-click resolve.
+- **Modal survives resize** — resizing the window with the Flag modal open collapses the viewport to a
+  strip until a route change; recompute layout / release the overlay on resize.
+- **Directory role required** — a contact saved with no Role won't feed the role-based module
+  people-pickers (the Directory's whole purpose). Require a role before commit (or mark roleless rows
+  and exclude them). **Also verify the forward promise** the review couldn't confirm: a newly-added,
+  properly-roled contact actually appears in a module people-field.
+
+### Exec-facing enhancements  *(schedule into Phase 7 — the executive health view)*
+- **Attribution + ageing on every flag/action** — many read "System"-raised and some are undated; show
+  who raised it and when, with a consistent SLA/ageing colour. **The My Actions rework already built
+  the substrate** (`item_events` = who/when, append-only; the flag age-clock pattern). This is now
+  mostly surfacing that data everywhere flags/actions render, + backfilling actor attribution.
+- **Interactive Live Tracker** — click a bar to open that project; render flag / overdue / key-date
+  markers on the bars. It's the natural exec landing page but is read-only today. → **Phase 7** (also
+  wire `openItem` here, a deferred PR5 item).
+- **Register portfolio strip** — a summary band atop the Register (flags by team, actions by owner,
+  overdue trend) to complement the By-person / By-project grouping. → **Phase 7**.
+- **Excel programme import** — bump priority; "the feature most likely to get people off the
+  spreadsheet." Already the **cross-cutting** item below — needs the serverless proxy (same gap as the
+  deferred My-Actions scheduler). WORKSHOP the proxy once, unblocks both.
+
+### Regression guard  *(WORKSHOP — no test harness exists yet)*
+After RX lands, add a test that runs the full cross-reference chain in one pass, no reloads: edit a
+project field → confirm in the Projects list; raise a flag from a checklist → confirm on the project
+KPI, the Actions & Flags tab, and the Register count; resolve → confirm all three decrement. This chain
+*is* the product promise. The app is a single self-contained `index.html` with no build/test step, so
+the harness is a decision: **Playwright E2E against the deployed app** (fits the existing standalone
+Chromium tooling) is the most likely fit — decide before writing it.
+
+### Suggested sequence
+1. **Surface-bug sweep** + **RX-B checklist atomicity** — small, high-value, ship first (RX-B pairs with
+   P0-3 in the checklist write-path batch).
+2. **RX live reactivity** — workshop the store/bus approach, then build; it's the value-prop fix and
+   everything exec-facing reads better once it lands.
+3. **P0-2 / P0-3 / P0-4** security + schema (still open) — slot around the above per go-live urgency.
+4. **Phase 7 exec view** absorbs attribution/ageing, interactive Live Tracker, the Register strip.
+5. **Programme import** once the serverless proxy is workshopped (also unblocks timed auto-escalation).
+6. **Regression guard** after RX, to lock the chain.
+
+---
+
 ## ✅ DONE
 - **Phase 1 — Colour & visual reset.**
 - **Phase 2 — Project data spine & quick-win UX** (secured toggle, promoted programme dates, inline
