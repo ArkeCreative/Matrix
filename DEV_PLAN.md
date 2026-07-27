@@ -361,10 +361,18 @@ else the project's `project_manager_user_id`.
   rebuild is PR3). `MA` local palette holds the handoff's exact hexes. Parse + 0/0/0 verified;
   live-interaction check is Tom's per the workflow. **Transitional:** the modal uses the new `queries`
   table; the legacy inline QueriesPanel (on `action_queries`) still shows alongside until PR3 removes it.
-- ⬜ PR3 the My Actions page (collapsible sections, `Queries` section, header/flat filters, fully
-  clickable cards + card-level ribbons; retire the legacy QueriesPanel) · PR4 flags + dates rails
-  (+ flag "query it back"; extend ItemModal to `flag`/`date` kinds) · PR5 app-wide `openItem` rollout +
-  role gating + drop legacy `action_queries`.
+- ✅ **PR3 — the My Actions page rebuild** (app.jsx): `MyActionsView` rewritten. Full-bleed carmine
+  header (H1 + context line + **WAITING ON YOU** figure, ball-derived), flat filter row
+  (`All · Queries · Overdue · Due this week · Chasing others · Closed`), **collapsible sections**
+  (per-user localStorage `arke.myactions.collapsed.v1.<uid>`, Collapse-all/Expand-all scoped to the
+  sections actually rendered) — `Queries` (amber, first), `Your actions`, `Collaborating`, `Your team`
+  (senior only), plus a Closed toggle. New **`MAActionCard`** (ribbon + ball chip + provenance chip +
+  query-blocked chip; whole card opens the modal) and **`MAQueryCard`** (Asked→Answered→Resolved
+  ribbon, parent anchor). Retired the legacy `QueriesPanel`/`ActionSection`/`MyActionCard`. Single
+  column for now — the Flags/Dates **right rail is PR4**. Parse + 0/0/0 verified; visual/interaction
+  check is Tom's on the live app.
+- ⬜ PR4 flags + dates **right rail** (+ flag "query it back"; extend ItemModal to `flag`/`date` kinds)
+  · PR5 app-wide `openItem` rollout + role gating + drop legacy `action_queries`.
   Notes: `parent_type` uses the modal's `kind` vocabulary (`action/flag/date`, not `key_date`) so it
   feeds `openItem` directly; the handoff's `from_meeting_type` on `actions` doesn't exist — replaced by
   `source_type`/`source_ref`, set at every creation point in PR2+.
