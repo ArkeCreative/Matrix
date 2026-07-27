@@ -1589,6 +1589,8 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             return { view: 'my-actions', meetingId: null, projectId: null };
         if (seg === 'tracker')
             return { view: 'live-tracker', meetingId: null, projectId: null };
+        if (seg === 'register')
+            return { view: 'register', meetingId: null, projectId: null };
         return { view: 'tracker', meetingId: null, projectId: null };
     };
     const writeHash = (view, meetingId, projectId) => {
@@ -1605,6 +1607,8 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             h = '#/actions';
         else if (view === 'live-tracker')
             h = '#/tracker';
+        else if (view === 'register')
+            h = '#/register';
         if (window.location.hash !== h)
             window.location.hash = h;
     };
@@ -3980,8 +3984,8 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const targets = modal && modal.kind === 'flag'
         ? MEETING_TYPE_OPTIONS.map(o => ({ key: o.value, label: o.label.replace(' Meeting', ''), sub: 'next meeting' }))
         : (users || []).slice(0, 12).map(u => ({ key: u.id, label: u.display_name, sub: u.job_title || (u.role === 'senior' ? 'Senior' : 'Contributor') }));
-    const modalEl = modal ? React.createElement("div", { onClick: () => setModal(null), style: { position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(10,10,10,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 } },
-        React.createElement("div", { onClick: e => e.stopPropagation(), style: { width: 560, maxWidth: '100%', maxHeight: '86vh', overflowY: 'auto', background: C.white, borderRadius: 4, boxShadow: '0 18px 48px rgba(24,59,79,.24)' } },
+    const modalEl = modal ? React.createElement("div", { onClick: () => setModal(null), style: { position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(10,10,10,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, overflowY: 'auto', boxSizing: 'border-box' } },
+        React.createElement("div", { onClick: e => e.stopPropagation(), style: { width: 560, maxWidth: '100%', flexShrink: 0, boxSizing: 'border-box', maxHeight: '86vh', overflowY: 'auto', background: C.white, borderRadius: 4, boxShadow: '0 18px 48px rgba(24,59,79,.24)' } },
             React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '18px 22px', background: modal.kind === 'flag' ? C.carmine : C.prussian, color: '#fff' } },
                 React.createElement("div", null,
                     React.createElement("div", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.8 } }, template.label),
@@ -4198,11 +4202,11 @@ function ProjectDirectory({ projectId, currentUser }) {
                         return;
                     }
                     updateFields(c.id, { role: v });
-                }, style: { appearance: 'none', WebkitAppearance: 'none', width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 2, padding: '7px 24px 7px 9px', fontSize: 13, fontFamily: FONT, fontWeight: c.role ? 600 : 400, color: c.role ? C.ink0 : C.mist, background: '#fff', cursor: 'pointer', outline: 'none' } },
-                React.createElement("option", { value: "" }, "Select role…"),
+                }, title: c.role ? '' : 'A role is required — roleless rows won’t feed the module people-fields', style: { appearance: 'none', WebkitAppearance: 'none', width: '100%', boxSizing: 'border-box', border: `1px solid ${c.role ? C.line : C.amber}`, borderRadius: 2, padding: '7px 24px 7px 9px', fontSize: 13, fontFamily: FONT, fontWeight: c.role ? 600 : 500, color: c.role ? C.ink0 : C.amber, background: c.role ? '#fff' : C.amberLight, cursor: 'pointer', outline: 'none' } },
+                React.createElement("option", { value: "" }, "Role needed…"),
                 opts.map(r => React.createElement("option", { key: r, value: r }, r)),
                 React.createElement("option", { value: "__other__" }, "Other…")),
-            React.createElement("span", { style: { position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'inline-flex' } }, lucide('chevron-down', 13, C.g500, 2)));
+            React.createElement("span", { style: { position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'inline-flex' } }, lucide('chevron-down', 13, c.role ? C.g500 : C.amber, 2)));
     };
     const headerCell = (t) => React.createElement("span", { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.g500 } }, t);
     if (loading) return React.createElement("div", { style: { padding: 30, textAlign: 'center', color: C.mist } }, "Loading directory…");
@@ -4411,7 +4415,9 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             React.createElement("div", { onClick: () => setKdOpen(v => !v), style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' } },
                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', color: C.carmine, transform: kdOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 240ms ${EASE}` } }, lucide('chevron-down', 16, 'currentColor', 2.4)), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "KEY DATES"), React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, manageCount, " on timeline")),
                 React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3 } }, kdOpen ? 'Collapse' : 'Expand key dates')),
-            kdOpen && React.createElement("div", { style: { marginTop: 16 } }, (isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } })))));
+            kdOpen && React.createElement("div", { style: { marginTop: 16 } }, myKeyDates.length === 0
+                ? React.createElement("div", { style: { border: `1px dashed ${C.line}`, borderRadius: 4, padding: '20px', textAlign: 'center', fontSize: 12.5, color: C.g500 } }, "No key dates recorded for this project yet.")
+                : ((isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } }))))));
     // ----- MODULES tab ---------------------------------------------------------
     const builtCount = MODULE_DEFS.filter(d => moduleTemplates.some(t => t.module_key === d.key)).length;
     const modulesCard = card(React.createElement(React.Fragment, null,
