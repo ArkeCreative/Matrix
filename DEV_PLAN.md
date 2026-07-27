@@ -381,9 +381,26 @@ else the project's `project_manager_user_id`.
   overdue banner and **raise-a-recovery-action** (self-owned, `source_type='date'`). `doRaiseQuery`
   generalised so query-it-back works on any parent kind. New `MARailFlag` / `MARailDate` cards open the
   modal. Parse + 0/0/0 verified; visual/interaction check is Tom's.
-- ⬜ PR5 app-wide `openItem` rollout (replace list row-clicks in meetings / project pages / checklist /
-  live tracker / open register) + role gating pass + drop legacy `action_queries` (+ retire the
-  meeting-detail legacy query panel).
+- ✅ **PR5 — app-wide `openItem` rollout + legacy retirement** (app.jsx + DB): the item modal is now
+  reachable from the **Open register** (this delivers Phase 5's deferred "item detail modal" — its
+  placeholder `onDeferredAction('Open detail')` row-click is now `openItem(it.kind, it.id)`), the
+  **project dashboard** action + flag rows, and the **meeting-detail** action rows. The meeting-detail
+  query flow (`raiseQueryOnAction`/`answerQueryOnAction` + the fetch) was **repointed off
+  `action_queries` onto the polymorphic `queries`/`query_messages`** (answer = a thread message +
+  resolve, with an `item_events` row), so the inline meeting query UX is preserved on the new model.
+  **Legacy `action_queries` dropped** (`db/migrations/drop_legacy_action_queries.sql`) — no code
+  references remain; all rows were migrated in PR1. Advisor still clean.
+  - Role gating is client-side only (senior/lead controls omitted for others in the modal + page) —
+    real RLS enforcement is **P0-4 / Phase 6**, unchanged by this rework.
+  - ⬜ **Deferred (need a serverless scheduler — same gap as programme-import):** timed
+    auto-escalation of stale queries + the weekly Monday "ball-in-your-court" digest. Also still open:
+    wiring `openItem` into the Live Tracker + checklist rows (lower value); the checklist→hub audit
+    trigger; "attach evidence"; export.
+
+**▶ My Actions rework — COMPLETE** (PRs #39–#43). Actions, queries (first-class + polymorphic), flags
+and dates all share one append-only-audited lifecycle, one reusable site-wide modal, and one page with
+ball-in-court, state ribbons, the capped query ping-pong + escalation ladder, and the Flags/Dates rail.
+P0-1 was closed as part of it.
   Notes: `parent_type` uses the modal's `kind` vocabulary (`action/flag/date`, not `key_date`) so it
   feeds `openItem` directly; the handoff's `from_meeting_type` on `actions` doesn't exist — replaced by
   `source_type`/`source_ref`, set at every creation point in PR2+.
