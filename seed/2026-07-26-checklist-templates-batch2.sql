@@ -1,5 +1,12 @@
--- Checklist module templates — batch 2 (7 further tabs from the workbook).
+-- Checklist module templates — batch 2 (4 further tabs from the workbook).
 -- APPLIED to the live dev DB on 2026-07-26.
+--
+-- NOTE: WPB Kick Off (tab 16), Onsite Handover (tab 20) and Accountant On Site
+-- (tab 29) were seeded then REMOVED on 2026-07-27 at Tom's request — small niche
+-- operational tabs he did not want surfaced as project modules. Their keys stay
+-- in the delete statements below so re-running this seed clears any stragglers.
+-- (Full definitions remain in git history for the batch-2 commit if ever wanted.)
+--
 -- PM Checklist (workbook tab 22) is deliberately NOT here: it is a blank
 -- per-project information-required register, not a fixed-question checklist,
 -- so it belongs to the register module type rather than this component.
@@ -146,33 +153,3 @@ insert into public.module_template_items (org_id, module_key, section_index, sec
   ('legal-process',4,'Financial',3,'What are the proposed payment terms?',null),
   ('legal-process',5,'Furniture',0,'Does furniture form part of the contract?',null)
 ) as v(module_key, section_index, section_title, row_index, text, who);
-
-insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'wpb-kick-off', 'WPB Kick Off', 'WPB Kick Off', 'signoff', 'complete', '{"blurb":"The workplace-build kick-off sequence: TD kicks it off, the budget comes back, detailed design follows within the CAT B / CAT A&B windows. Each step against the person responsible.","registerTitle":"WPB kick-off actions","colItem":"Action","colInput":"Comment","colStatus":"Status","colMeta":"Last updated","inputPlaceholder":"Comment…","modeBadge":"Sign-off","owner":"Marcus Bell","ownerInitials":"MB","ownerRole":"Technical Design Lead","signOff":true,"signOffCaption":"Sign-off confirms the workplace-build kick-off is complete and design is underway.","flagOnAttention":false,"defaultTeam":"technical","requireDetail":false,"stage":"kick-off","expected":100,"routingNote":"Sign-off tab — a blocked step becomes an action against the person responsible rather than a flag to a whole team.","progressLabel":"Steps complete"}'::jsonb, 8 from public.organisations limit 1;
-
-insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
-  ('wpb-kick-off',0,'Workplace Build Kick Off',0,'TD to kick off the project with WPB','TD'),
-  ('wpb-kick-off',0,'Workplace Build Kick Off',1,'Operations Coordinator to book a meeting 72 hours later for WPB to come back to Maris with budget cost','OC'),
-  ('wpb-kick-off',0,'Workplace Build Kick Off',2,'Budget agreed?',null),
-  ('wpb-kick-off',0,'Workplace Build Kick Off',3,'Detailed design based on the agreed budget',null),
-  ('wpb-kick-off',0,'Workplace Build Kick Off',4,'Detailed design to be issued to Maris no later than: CAT B – 1 week; CAT A & B – 2 weeks',null),
-  ('wpb-kick-off',0,'Workplace Build Kick Off',5,'Operations Coordinator to book in the follow-up meeting accordingly','OC')
-) as v(module_key, section_index, section_title, row_index, text, who);
-
-insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'onsite-handover', 'Onsite Handover', 'Onsite Handover', 'signoff', 'complete', '{"blurb":"The Week -4 onsite handover preparation — visuals, drawings and access lined up before the meeting, then the follow-up handover booked. Each item against the person responsible.","registerTitle":"Handover preparation","colItem":"Action","colInput":"Comment","colStatus":"Status","colMeta":"Last updated","inputPlaceholder":"Comment…","modeBadge":"Sign-off","owner":"Carlos Garcia","ownerInitials":"CG","ownerRole":"Senior Project Manager","signOff":true,"signOffCaption":"Sign-off confirms the site is ready for the handover meeting.","flagOnAttention":false,"defaultTeam":"pre-con","requireDetail":false,"stage":"week -4","expected":100,"routingNote":"Sign-off tab — a blocked item becomes an action against the person responsible rather than a flag to a whole team.","progressLabel":"Preparation complete"}'::jsonb, 9 from public.organisations limit 1;
-
-insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
-  ('onsite-handover',0,'Handover Preparation (Week -4)',0,'Visuals, finishes schedule and drawing issue pack printed and displayed on site one hour before the meeting','DD'),
-  ('onsite-handover',0,'Handover Preparation (Week -4)',1,'Access to be arranged in advance','OC'),
-  ('onsite-handover',0,'Handover Preparation (Week -4)',2,'Drawings printed and available on site','DD'),
-  ('onsite-handover',0,'Handover Preparation (Week -4)',3,'Follow-up handover in the office arranged','OC')
-) as v(module_key, section_index, section_title, row_index, text, who);
-
-insert into public.module_templates (org_id, module_key, label, tab, mode, status_set, config, sort_order) select id, 'accountant', 'Accountant On Site', 'Accountant On Site', 'signoff', 'complete', '{"blurb":"The accountant’s on-site responsibilities running through the project — valuations and invoices on time, timesheets, payment tracking and the 7-day letters.","registerTitle":"Accounts responsibilities","colItem":"Responsibility","colInput":"Comment","colStatus":"Status","colMeta":"Last updated","inputPlaceholder":"Comment…","modeBadge":"Sign-off","owner":"Zara Reid","ownerInitials":"ZR","ownerRole":"Accounts","signOff":true,"signOffCaption":"Sign-off confirms the accounts responsibilities are being run for this project.","flagOnAttention":false,"defaultTeam":"pre-con","requireDetail":false,"stage":"on site","expected":100,"routingNote":"Sign-off tab — a blocked responsibility becomes an action against the person responsible rather than a flag to a whole team.","progressLabel":"Responsibilities running"}'::jsonb, 10 from public.organisations limit 1;
-
-insert into public.module_template_items (org_id, module_key, section_index, section_title, row_index, text, who) select o.id, v.* from (select id from public.organisations limit 1) o, (values
-  ('accountant',0,'Accounts',0,'Ensure valuations / invoices are submitted on time as per the JCT',null),
-  ('accountant',0,'Accounts',1,'Timesheets',null),
-  ('accountant',0,'Accounts',2,'Keep track of client due dates and payments and report any late payments',null),
-  ('accountant',0,'Accounts',3,'Issue 7-day letters',null)
-) as v(module_key, section_index, section_title, row_index, text, who);
-

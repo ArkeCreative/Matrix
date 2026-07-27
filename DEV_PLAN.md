@@ -119,13 +119,16 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
     **Seeded 4 tabs, 125 rows / 25 sections:** Building Regs (record/rag, 58), BD (reference/yesno,
     22), Adjudication (record/rag, 30), 70% Close Out (signoff/complete, 15 — rows carry a
     responsible discipline). PDF/XLSX buttons render but defer to a dedicated export pass.
-  - ✅ **Batch 2 — 7 further tabs seeded, 133 rows / 26 sections** (`seed/2026-07-26-checklist-templates-batch2.sql`,
+  - ✅ **Batch 2 — 4 further tabs seeded, 119 rows / 22 sections** (`seed/2026-07-26-checklist-templates-batch2.sql`,
     applied to live DB): Designer (record/rag, 29 — Key Risks / Weekly / Design Checklist / Adjudication
     items), Graphics (reference/yesno, 22), Legal Kick Off (record/rag, 33), Legal Process (record/rag,
-    35), WPB Kick Off (signoff/complete, 6 — steps carry a responsible role), Onsite Handover
-    (signoff/complete, 4), Accountant On Site (signoff/complete, 4). All render through the same
-    `ChecklistModule` (no code change beyond MODULE_DEFS cards). Owners map to real app_users where a
-    role matches. **11 checklist templates now live.**
+    35). All render through the same `ChecklistModule` (no code change beyond MODULE_DEFS cards). Owners
+    map to real app_users where a role matches. **8 checklist templates now live.**
+  - ↩︎ **Removed 2026-07-27 at Tom's request:** WPB Kick Off (tab 16), Onsite Handover (tab 20),
+    Accountant On Site (tab 29) were seeded in batch 2 then pulled — small niche operational tabs Tom
+    did not recognise / did not want as project modules. Deleted from the DB and MODULE_DEFS; full
+    definitions preserved in the batch-2 commit's git history if ever wanted back. **Lesson: confirm
+    which workbook tabs Tom actually wants as modules before seeding the long tail — not every tab is one.**
   - ⬜ **PM Checklist (workbook tab 22) is a register, not a checklist** — a blank per-project
     information-required log (Item / Work Package / Information Required / Action By / Comments / Date
     Required / Response / Status; 117 empty numbered rows, no fixed questions). Deliberately NOT forced
