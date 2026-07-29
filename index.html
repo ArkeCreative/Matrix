@@ -2198,6 +2198,7 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     const [showPre, setShowPre] = React.useState(false);
     const [selected, setSelected] = React.useState(null);
     const [editing, setEditing] = React.useState(false);
+    const [pendingMove, setPendingMove] = React.useState(null);
     const setHover = k => () => setHoverKey(k);
     const clearHover = k => () => setHoverKey(h => h === k ? null : h);
     const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2271,7 +2272,33 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     else if (hoverKey && hoverKey[0] === 'm') { const mm = milestones[+hoverKey.slice(1)]; if (mm) hv = { label: mm.label, date: mm.dateShort, status: mm.completed ? 'Completed' : (mm.overdue ? 'Overdue' : 'Upcoming'), fg: mm.completed ? C.success : (mm.overdue ? C.carmine : C.prussian), bg: mm.completed ? '#E6EFEA' : (mm.overdue ? C.carmineSoft : C.prussian10) }; }
     const diamondBg = hypothetical ? C.white : C.ink0;
     const diamondBorder = hypothetical ? `2px solid ${C.ink0}` : 'none';
-    const updateDate = (id, iso) => { try { sb.from('project_key_dates').update({ target_date: iso, updated_by: currentUser && currentUser.id }).eq('id', id).then(() => onKeyDatesChange && onKeyDatesChange()); } catch (e) { } setSelected(null); setEditing(false); };
+    // Step 1: moving a date here is the same programme event as moving it in the
+    // key-dates list, so it takes the same reason prompt. The write itself lives
+    // in commitDateMove so both entry points share one shape.
+    const commitDateMove = async (id, iso, ctx) => {
+        const { error } = await sb.from('project_key_dates').update(Object.assign({
+            target_date: iso,
+            updated_by: currentUser && currentUser.id,
+        }, ctx ? {
+            change_reason: ctx.reason,
+            change_meeting_id: ctx.meetingId,
+            change_cause_flag_id: ctx.causeFlagId,
+            change_cause_action_id: ctx.causeActionId,
+        } : {})).eq('id', id);
+        if (error)
+            throw error;
+        if (onKeyDatesChange)
+            await onKeyDatesChange();
+    };
+    const updateDate = (id, iso) => {
+        const cur = (keyDates || []).find(k => k.id === id);
+        const was = cur ? String(cur.target_date || '').slice(0, 10) : '';
+        setSelected(null);
+        setEditing(false);
+        if (!cur || was === iso)
+            return;
+        setPendingMove({ id: id, label: (cur.event_name || 'Key date'), from: cur.target_date, to: iso });
+    };
     const deleteDate = (id) => { try { sb.from('project_key_dates').delete().eq('id', id).then(() => onKeyDatesChange && onKeyDatesChange()); } catch (e) { } setSelected(null); setEditing(false); };
     const toggle = (label, on, onClick) => React.createElement("div", { style: { display: 'inline-flex', alignItems: 'center', gap: 10 } }, React.createElement("span", { style: { fontSize: 12, color: C.g500, fontFamily: FONT } }, label), React.createElement("div", { onClick: onClick, style: { width: 40, height: 22, borderRadius: 9999, background: on ? C.carmine : C.g300, position: 'relative', cursor: 'pointer', transition: 'background 160ms ease-out' } }, React.createElement("span", { style: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 160ms ease-out', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' } })));
     const diamond = (key, leftPct, size, bg, border, label, date, labelColor, aln, onEnter, onLeave, scale) => [
@@ -2315,6 +2342,16 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
         editable && React.createElement("div", { style: { display: 'flex', gap: 10, flexShrink: 0 } },
             React.createElement("button", { style: Object.assign(Object.assign({}, btnPrimary()), { display: 'inline-flex', alignItems: 'center', gap: 7 }) }, lucide('plus', 14, '#fff', 2.4), "Add key date"),
             React.createElement("button", { style: btnSecondary() }, "Define Site Start & PC"))));
+    if (pendingMove)
+        children.push(React.createElement(DateChangeReasonModal, { key: 'pendingmove', projectId: project.id, subjectLabel: pendingMove.label, fromDate: pendingMove.from, toDate: pendingMove.to, meetingId: null, onCancel: () => setPendingMove(null), onConfirm: async (ctx) => {
+                try {
+                    await commitDateMove(pendingMove.id, pendingMove.to, ctx);
+                }
+                catch (e) {
+                    alert('Could not move the date: ' + e.message);
+                }
+                setPendingMove(null);
+            } }));
     return React.createElement("div", { style: { fontFamily: FONT, color: C.ink0 } }, children);
 }
 
@@ -5044,6 +5081,11 @@ function ProjectDirectory({ projectId, currentUser }) {
 function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onSaveTeam, onProjectSave, onActionsChange, onKeyDatesChange, onBack }) {
     const project = (projects || []).find(p => p.id === projectId);
     const [activeTab, setActiveTab] = React.useState('overview');
+    // Step 1 — programme baseline & delay record.
+    const [pendingProjectDate, setPendingProjectDate] = React.useState(null);
+    const [dateNonce, setDateNonce] = React.useState(0);
+    const [baselining, setBaselining] = React.useState(false);
+    const [baselineMsg, setBaselineMsg] = React.useState(null);
     const [activeModule, setActiveModule] = React.useState(null); // a MODULE_DEFS entry when a module page is open
     const [moduleTemplates, setModuleTemplates] = React.useState([]); // built modules (checklists etc.)
     const [moduleProgress, setModuleProgress] = React.useState({}); // { module_key: {answered,total,pct,ring} }
@@ -5233,16 +5275,75 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const dateColor = secured ? C.ink0 : C.g500;
     const dateField = (label, val, locked, onSave, caption) => React.createElement("div", null,
         React.createElement("label", { style: { display: 'block', fontWeight: 500, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 7 } }, label),
-        React.createElement("input", { type: "date", defaultValue: val, disabled: !isSenior || locked, onBlur: e => onSave(e.target.value), style: { width: '100%', boxSizing: 'border-box', fontFamily: FONT, fontWeight: 700, fontSize: 16, color: dateColor, border: `1.5px solid ${C.line}`, borderRadius: 2, padding: '10px 12px', background: '#fff', cursor: isSenior && !locked ? 'pointer' : 'default' } }),
+        React.createElement("input", { key: 'kd' + dateNonce + '-' + (val || ''), type: "date", defaultValue: val, disabled: !isSenior || locked, onBlur: e => onSave(e.target.value), style: { width: '100%', boxSizing: 'border-box', fontFamily: FONT, fontWeight: 700, fontSize: 16, color: dateColor, border: `1.5px solid ${C.line}`, borderRadius: 2, padding: '10px 12px', background: '#fff', cursor: isSenior && !locked ? 'pointer' : 'default' } }),
         React.createElement("div", { style: { fontSize: 11, fontStyle: 'italic', color: C.g500, marginTop: 5 } }, caption));
     const manageCount = myKeyDates.filter(k => !PROGRAMME_EVENT_NAMES.includes(k.event_name)).length;
     const constructionCard = card(React.createElement(React.Fragment, null,
+        pendingProjectDate && React.createElement(DateChangeReasonModal, { projectId: project.id, subjectLabel: pendingProjectDate.label, fromDate: pendingProjectDate.from, toDate: pendingProjectDate.to, meetingId: null, onCancel: () => { setPendingProjectDate(null); setDateNonce(n => n + 1); }, onConfirm: async (ctx) => {
+                const pm = pendingProjectDate;
+                setPendingProjectDate(null);
+                try {
+                    // The context columns ride along in the same update as the
+                    // date, which is what lets the trigger record the cause.
+                    await onProjectSave(project.id, {
+                        [pm.field]: pm.to,
+                        date_change_reason: ctx.reason,
+                        date_change_meeting_id: ctx.meetingId,
+                        date_change_cause_flag_id: ctx.causeFlagId,
+                        date_change_cause_action_id: ctx.causeActionId,
+                    });
+                }
+                catch (e) {
+                    alert('Could not save the date: ' + e.message);
+                }
+            } }),
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 20 } }, React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 13, letterSpacing: '0.14em', color: C.carmine } }, "CONSTRUCTION"), !secured && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, border: `1.5px solid ${C.carmine}`, color: C.carmine, fontFamily: FONT, fontWeight: 600, fontSize: 10, letterSpacing: '0.12em', padding: '3px 9px', borderRadius: 9999 } }, "ANTICIPATED")),
         React.createElement("div", { style: { marginBottom: 24, paddingBottom: 22, borderBottom: `1px solid ${C.line}`, display: 'flex', alignItems: 'flex-start', gap: 26 } },
             React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 220px', gap: 26, alignItems: 'start', flex: '0 0 auto' } },
-                dateField('Site Start', project.site_start_date || '', startLocked, v => { if ((v || '') !== (project.site_start_date || '')) onProjectSave(project.id, { site_start_date: v || null }); }, startLocked ? 'Completed — locked' : 'Manually entered'),
-                dateField(secured ? 'Completion (PC)' : 'Completion (proj.)', endIso, endLocked, v => { const col = secured ? 'contracted_completion_date' : 'projected_completion_date'; if ((v || '') !== (project[col] || '')) onProjectSave(project.id, { [col]: v || null }); }, endLocked ? 'Completed — locked' : 'Manually entered')),
+                dateField('Site Start', project.site_start_date || '', startLocked, v => { if ((v || '') !== (project.site_start_date || '')) setPendingProjectDate({ field: 'site_start_date', label: 'Site start', from: project.site_start_date, to: v || null }); }, startLocked ? 'Completed — locked' : 'Manually entered'),
+                dateField(secured ? 'Completion (PC)' : 'Completion (proj.)', endIso, endLocked, v => { const col = secured ? 'contracted_completion_date' : 'projected_completion_date'; if ((v || '') !== (project[col] || '')) setPendingProjectDate({ field: col, label: secured ? 'Contracted completion (PC)' : 'Projected completion', from: project[col], to: v || null }); }, endLocked ? 'Completed — locked' : 'Manually entered')),
             !secured && React.createElement("div", { style: { marginLeft: 'auto', maxWidth: 300, display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, fontStyle: 'italic', color: C.carmine, lineHeight: 1.4 } }, "Anticipated dates — not confirmed until the project is secured.")),
+        // ----- PROGRAMME BASELINE (Step 1) ------------------------------------
+        // The baseline is frozen by a deliberate senior action, never as a side
+        // effect of securing the project. A baseline nobody chose to set is not
+        // evidence of anything; one a named person set on a recorded date is.
+        // It cannot be re-set — see baseline_programme() in the migration.
+        React.createElement("div", { style: { marginBottom: 24, paddingBottom: 22, borderBottom: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' } },
+            React.createElement("div", { style: { flex: '1 1 320px', minWidth: 0 } },
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+                    React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "PROGRAMME BASELINE"),
+                    project.programme_baselined_at
+                        ? React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, color: C.success, fontFamily: FONT, fontWeight: 600, fontSize: 11, letterSpacing: '0.06em' } }, lucide('check', 13, 'currentColor', 2.6), "Baselined")
+                        : React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', border: `1.5px solid ${C.g300}`, color: C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 10, letterSpacing: '0.12em', padding: '2px 8px', borderRadius: 9999 } }, "NOT BASELINED")),
+                React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 5, lineHeight: 1.5 } }, project.programme_baselined_at
+                    ? ('Frozen ' + formatMeetingDate(String(project.programme_baselined_at).slice(0, 10))
+                        + ((users || []).find(u => u.id === project.programme_baselined_by) ? ' by ' + (users || []).find(u => u.id === project.programme_baselined_by).display_name : '')
+                        + '. Every date movement since is recorded against it.')
+                    : 'Freeze today\u2019s dates as the agreed programme. Until you do, dates can still move but there is nothing to measure the movement against.')),
+            (isSenior && !project.programme_baselined_at) && React.createElement("button", { onClick: async () => {
+                    if (baselining)
+                        return;
+                    if (!window.confirm('Freeze the current dates as this project\u2019s agreed programme baseline?\n\nThis cannot be undone or re-set later — every future date change will be measured against these dates.'))
+                        return;
+                    setBaselining(true);
+                    setBaselineMsg(null);
+                    try {
+                        const { data, error } = await sb.rpc('baseline_programme', { p_project: project.id });
+                        if (error)
+                            throw error;
+                        // sb.rpc is not wrapped by the auto-emit publisher (only
+                        // sb.from is), so the bus is notified by hand here.
+                        dataBus.emit(['projects', 'dates']);
+                        setBaselineMsg({ ok: true, text: 'Programme baselined — ' + (data || 0) + ' key date' + (Number(data) === 1 ? '' : 's') + ' frozen.' });
+                    }
+                    catch (e) {
+                        setBaselineMsg({ ok: false, text: e.message || 'Could not baseline this programme.' });
+                    }
+                    finally {
+                        setBaselining(false);
+                    }
+                }, disabled: baselining, style: Object.assign(Object.assign({}, btnPrimary()), { whiteSpace: 'nowrap', opacity: baselining ? 0.5 : 1 }) }, baselining ? 'Baselining\u2026' : 'Baseline this programme'),
+            baselineMsg && React.createElement("div", { style: { flexBasis: '100%', fontSize: 12, color: baselineMsg.ok ? C.success : C.carmine, background: baselineMsg.ok ? C.successBg : C.carmineSoft, border: `1px solid ${baselineMsg.ok ? C.success : C.carmine}`, borderRadius: 2, padding: '9px 12px' } }, baselineMsg.text)),
         React.createElement(ProgrammeTimeline, { project: project, keyDates: myKeyDates, editable: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange }),
         React.createElement("div", { style: { marginTop: 22, paddingTop: 20, borderTop: `1px solid ${C.line}` } },
             React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' } },
@@ -7090,7 +7191,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                 background: activeProjectId === p.id ? C.carmineSoft : 'transparent',
                 borderBottom: `1px solid ${C.line}`,
             } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, "#", p.project_number)), coveredThisMeeting && (React.createElement("span", { title: "Covered this meeting — notes captured or reviewed", style: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 15, height: 15, borderRadius: '50%', background: C.green, flexShrink: 0, marginTop: 3 } }, React.createElement("svg", { width: 9, height: 9, viewBox: "0 0 24 24", fill: "none" }, React.createElement("polyline", { points: "20 6 9 17 4 12", stroke: "#fff", strokeWidth: 3.5, strokeLinecap: "round", strokeLinejoin: "round" }))))), (status || flagCount > 0 || actionCount > 0) && (React.createElement("div", { style: { marginTop: 5, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' } }, status && React.createElement("span", { style: { display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, background: status.bg, color: status.fg } }, status.short), flagCount > 0 && React.createElement("span", { title: `${flagCount} flag${flagCount === 1 ? '' : 's'} awaiting action`, style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: C.carmineSoft, color: C.carmine, border: `1px solid ${C.carmineMid}` } }, React.createElement("svg", { width: 9, height: 9, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M5 21V4M5 4c3-1.5 5 1.5 8 0s5 0 5 0v9s-2 1.5-5 0-5 1.5-8 0", stroke: C.carmine, strokeWidth: 2.5, strokeLinecap: "round", strokeLinejoin: "round" })), flagCount), actionCount > 0 && React.createElement("span", { title: `${actionCount} action${actionCount === 1 ? '' : 's'} this meeting`, style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: C.prussian10, color: C.prussian, border: `1px solid ${C.prussian20}` } }, React.createElement("svg", { width: 9, height: 9, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("polyline", { points: "9 11 12 14 22 4", stroke: C.prussian, strokeWidth: 2.5, strokeLinecap: "round", strokeLinejoin: "round" }), React.createElement("path", { d: "M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", stroke: C.prussian, strokeWidth: 2.5, strokeLinecap: "round", strokeLinejoin: "round" })), actionCount)))));
-    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), resultingActions: resultingActions, onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onStatusChange: (updateProjectField && !isReadOnly) ? (v) => updateProjectField(activeProject.id, 'status', v) : null, onOpenProjectDetail: onOpenProjectDashboard ? () => onOpenProjectDashboard(activeProject.id) : null, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onMarkReviewed: (field, val, fromDate) => markReviewedNoChange(activeProject.id, field, val, fromDate), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction, collaboratorsByAction: collaboratorsByAction, queriesByAction: openQueryByAction, onRaiseQuery: raiseQueryOnAction, onAnswerQuery: answerQueryOnAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
+    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, meetingId: meetingId, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), resultingActions: resultingActions, onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onStatusChange: (updateProjectField && !isReadOnly) ? (v) => updateProjectField(activeProject.id, 'status', v) : null, onOpenProjectDetail: onOpenProjectDashboard ? () => onOpenProjectDashboard(activeProject.id) : null, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onMarkReviewed: (field, val, fromDate) => markReviewedNoChange(activeProject.id, field, val, fromDate), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction, collaboratorsByAction: collaboratorsByAction, queriesByAction: openQueryByAction, onRaiseQuery: raiseQueryOnAction, onAnswerQuery: answerQueryOnAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
             padding: '7px 14px', background: 'transparent',
             color: C.redStatus, border: `1px solid ${C.redStatus}`,
             borderRadius: 3, cursor: 'pointer', fontSize: 12,
@@ -7120,9 +7221,88 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     })(), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, prefillDescription: convertingHandoff ? convertingHandoff.note : '', isConversion: !!convertingHandoff, onClose: () => { setShowAddAction(false); setConvertingHandoff(null); }, onAdd: addAction })), showAttendance && (React.createElement(AttendancePanel, { attendees: attendees, users: users, projectTeamUserIds: projectTeamUserIds, departmentUserIds: departmentUserIds, chairUserId: meeting ? meeting.chair_user_id : null, meetingTypeShort: (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short, isChair: isChair, isReadOnly: isReadOnly, onToggle: toggleAttendeePresent, onAdd: addAttendee, onRemove: removeAttendee, onApplyGroup: applyAttendanceGroup, onRemoveGroup: removeAttendanceGroup, onClose: () => setShowAttendance(false) })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, attendees: attendees, handoffs: handoffs.filter(h => h.from_meeting_id === meetingId), actionAssignees: actionAssignees, onClose: () => setShowRoundUp(false) }))))));
 }
 // ============================================================
+// PROGRAMME DATE CHANGE — reason capture (Step 1)
+// ============================================================
+// Every target_date move is recorded by a database trigger whether or not this
+// modal is used, so the record can never be lost. What the trigger cannot know
+// is WHY — that only exists in someone's head at the moment they move the date,
+// which is exactly why it is captured here and not reconstructed later.
+//
+// The context is carried in the SAME update statement as the new date, in the
+// transient change_* columns; the trigger folds them into the revision row and
+// blanks them. See db/migrations/step1_programme_baseline_and_revisions.sql.
+//
+// The reason is deliberately OPTIONAL. Forcing it would produce "." and "update"
+// rather than evidence, and would block legitimate typo corrections. The prompt
+// makes the honest case for filling it in and gets out of the way.
+function DateChangeReasonModal({ projectId, subjectLabel, fromDate, toDate, meetingId, onCancel, onConfirm }) {
+    const [reason, setReason] = React.useState('');
+    const [causeType, setCauseType] = React.useState('');
+    const [causeId, setCauseId] = React.useState('');
+    const [flags, setFlags] = React.useState([]);
+    const [actions, setActions] = React.useState([]);
+    const [busy, setBusy] = React.useState(false);
+    // Self-contained: the modal loads the project's open flags/actions itself, so
+    // it behaves identically wherever it is mounted rather than depending on
+    // whichever arrays its host happens to hold.
+    React.useEffect(() => {
+        let live = true;
+        (async () => {
+            try {
+                const [f, a] = await Promise.all([
+                    sb.from('meeting_handoffs').select('id, note, status').eq('project_id', projectId).neq('status', 'acknowledged').limit(40),
+                    sb.from('actions').select('id, description, status').eq('project_id', projectId).neq('status', 'complete').limit(40),
+                ]);
+                if (!live)
+                    return;
+                setFlags((f && f.data) || []);
+                setActions((a && a.data) || []);
+            }
+            catch (e) { /* the cause picker is optional enrichment — never block the save */ }
+        })();
+        return () => { live = false; };
+    }, [projectId]);
+    const commit = async () => {
+        if (busy)
+            return;
+        setBusy(true);
+        await onConfirm({
+            reason: reason.trim() || null,
+            causeFlagId: causeType === 'flag' ? (causeId || null) : null,
+            causeActionId: causeType === 'action' ? (causeId || null) : null,
+            meetingId: meetingId || null,
+        });
+    };
+    const truncate = (s, n) => { const t = String(s || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+    const causeOptions = []
+        .concat(flags.map(f => ({ type: 'flag', id: f.id, label: 'Flag · ' + truncate(f.note, 70) })))
+        .concat(actions.map(a => ({ type: 'action', id: a.id, label: 'Action · ' + truncate(a.description, 70) })));
+    return React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: onCancel },
+        React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 2, width: 520, maxWidth: '94vw', boxShadow: '0 12px 40px rgba(24,59,79,0.22)' } },
+            React.createElement("div", { style: { background: C.prussian, padding: '16px 22px' } },
+                React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.white, fontFamily: FONT } }, "Why has this date moved?"),
+                React.createElement("div", { style: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2, fontFamily: FONT } }, subjectLabel)),
+            React.createElement("div", { style: { padding: '20px 22px' } },
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 2, marginBottom: 16 } },
+                    React.createElement("span", { style: { fontFamily: FONT, fontSize: 14, color: C.g500, textDecoration: 'line-through' } }, fromDate ? formatMeetingDate(fromDate) : 'Not set'),
+                    React.createElement("span", { style: { display: 'inline-flex', color: C.carmine } }, lucide('arrow-right', 15, 'currentColor', 2)),
+                    React.createElement("span", { style: { fontFamily: FONT, fontSize: 14, fontWeight: 700, color: C.ink0 } }, toDate ? formatMeetingDate(toDate) : 'Cleared')),
+                React.createElement("label", { style: { display: 'block', fontWeight: 500, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 7 } }, "Reason"),
+                React.createElement("textarea", { value: reason, autoFocus: true, onChange: e => setReason(e.target.value), rows: 3, placeholder: "e.g. Landlord licence to alter still outstanding; contractor cannot access the floor.", style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', boxSizing: 'border-box', resize: 'vertical', fontFamily: FONT }) }),
+                causeOptions.length > 0 && React.createElement("div", { style: { marginTop: 16 } },
+                    React.createElement("label", { style: { display: 'block', fontWeight: 500, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 7 } }, "Caused by (optional)"),
+                    React.createElement("select", { value: causeType && causeId ? causeType + ':' + causeId : '', onChange: e => { const v = e.target.value; if (!v) { setCauseType(''); setCauseId(''); } else { const i = v.indexOf(':'); setCauseType(v.slice(0, i)); setCauseId(v.slice(i + 1)); } }, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', boxSizing: 'border-box', fontFamily: FONT, cursor: 'pointer' }) },
+                        React.createElement("option", { value: "" }, "Not linked to an open flag or action"),
+                        causeOptions.map(o => React.createElement("option", { key: o.type + o.id, value: o.type + ':' + o.id }, o.label)))),
+                React.createElement("div", { style: { fontSize: 11, color: C.g500, fontStyle: 'italic', marginTop: 14, lineHeight: 1.5 } }, "The move is recorded either way. A reason here is what turns the programme history into something that stands up months later, when nobody remembers.")),
+            React.createElement("div", { style: { padding: '14px 22px', borderTop: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', gap: 8 } },
+                React.createElement("button", { onClick: onCancel, disabled: busy, style: Object.assign(Object.assign({}, btnSecondary()), { marginLeft: 'auto' }) }, "Cancel"),
+                React.createElement("button", { onClick: commit, disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Saving…' : (reason.trim() ? 'Save with reason' : 'Save without a reason')))));
+}
+// ============================================================
 // KEY DATES SECTION — in meeting capture pane
 // ============================================================
-function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meetingCfg, onKeyDatesChange, compact }) {
+function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meetingCfg, meetingId, onKeyDatesChange, compact }) {
     const [showForm, setShowForm] = React.useState(false);
     const [formData, setFormData] = React.useState({ event_name: '', target_date: '' });
     const [editingId, setEditingId] = React.useState(null);
@@ -7130,6 +7310,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     const [completingId, setCompletingId] = React.useState(null);
     const [completionNote, setCompletionNote] = React.useState('');
     const [saving, setSaving] = React.useState(false);
+    const [pendingMove, setPendingMove] = React.useState(null);
     const handleAdd = async () => {
         if (!formData.event_name.trim() || !formData.target_date)
             return;
@@ -7157,23 +7338,41 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
             setSaving(false);
         }
     };
+    // Step 1: a date move is programme history, so it goes through the reason
+    // prompt. A rename on its own does not — that is not a programme event, and
+    // interrupting it would train people to dismiss the prompt.
+    const writeEdit = async (id, ctx) => {
+        const { error } = await sb.from('project_key_dates').update(Object.assign({
+            event_name: editData.event_name.trim(),
+            target_date: editData.target_date,
+            updated_by: currentUser.id,
+            updated_at: new Date().toISOString(),
+        }, ctx ? {
+            change_reason: ctx.reason,
+            change_meeting_id: ctx.meetingId,
+            change_cause_flag_id: ctx.causeFlagId,
+            change_cause_action_id: ctx.causeActionId,
+        } : {})).eq('id', id);
+        if (error)
+            throw error;
+        setEditingId(null);
+        setPendingMove(null);
+        if (onKeyDatesChange)
+            await onKeyDatesChange();
+    };
     const handleSaveEdit = async (id) => {
         var _a;
         if (!((_a = editData.event_name) === null || _a === void 0 ? void 0 : _a.trim()) || !editData.target_date)
             return;
+        const original = (keyDates || []).find(k => k.id === id);
+        const wasDate = original ? String(original.target_date || '').slice(0, 10) : '';
+        if (original && wasDate !== editData.target_date) {
+            setPendingMove({ id: id, label: editData.event_name.trim(), from: original.target_date, to: editData.target_date });
+            return;
+        }
         setSaving(true);
         try {
-            const { error } = await sb.from('project_key_dates').update({
-                event_name: editData.event_name.trim(),
-                target_date: editData.target_date,
-                updated_by: currentUser.id,
-                updated_at: new Date().toISOString(),
-            }).eq('id', id);
-            if (error)
-                throw error;
-            setEditingId(null);
-            if (onKeyDatesChange)
-                await onKeyDatesChange();
+            await writeEdit(id, null);
         }
         catch (e) {
             alert('Failed to update: ' + e.message);
@@ -7249,7 +7448,16 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     const openDates = keyDates.filter(kd => !isAutoComplete(kd));
     const closedDates = keyDates.filter(kd => isAutoComplete(kd));
     const [showClosed, setShowClosed] = React.useState(false);
-    return (React.createElement("div", { style: { marginBottom: compact ? 8 : 20, paddingBottom: compact ? 8 : 20, borderBottom: compact ? 'none' : `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 11, color: C.g700, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.16em', fontFamily: FONT } }, "Key dates ", keyDates.length > 0 && React.createElement("span", { style: { color: C.g300 } }, `(${openDates.length} open${closedDates.length > 0 ? ` · ${closedDates.length} closed` : ''})`)), isSenior && !showForm && (React.createElement("button", { onClick: () => setShowForm(true), onMouseEnter: e => { e.currentTarget.style.background = C.carmine; e.currentTarget.style.color = '#fff'; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.carmine; }, style: { background: 'transparent', color: C.carmine, border: `1px solid ${C.carmine}`, borderRadius: 2, padding: '9px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out' } }, "+ Add date"))), openDates.length > 0 && (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: closedDates.length > 0 ? 8 : 0 } }, openDates.map(kd => {
+    return (React.createElement("div", { style: { marginBottom: compact ? 8 : 20, paddingBottom: compact ? 8 : 20, borderBottom: compact ? 'none' : `1px solid ${C.line}` } }, pendingMove && React.createElement(DateChangeReasonModal, { projectId: project.id, subjectLabel: pendingMove.label, fromDate: pendingMove.from, toDate: pendingMove.to, meetingId: meetingId || null, onCancel: () => setPendingMove(null), onConfirm: async (ctx) => { setSaving(true); try {
+            await writeEdit(pendingMove.id, ctx);
+        }
+        catch (e) {
+            alert('Failed to update: ' + e.message);
+            setPendingMove(null);
+        }
+        finally {
+            setSaving(false);
+        } } }), React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 11, color: C.g700, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.16em', fontFamily: FONT } }, "Key dates ", keyDates.length > 0 && React.createElement("span", { style: { color: C.g300 } }, `(${openDates.length} open${closedDates.length > 0 ? ` · ${closedDates.length} closed` : ''})`)), isSenior && !showForm && (React.createElement("button", { onClick: () => setShowForm(true), onMouseEnter: e => { e.currentTarget.style.background = C.carmine; e.currentTarget.style.color = '#fff'; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.carmine; }, style: { background: 'transparent', color: C.carmine, border: `1px solid ${C.carmine}`, borderRadius: 2, padding: '9px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out' } }, "+ Add date"))), openDates.length > 0 && (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: closedDates.length > 0 ? 8 : 0 } }, openDates.map(kd => {
         const urg = keyDateUrgency(kd.target_date);
         if (editingId === kd.id) {
             return (React.createElement("div", { key: kd.id, style: { display: 'flex', gap: 6, alignItems: 'center', background: C.white, border: `1px solid ${C.carmine}`, borderRadius: 3, padding: '6px 10px' } }, React.createElement("input", { value: editData.event_name || '', onChange: e => setEditData(p => (Object.assign(Object.assign({}, p), { event_name: e.target.value }))), placeholder: "Event name", style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 12, padding: '4px 8px', flex: 1, minWidth: 180 }) }), React.createElement("input", { type: "date", value: editData.target_date || '', onChange: e => setEditData(p => (Object.assign(Object.assign({}, p), { target_date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 12, padding: '2px 6px' }) }), React.createElement("button", { onClick: () => handleSaveEdit(kd.id), disabled: saving, style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, padding: '3px 8px' }) }, "Save"), React.createElement("button", { onClick: () => setEditingId(null), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '3px 8px' }) }, "Cancel")));
@@ -7287,7 +7495,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
 // ============================================================
 // PROJECT CAPTURE PANE (within MeetingDetailView)
 // ============================================================
-function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, resultingActions, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onStatusChange, onOpenProjectDetail, onUpdateField, onMarkReviewed, onAddAction, onUpdateAction, onDeleteAction, collaboratorsByAction, queriesByAction, onRaiseQuery, onAnswerQuery }) {
+function ProjectCapturePane({ project, entry, meetingId, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, resultingActions, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onStatusChange, onOpenProjectDetail, onUpdateField, onMarkReviewed, onAddAction, onUpdateAction, onDeleteAction, collaboratorsByAction, queriesByAction, onRaiseQuery, onAnswerQuery }) {
     const cfg = meetingCfg || MEETING_TYPES['pre-con'];
     const status = statusLookup[project.status] || { label: '—', bg: '#EEE', fg: C.muted };
     const [showOtherNotes, setShowOtherNotes] = useState(false);
@@ -7390,7 +7598,7 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
                 fontStyle: displayValue ? 'normal' : 'italic',
                 minHeight: 36, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             } }, displayValue || 'No notes created yet')));
-    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser, openQuery: (queriesByAction && queriesByAction[a.id]) || null, onRaiseQuery: onRaiseQuery, onAnswerQuery: onAnswerQuery })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
+    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, meetingId: meetingId, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: FONT } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser, openQuery: (queriesByAction && queriesByAction[a.id]) || null, onRaiseQuery: onRaiseQuery, onAnswerQuery: onAnswerQuery })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
         const outgoing = (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType);
         return React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (outgoing.length > 0 || showHandoffForm) ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.carmine, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Flagged for other teams (", outgoing.length, ")"), !isReadOnly && !showHandoffForm && (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.carmineMid}`, color: C.carmine, borderRadius: 3, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: FONT, display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")));
     })(), showHandoffForm && (React.createElement("div", { style: { background: C.carmineSoft, border: `1px solid ${C.carmineMid}`, borderRadius: 4, padding: 14, marginBottom: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.carmine : C.line}`, background: handoffDept === o.value ? C.carmine : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: FONT } }, o.label.replace(' Meeting', '')))))), (() => {
