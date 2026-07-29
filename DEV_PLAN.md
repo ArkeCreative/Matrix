@@ -488,6 +488,21 @@ Chromium tooling) is the most likely fit — decide before writing it.
 - **Phase 4a/4c** (PR #28, merged/live): clickable metric tiles → catalogues (+ collapsible
   Completed); team-change data integrity (warn + offer reassign).
 
+### ⚠ Fixed 2026-07-29 — people edits never reached the rest of the app
+Reported by Tom: *"I changed Marcus' title on the org chart but that hasn't reflected in his profile
+module top right."* Three separate causes, all now closed:
+1. **`users` was fetched with an explicit column list that omitted `job_title`** (and `is_team_lead`,
+   `manager_id`). Now `select('*')`.
+2. **Nothing subscribed to the bus's `users` topic.** `app_users` writes emitted it and no one
+   listened, so an org-chart save updated the database and nothing else. Added `refreshUsers`.
+3. **`profile` was read once at sign-in and never again**, so the signed-in user's own header chip and
+   profile could only change by logging out and back in. `refreshUsers` now propagates a changed
+   self-row up through `onProfileUpdated`.
+**Worse than reported, and found while fixing it:** `ProfileModal` resolved its target as
+`users.find(...) || profile` — and *self is in `users`* — so it read the row that had no `job_title`.
+Opening your own profile showed a blank job title, and clicking Save wrote that blank back over it.
+Self now prefers the full `profile` record.
+
 ### Nav + chrome (2026-07-29, Tom)
 - Ribbon tabs renamed: **My Actions → MY WORK**, **Register & activity → REGISTER**. Page headings
   and the "→ My Actions" cross-links moved with them; the routes (`#/actions`, `#/register`) and the
@@ -817,10 +832,26 @@ from Tom's Claude Design handoff `design_handoff_organisation_tab`)*
 > already holds 13 rows, one per current user), and the modal says so: *"they appear on the chart once
 > they sign in."*
 >
-> **⬜ Deferred to a follow-up, deliberately:** the **RAISE row** (action/query/flag composers on a
-> card — these duplicate flows that already exist behind `openItem`, and are the largest remaining
-> chunk), **marquee multi-select + group drag**, **Export chart** (print/PNG), and the **project-team
-> filter** select. Everything else in the handoff is built.
+> **✅ Follow-up shipped same day:** the **RAISE row** (action · query · flag composers on a card) and
+> a real **ADD PERSON**. Still deferred: **marquee multi-select + group drag**, **Export chart**
+> (print/PNG), and the **project-team filter** select.
+>
+> **⚠ A query cannot be raised free-standing, and the composer reflects that.** `queries.parent_type`
+> is constrained to `action|flag|date` and a partial unique index enforces **one open query per
+> parent** — the invariant the whole ball-in-court model rests on. Adding `parent_type = 'project'`
+> would have silently capped each project at one open query, so instead the Query composer asks which
+> open item on that project the question is about. If nothing is open it says so and points at
+> raising an action. Action and Flag map straight onto `actions` / `meeting_handoffs`; all three write
+> an `item_events` row and carry `source_type = 'org-chart'` provenance.
+>
+> **ADD PERSON creates the Supabase auth account** (Tom, 2026-07-29): an `org_invites` row first —
+> the `auth.users` trigger reads it to build `app_users` — then `auth.signUp` on a **second,
+> non-persisting Supabase client**. That second client is the crux: `signUp` replaces the *current*
+> session, so on the normal client a senior would be signed out and back in as the person they had
+> just added. The senior is shown a generated temporary password once, and
+> `app_users.must_reset_password` gates the app behind a **Set your password** screen until the person
+> replaces it. The invite is rolled back if signup fails, so a retry cannot trip the trigger twice.
+> If the project has email confirmation switched on, the modal says so.
 A new top-level ribbon tab, **ORGANISATION**, routed at `#/organisation`, giving the company one
 canonical view of who reports to whom. Every active `app_users` record renders as a card on a pannable
 snap-grid canvas with elbow connectors; seniors edit people in place (name, job title, initials,
