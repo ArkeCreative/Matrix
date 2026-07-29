@@ -292,11 +292,11 @@ holding their own copies) was half right, and the real shape made RX *smaller* t
 RES/AWT/INFO/N-A answers) and `MeetingDetailView` (notes being typed) would have their in-progress edits
 clobbered by a refetch. Their *writes* publish normally, so every aggregate goes live; only their own
 re-read is deferred.
-> **Update 2026-07-29 (RX-B batch).** `ChecklistModule` now **does** subscribe, behind a **dirty
-> guard** (re-reads only when nothing is pending). Correcting this box's original wording: RX-B does
-> not remove all unsaved state — ordinary answers still persist on explicit Save — so the guard is the
-> mechanism rather than full auto-save. `MeetingDetailView` is still unsubscribed and needs its
-> monolithic loader split before it can be.
+> **Update 2026-07-29 (RX-B, then RX-C).** `ChecklistModule` now **does** subscribe, behind a
+> pending-work guard (re-reads only when nothing is queued, in flight or seconds old). RX-C then went
+> further and made the checklist **auto-save** outright, so the original prediction in this box — that
+> RX-B would remove the unsaved state — ended up true only after RX-C, not after RX-B.
+> `MeetingDetailView` is still unsubscribed and needs its monolithic loader split before it can be.
 
 **Not done, deliberately:** Supabase **Realtime**. It's the natural second publisher into the same bus
 (one `postgres_changes` channel → `emit`), and the bus is what makes it a small change — but it needs
@@ -334,11 +334,36 @@ write paths can't drift. `section_index` / `row_index` are still written, as dis
 the template.
 
 **Reactivity gap now closed too.** `ChecklistModule` subscribes to the bus (`checklists · actions ·
-flags`) **behind a dirty guard** — it re-reads when a flag or action changes underneath it, and never
-while the user has edits pending. Note the correction to the RX box's wording: RX-B does *not* remove
-all unsaved state (ordinary answers still persist on explicit Save), so the guard is the mechanism, not
-full auto-save. `MeetingDetailView` remains unsubscribed — its monolithic loader would clobber notes
-being typed; it needs the same treatment separately.
+flags`) **behind a pending-work guard** — it re-reads when a flag or action changes underneath it, and
+never while a save is queued, in flight, or seconds old. `MeetingDetailView` remains unsubscribed — its
+monolithic loader would clobber notes being typed; it needs the same treatment separately.
+
+#### ▶ RX-C — checklist auto-save  *(✅ APPLIED 2026-07-29, Tom's call after using RX-B)*
+Tom, on the deployed app: *"clicking info required on one line didn't retain the information when
+clicking away without saving."* Correct, and it exposed something worse — **RX-B had made the checklist
+half auto-saving**: a row you raised a flag from saved itself, an identical row you merely answered did
+not. Same click, two outcomes depending on what you did next. The checklist was also the *only* surface
+in the app still asking the user to remember to save; project fields, meeting notes, actions, flags and
+queries all persist themselves.
+
+**Decision (Tom, offered three options): full auto-save per row.** The Save/Discard pair is gone.
+- **Status clicks write immediately** — a discrete, deliberate fact, and re-clicking the active status
+  clears it, so a mis-click costs nothing.
+- **Notes debounce at 1200ms** (the same constant the project-field save uses) **and flush on blur**.
+- **Sign-off stays an explicit button** — that one *is* a commitment.
+- Save/Discard replaced by a **save-state bar**: amber dot "Saving…", green tick "All changes saved"
+  (self-clearing after 2.5s), or a red dot with the error and a **Retry** — a failed write is put back
+  on the queue, never dropped, so the answer survives on screen and retries on the next edit or click.
+- **Clearing an answer deletes the row** rather than storing a row of nulls (the old batch save filtered
+  empties out; the table shouldn't start collecting them now every click writes).
+- Flushes on **blur, module-back, unmount, tab-hide and beforeunload**. `visibilitychange` is the
+  reliable one — a write started in `beforeunload` is often cancelled by the browser.
+- Answers are held in a **ref mirror** as well as state, so two fast keystrokes can't read a stale map.
+
+**Verification (2026-07-29).** `./rebuild.sh` PASS/PASS, **0/0/0**. Both new write shapes exercised
+against the live DB in self-aborting blocks: a **status-only click on a previously unanswered row**
+added exactly one row with the right status, and **clearing it removed the row**, returning the count
+to its starting value. Nothing committed.
 
 **Verification (2026-07-29).** `./rebuild.sh` PASS/PASS, balance **0/0/0**. The new write path was
 exercised against the live DB with the same `ON CONFLICT (project_id, template_item_id)` target
@@ -390,9 +415,10 @@ Chromium tooling) is the most likely fit — decide before writing it.
 
 ### Suggested sequence
 1. ✅ **Surface-bug sweep** (PR #45) and ✅ **RX live reactivity** (2026-07-29) — both shipped.
-2. ✅ **RX-B checklist atomicity + P0-3** (2026-07-29) — shipped as one checklist-write-path batch.
-   `ChecklistModule` now subscribes to the bus behind a dirty guard. `MeetingDetailView` is the one
-   view still unsubscribed; splitting its monolithic loader is a small follow-up.
+2. ✅ **RX-B checklist atomicity + P0-3** (2026-07-29), then ✅ **RX-C checklist auto-save**
+   (2026-07-29, Tom's call after using it) — the Save button is gone; every answer persists itself.
+   `MeetingDetailView` is the one view still unsubscribed; splitting its monolithic loader is a small
+   follow-up.
 3. **P0-2 / P0-4** security (both still open) — next up, per go-live urgency.
 4. **Phase 7 exec view** absorbs attribution/ageing, interactive Live Tracker, the Register strip.
 5. **Programme import** once the serverless proxy is workshopped (also unblocks timed auto-escalation).

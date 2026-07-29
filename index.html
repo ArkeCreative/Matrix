@@ -3893,9 +3893,7 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const statusMeta = (k) => statuses.find(s => s.key === k) || null;
     const [tplRows, setTplRows] = React.useState([]);
     const [values, setValues] = React.useState({});
-    const [baseline, setBaseline] = React.useState('{}');
     const [notes, setNotes] = React.useState('');
-    const [notesBaseline, setNotesBaseline] = React.useState('');
     const [signedOff, setSignedOff] = React.useState(false);
     const [collapsed, setCollapsed] = React.useState({});
     const [hovered, setHovered] = React.useState(null);
@@ -3903,7 +3901,18 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const [modal, setModal] = React.useState(null);
     const [toast, setToast] = React.useState('');
     const [loading, setLoading] = React.useState(true);
-    const [saving, setSaving] = React.useState(false);
+    // Auto-save state. There is no Save button: every answer persists itself,
+    // the way project fields and meeting notes already do everywhere else in
+    // the app. This is the only surface that used to ask the user to remember.
+    const [saveState, setSaveState] = React.useState(null); // null | 'pending' | 'saving' | {savedAt} | {error}
+    const AUTOSAVE_MS = 1200;
+    const valuesRef = React.useRef({});   // mirrors `values`, readable synchronously
+    const rowTimers = React.useRef({});   // template_item_id -> debounce timeout
+    const pendingRows = React.useRef({}); // template_item_id -> { r, merged } not yet written
+    const notesTimer = React.useRef(null);
+    const notesPending = React.useRef(null);
+    const inFlight = React.useRef(0);
+    const lastWriteAt = React.useRef(0);
     const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 3200); };
     const loadSeq = React.useRef(0);
     const load = React.useCallback(async () => {
@@ -3923,11 +3932,10 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
             // inserted mid-template shift every answer below it onto the wrong
             // question, silently and including on signed-off tabs.
             (itemRes.data || []).forEach(it => { map[it.template_item_id] = it; });
+            valuesRef.current = map;
             setValues(map);
-            setBaseline(JSON.stringify(map));
             const head = headRes && headRes.data;
             setNotes(head && head.notes ? head.notes : '');
-            setNotesBaseline(head && head.notes ? head.notes : '');
             setSignedOff(!!(head && head.signed_off));
         }
         catch (_) { /* tables may be absent on older schemas */ }
@@ -3952,16 +3960,13 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const routable = cfg.flagOnAttention || template.mode === 'signoff';
     const needsRouting = routable ? attention.filter(r => { const v = valueFor(r); return !v.flag_id && !v.action_id; }) : [];
     const thin = cfg.requireDetail ? tplRows.filter(r => { const v = valueFor(r); return v.status && !(v.note || '').trim(); }) : [];
-    const dirty = JSON.stringify(values) !== baseline || notes !== notesBaseline;
-    // The checklist still holds unsaved answers between explicit saves, so it
-    // subscribes to the bus behind a dirty guard: it re-reads when a flag or
-    // action changes underneath it, and never while the user has edits pending.
-    const dirtyRef = React.useRef(false);
-    dirtyRef.current = dirty;
-    useLiveData(['checklists', 'actions', 'flags'], React.useCallback(() => { if (!dirtyRef.current) load(); }, [load]));
-    const setRow = (r, patch) => {
-        setValues(prev => Object.assign(Object.assign({}, prev), { [r.id]: Object.assign(Object.assign({}, prev[r.id] || {}), patch) }));
-    };
+    // Anything still queued, in flight, or written moments ago. Used to hold off
+    // a bus-driven reload that would otherwise overwrite what is being typed.
+    const hasPendingWork = () => (Object.keys(pendingRows.current).length > 0
+        || notesPending.current !== null
+        || inFlight.current > 0
+        || (Date.now() - lastWriteAt.current) < 2000);
+    useLiveData(['checklists', 'actions', 'flags'], React.useCallback(() => { if (!hasPendingWork()) load(); }, [load]));
     // The row payload for a write. section_index / row_index are display order
     // now, always sourced from the template rather than treated as the key.
     const rowPayload = (r, v) => ({
@@ -3971,60 +3976,149 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
         flag_id: v.flag_id || null, action_id: v.action_id || null,
         updated_by: currentUser ? currentUser.id : null,
     });
-    // RX-B — persist a single source row immediately, used when a flag or an
-    // action is raised from it. The invariant is that no persisted flag/action
-    // may point at an unsaved row: before this, the flag was written instantly
-    // but its answer only on an explicit Save, so navigating away orphaned the
-    // flag onto a row showing no answer at all.
-    const persistRow = async (r, patch) => {
-        const merged = Object.assign({}, values[r.id] || {}, patch);
-        const { error } = await sb.from('project_checklist_items')
-            .upsert(rowPayload(r, merged), { onConflict: 'project_id,template_item_id' });
-        if (error)
-            throw error;
-        setValues(prev => Object.assign(Object.assign({}, prev), { [r.id]: merged }));
-        // Move the baseline for this row too — it is saved now, so it must not
-        // count as a pending edit.
-        setBaseline(prev => {
-            let b;
-            try {
-                b = JSON.parse(prev);
-            }
-            catch (_) {
-                return prev;
-            }
-            b[r.id] = merged;
-            return JSON.stringify(b);
-        });
-    };
-    const save = async () => {
-        setSaving(true);
+    // ---- the writers ----------------------------------------------------
+    // A failed write puts its payload back on the queue, so Retry (or simply
+    // the user's next edit) picks it up again rather than losing the answer.
+    // An answer cleared back to nothing (re-clicking the active status with no
+    // note, flag or action on the row) is removed rather than stored as a row
+    // of nulls — the old batch save filtered these out, and the table should not
+    // start collecting empties now that every click writes.
+    const isEmptyRow = (v) => !v.status && !(v.note || '').trim() && !v.flag_id && !v.action_id;
+    const writeRow = async (r, merged) => {
+        inFlight.current++;
+        setSaveState('saving');
+        let ok = false;
         try {
-            const rows = tplRows.map(r => rowPayload(r, valueFor(r)))
-                .filter(r => r.status || r.note || r.flag_id || r.action_id);
-            if (rows.length > 0) {
-                const { error } = await sb.from('project_checklist_items').upsert(rows, { onConflict: 'project_id,template_item_id' });
-                if (error)
-                    throw error;
-            }
-            const { error: hErr } = await sb.from('project_checklists').upsert({ project_id: project.id, module_key: template.module_key, notes: notes || null }, { onConflict: 'project_id,module_key' });
-            if (hErr)
-                throw hErr;
-            setBaseline(JSON.stringify(values));
-            setNotesBaseline(notes);
-            flash('Checklist saved · logged to the project activity feed');
-            if (onDataChanged)
-                onDataChanged();
+            const { error } = isEmptyRow(merged)
+                ? await sb.from('project_checklist_items').delete()
+                    .eq('project_id', project.id).eq('template_item_id', r.id)
+                : await sb.from('project_checklist_items')
+                    .upsert(rowPayload(r, merged), { onConflict: 'project_id,template_item_id' });
+            if (error)
+                throw error;
+            ok = true;
+            lastWriteAt.current = Date.now();
+            setSaveState({ savedAt: Date.now() });
         }
         catch (e) {
-            alert('Save failed: ' + e.message);
+            pendingRows.current[r.id] = { r: r, merged: merged };
+            setSaveState({ error: e.message });
         }
-        setSaving(false);
+        inFlight.current--;
+        return ok;
     };
-    const discard = async () => {
-        setValues(JSON.parse(baseline));
-        setNotes(notesBaseline);
+    const writeNotes = async (v) => {
+        inFlight.current++;
+        setSaveState('saving');
+        try {
+            const { error } = await sb.from('project_checklists')
+                .upsert({ project_id: project.id, module_key: template.module_key, notes: v || null }, { onConflict: 'project_id,module_key' });
+            if (error)
+                throw error;
+            lastWriteAt.current = Date.now();
+            setSaveState({ savedAt: Date.now() });
+        }
+        catch (e) {
+            notesPending.current = v;
+            setSaveState({ error: e.message });
+        }
+        inFlight.current--;
     };
+    // ---- queue + flush --------------------------------------------------
+    const flushRow = (id) => {
+        const p = pendingRows.current[id];
+        if (rowTimers.current[id]) {
+            clearTimeout(rowTimers.current[id]);
+            delete rowTimers.current[id];
+        }
+        if (!p)
+            return null;
+        delete pendingRows.current[id];
+        return writeRow(p.r, p.merged);
+    };
+    const flushNotes = () => {
+        if (notesTimer.current) {
+            clearTimeout(notesTimer.current);
+            notesTimer.current = null;
+        }
+        const v = notesPending.current;
+        if (v === null)
+            return null;
+        notesPending.current = null;
+        return writeNotes(v);
+    };
+    const flushAll = () => { Object.keys(pendingRows.current).forEach(flushRow); flushNotes(); };
+    // Leaving the module (or the page) must not drop the last keystrokes.
+    const flushAllRef = React.useRef(null);
+    flushAllRef.current = flushAll;
+    React.useEffect(() => {
+        const onUnload = () => { if (flushAllRef.current) flushAllRef.current(); };
+        // visibilitychange is the reliable one: a write started in beforeunload
+        // is often cancelled by the browser, whereas tab-hide fires early enough
+        // for it to land. Between the two, plus blur, the 1200ms debounce window
+        // is about as small as it can be made without writing on every keystroke.
+        const onHide = () => { if (document.hidden) onUnload(); };
+        window.addEventListener('beforeunload', onUnload);
+        document.addEventListener('visibilitychange', onHide);
+        return () => {
+            window.removeEventListener('beforeunload', onUnload);
+            document.removeEventListener('visibilitychange', onHide);
+            if (flushAllRef.current)
+                flushAllRef.current();
+        };
+    }, []);
+    // Clear the "saved" tick after a beat so the bar doesn't sit there forever.
+    React.useEffect(() => {
+        if (saveState && saveState.savedAt) {
+            const t = setTimeout(() => setSaveState(null), 2500);
+            return () => clearTimeout(t);
+        }
+    }, [saveState]);
+    // A status click writes at once — it's a discrete, deliberate fact, and
+    // clicking the active status again clears it, so a mis-click costs nothing.
+    // A note debounces on the same 1200ms the project fields use, and flushes
+    // on blur.
+    const setRow = (r, patch, immediate) => {
+        const merged = Object.assign({}, valuesRef.current[r.id] || {}, patch);
+        valuesRef.current = Object.assign({}, valuesRef.current, { [r.id]: merged });
+        setValues(valuesRef.current);
+        pendingRows.current[r.id] = { r: r, merged: merged };
+        if (rowTimers.current[r.id])
+            clearTimeout(rowTimers.current[r.id]);
+        if (immediate) {
+            flushRow(r.id);
+            return;
+        }
+        setSaveState('pending');
+        rowTimers.current[r.id] = setTimeout(() => flushRow(r.id), AUTOSAVE_MS);
+    };
+    const setNotesValue = (v) => {
+        setNotes(v);
+        notesPending.current = v;
+        setSaveState('pending');
+        if (notesTimer.current)
+            clearTimeout(notesTimer.current);
+        notesTimer.current = setTimeout(() => flushNotes(), AUTOSAVE_MS);
+    };
+    // RX-B — persist a single source row and wait for it, used when a flag or an
+    // action is raised from it. The invariant is that no persisted flag/action
+    // may point at an unsaved row.
+    const persistRow = async (r, patch) => {
+        const merged = Object.assign({}, valuesRef.current[r.id] || {}, patch);
+        valuesRef.current = Object.assign({}, valuesRef.current, { [r.id]: merged });
+        setValues(valuesRef.current);
+        if (rowTimers.current[r.id]) {
+            clearTimeout(rowTimers.current[r.id]);
+            delete rowTimers.current[r.id];
+        }
+        delete pendingRows.current[r.id];
+        const ok = await writeRow(r, merged);
+        if (!ok)
+            throw new Error('the row could not be saved');
+    };
+    // Leaving the module flushes anything still on the debounce first, so the
+    // last thing typed is never the thing that gets lost.
+    const leave = () => { flushAll(); if (onBack) onBack(); };
     const toggleSignOff = async () => {
         const next = !signedOff;
         if (next && !window.confirm('Sign off ' + template.label + '? This stamps the record into the project audit trail.'))
@@ -4086,7 +4180,7 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const pillBtn = (label, icon, onClick, colour) => React.createElement("span", { onClick: onClick, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, border: `1px solid ${C.line}`, borderRadius: 2, padding: '6px 11px', fontSize: 11.5, fontWeight: 600, color: colour || C.prussian, background: C.white, fontFamily: FONT } }, lucide(icon, 13, 'currentColor', 2), label);
     const header = React.createElement("div", { style: { position: 'sticky', top: 0, zIndex: 6, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: '0 4px 12px rgba(24,59,79,.08), 0 2px 4px rgba(24,59,79,.06)', padding: '16px 22px 14px', marginBottom: 20 } },
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, paddingBottom: 16, marginBottom: 16, borderBottom: `1px solid ${C.line}` } },
-            React.createElement("span", { onClick: onBack, title: "Back to all modules", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.background = C.white; }, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: `1px solid ${C.line}`, borderRadius: 2, color: C.carmine, background: C.white, flexShrink: 0 } }, lucide('arrow-left', 16, 'currentColor', 2)),
+            React.createElement("span", { onClick: leave, title: "Back to all modules", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine; e.currentTarget.style.background = C.carmineSoft; }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.background = C.white; }, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: `1px solid ${C.line}`, borderRadius: 2, color: C.carmine, background: C.white, flexShrink: 0 } }, lucide('arrow-left', 16, 'currentColor', 2)),
             React.createElement("span", { style: { width: 36, height: 36, borderRadius: 8, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, lucide('check-square', 19, 'currentColor', 2)),
             React.createElement("div", { style: { minWidth: 0 } },
                 React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 20, lineHeight: 1.2, color: C.ink0 } }, template.label),
@@ -4161,11 +4255,11 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
                         React.createElement("span", { onClick: () => openRoute(r, 'flag'), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.carmine, fontFamily: FONT } }, lucide('flag', 12, 'currentColor', 2), "Flag to a team"),
                         React.createElement("span", { onClick: () => openRoute(r, 'action'), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.prussian, fontFamily: FONT } }, lucide('users', 12, 'currentColor', 2), "Assign an action")) : null)),
             React.createElement("div", null,
-                React.createElement("textarea", { value: v.note || '', onChange: e => setRow(r, { note: e.target.value }), placeholder: cfg.inputPlaceholder || 'Notes…', rows: 2, style: { width: '100%', boxSizing: 'border-box', border: `1px ${nudge ? 'dashed' : 'solid'} ${nudge ? C.amber : C.line}`, borderRadius: 2, padding: '8px 10px', fontSize: 13, lineHeight: 1.45, color: C.ink0, background: nudge ? '#FFFDF6' : C.white, outline: 'none', resize: 'vertical', fontFamily: FONT, display: 'block' } }),
+                React.createElement("textarea", { value: v.note || '', onChange: e => setRow(r, { note: e.target.value }), onBlur: () => flushRow(r.id), placeholder: cfg.inputPlaceholder || 'Notes…', rows: 2, style: { width: '100%', boxSizing: 'border-box', border: `1px ${nudge ? 'dashed' : 'solid'} ${nudge ? C.amber : C.line}`, borderRadius: 2, padding: '8px 10px', fontSize: 13, lineHeight: 1.45, color: C.ink0, background: nudge ? '#FFFDF6' : C.white, outline: 'none', resize: 'vertical', fontFamily: FONT, display: 'block' } }),
                 nudge ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 11, fontWeight: 600, color: C.warn } }, lucide('pencil', 11, 'currentColor', 2), 'Add the evidence for this answer') : null),
             React.createElement("div", { style: { display: 'flex', gap: 4 } }, statuses.map(st => {
                 const on = v.status === st.key;
-                return React.createElement("span", { key: st.key, onClick: () => setRow(r, { status: on ? null : st.key }), title: st.label, style: { flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', padding: '6px 4px', borderRadius: 2, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', border: `1px solid ${on ? st.colour : C.line}`, background: on ? st.soft : C.white, color: on ? st.colour : C.g500, fontFamily: FONT } }, st.short);
+                return React.createElement("span", { key: st.key, onClick: () => setRow(r, { status: on ? null : st.key }, true), title: st.label, style: { flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', padding: '6px 4px', borderRadius: 2, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', border: `1px solid ${on ? st.colour : C.line}`, background: on ? st.soft : C.white, color: on ? st.colour : C.g500, fontFamily: FONT } }, st.short);
             })),
             React.createElement("div", { style: { textAlign: 'right', fontSize: 11.5, color: C.g500, lineHeight: 1.35, paddingTop: 7 } }, (() => {
                 if (!v.updated_at)
@@ -4199,7 +4293,7 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
         }),
         React.createElement("div", { style: { padding: '20px 22px' } },
             React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.ink0, marginBottom: 9 } }, "Notes"),
-            React.createElement("textarea", { value: notes, onChange: e => setNotes(e.target.value), placeholder: "Free notes for this tab — carried through with the checklist record.", style: { width: '100%', boxSizing: 'border-box', minHeight: 84, resize: 'vertical', border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 13px', fontSize: 13.5, lineHeight: 1.55, color: C.ink0, background: C.white, outline: 'none', fontFamily: FONT } })),
+            React.createElement("textarea", { value: notes, onChange: e => setNotesValue(e.target.value), onBlur: () => flushNotes(), placeholder: "Free notes for this tab — carried through with the checklist record.", style: { width: '100%', boxSizing: 'border-box', minHeight: 84, resize: 'vertical', border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 13px', fontSize: 13.5, lineHeight: 1.55, color: C.ink0, background: C.white, outline: 'none', fontFamily: FONT } })),
         cfg.signOff ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, padding: '18px 22px', background: C.bg, borderTop: `1px solid ${C.line}`, flexWrap: 'wrap' } },
             React.createElement("div", null,
                 React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.ink0 } }, "Sign off"),
@@ -4245,14 +4339,22 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
         cfg.routingNote ? React.createElement("div", { style: { marginTop: 16, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: C.g500, lineHeight: 1.5 } },
             React.createElement("span", { style: { width: 3, alignSelf: 'stretch', background: C.prussian20 } }),
             React.createElement("span", null, cfg.routingNote)) : null,
-        dirty ? React.createElement("div", { style: { position: 'sticky', bottom: 0, zIndex: 6, marginTop: 20, background: C.white, borderTop: `1px solid ${C.line}`, boxShadow: '0 -4px 12px rgba(24,59,79,.08)' } },
-            React.createElement("div", { style: { padding: '14px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' } },
-                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 11 } },
-                    React.createElement("span", { style: { width: 9, height: 9, borderRadius: '50%', background: C.amber } }),
-                    React.createElement("span", { style: { fontSize: 13, color: C.ink } }, "Unsaved changes on this checklist")),
-                React.createElement("div", { style: { display: 'flex', gap: 10 } },
-                    React.createElement("span", { onClick: discard, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '10px 16px', border: `1.5px solid ${C.line}`, borderRadius: 2, fontSize: 13, fontWeight: 600, color: C.g500, background: C.white, fontFamily: FONT } }, "Discard changes"),
-                    React.createElement("span", { onClick: saving ? undefined : save, style: { cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 2, fontSize: 13, fontWeight: 600, color: '#fff', background: C.carmine, opacity: saving ? 0.7 : 1, fontFamily: FONT } }, lucide('check', 15, 'currentColor', 2.4), saving ? 'Saving…' : 'Save checklist')))) : null,
+        saveState ? React.createElement("div", { style: { position: 'sticky', bottom: 0, zIndex: 6, marginTop: 20, background: C.white, borderTop: `1px solid ${C.line}`, boxShadow: '0 -4px 12px rgba(24,59,79,.08)' } },
+            React.createElement("div", { style: { padding: '13px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' } },
+                saveState.error
+                    ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 11, fontFamily: FONT } },
+                        React.createElement("span", { style: { width: 9, height: 9, borderRadius: '50%', background: C.redStatus } }),
+                        React.createElement("span", { style: { fontSize: 13, color: C.redStatus } }, "Couldn’t save — ", saveState.error, ". Your answer is still here; retry when ready."))
+                    : (saveState.savedAt
+                        ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 9, fontFamily: FONT, color: C.green } },
+                            lucide('check', 15, 'currentColor', 2.4),
+                            React.createElement("span", { style: { fontSize: 13 } }, "All changes saved"))
+                        : React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 11, fontFamily: FONT } },
+                            React.createElement("span", { style: { width: 9, height: 9, borderRadius: '50%', background: C.amber } }),
+                            React.createElement("span", { style: { fontSize: 13, color: C.ink } }, "Saving…"))),
+                saveState.error
+                    ? React.createElement("span", { onClick: () => flushAll(), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '9px 18px', borderRadius: 2, fontSize: 13, fontWeight: 600, color: '#fff', background: C.carmine, fontFamily: FONT } }, "Retry")
+                    : null)) : null,
         modalEl,
         toast ? React.createElement("div", { style: { position: 'fixed', left: '50%', bottom: 26, zIndex: 400, transform: 'translateX(-50%)', background: C.prussian, color: '#fff', borderRadius: 2, padding: '12px 20px', fontSize: 13, fontWeight: 600, letterSpacing: '0.03em', boxShadow: '0 18px 48px rgba(24,59,79,.24)', fontFamily: FONT } }, toast) : null);
 }
