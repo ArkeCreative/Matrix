@@ -832,9 +832,11 @@ from Tom's Claude Design handoff `design_handoff_organisation_tab`)*
 > already holds 13 rows, one per current user), and the modal says so: *"they appear on the chart once
 > they sign in."*
 >
-> **✅ Follow-up shipped same day:** the **RAISE row** (action · query · flag composers on a card) and
-> a real **ADD PERSON**. Still deferred: **marquee multi-select + group drag**, **Export chart**
-> (print/PNG), and the **project-team filter** select.
+> **RAISE row — built, then REMOVED at Tom's request (2026-07-29):** *"an unnecessary
+> overcomplication of the org chart."* Actions, queries and flags are raised from the item modal and
+> the meeting/checklist flows where they belong; the chart is for structure and accountability.
+> Still deferred: **marquee multi-select + group drag**, **Export chart** (print/PNG), and the
+> **project-team filter** select.
 >
 > **⚠ A query cannot be raised free-standing, and the composer reflects that.** `queries.parent_type`
 > is constrained to `action|flag|date` and a partial unique index enforces **one open query per
@@ -843,6 +845,21 @@ from Tom's Claude Design handoff `design_handoff_organisation_tab`)*
 > open item on that project the question is about. If nothing is open it says so and points at
 > raising an action. Action and Flag map straight onto `actions` / `meeting_handoffs`; all three write
 > an `item_events` row and carry `source_type = 'org-chart'` provenance.
+>
+> **⚠ Temporary passwords are a DEV PLACEHOLDER right now.** `makeTempPassword()` returns the fixed
+> constant `DEV_TEMP_PASSWORD = '123123'` so fictional people can be signed in as without a password
+> round-trip. The production generator is preserved in a comment directly beneath it — **swap that one
+> constant back before real people are onboarded.** The surrounding flow (shown once, shared out of
+> band, forced reset on first sign-in) is already what it will be in production.
+>
+> **⚠ Invited sign-ups skip email confirmation** (`db/migrations/confirm_invited_signups.sql`).
+> The project's confirmation link points at localhost, so a created account could never be used, and
+> fictional people have no inbox. `handle_new_auth_user` now confirms an account **only when it claims
+> an unclaimed invite** — the invite is the authorisation. Narrower than switching "Confirm email" off
+> project-wide, because a self-service signup with no invite still confirms normally. **Decide before
+> real people:** keep it (an invited colleague never verifies their address — fine if invites only ever
+> come from a senior inside the app), or drop it and fix Site URL + the redirect allow-list in the
+> Supabase dashboard instead.
 >
 > **ADD PERSON creates the Supabase auth account** (Tom, 2026-07-29): an `org_invites` row first —
 > the `auth.users` trigger reads it to build `app_users` — then `auth.signUp` on a **second,
