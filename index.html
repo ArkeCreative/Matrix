@@ -3905,33 +3905,36 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const [loading, setLoading] = React.useState(true);
     const [saving, setSaving] = React.useState(false);
     const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 3200); };
-    React.useEffect(() => {
-        let on = true;
-        (async () => {
-            try {
-                const [tplRes, itemRes, headRes] = await Promise.all([
-                    sb.from('module_template_items').select('*').eq('module_key', template.module_key).order('section_index').order('row_index'),
-                    sb.from('project_checklist_items').select('*').eq('project_id', project.id).eq('module_key', template.module_key),
-                    sb.from('project_checklists').select('*').eq('project_id', project.id).eq('module_key', template.module_key).maybeSingle(),
-                ]);
-                if (!on)
-                    return;
-                setTplRows(tplRes.data || []);
-                const map = {};
-                (itemRes.data || []).forEach(it => { map[it.section_index + ':' + it.row_index] = it; });
-                setValues(map);
-                setBaseline(JSON.stringify(map));
-                const head = headRes && headRes.data;
-                setNotes(head && head.notes ? head.notes : '');
-                setNotesBaseline(head && head.notes ? head.notes : '');
-                setSignedOff(!!(head && head.signed_off));
-            }
-            catch (_) { /* tables may be absent on older schemas */ }
-            if (on)
-                setLoading(false);
-        })();
-        return () => { on = false; };
+    const loadSeq = React.useRef(0);
+    const load = React.useCallback(async () => {
+        const seq = ++loadSeq.current;
+        try {
+            const [tplRes, itemRes, headRes] = await Promise.all([
+                sb.from('module_template_items').select('*').eq('module_key', template.module_key).order('section_index').order('row_index'),
+                sb.from('project_checklist_items').select('*').eq('project_id', project.id).eq('module_key', template.module_key),
+                sb.from('project_checklists').select('*').eq('project_id', project.id).eq('module_key', template.module_key).maybeSingle(),
+            ]);
+            if (seq !== loadSeq.current)
+                return;
+            setTplRows(tplRes.data || []);
+            const map = {};
+            // P0-3: keyed by template_item_id, so an answer is bound to the
+            // identity of its question. Keying by position was what let a row
+            // inserted mid-template shift every answer below it onto the wrong
+            // question, silently and including on signed-off tabs.
+            (itemRes.data || []).forEach(it => { map[it.template_item_id] = it; });
+            setValues(map);
+            setBaseline(JSON.stringify(map));
+            const head = headRes && headRes.data;
+            setNotes(head && head.notes ? head.notes : '');
+            setNotesBaseline(head && head.notes ? head.notes : '');
+            setSignedOff(!!(head && head.signed_off));
+        }
+        catch (_) { /* tables may be absent on older schemas */ }
+        if (seq === loadSeq.current)
+            setLoading(false);
     }, [project.id, template.module_key]);
+    React.useEffect(() => { load(); return () => { loadSeq.current++; }; }, [load]);
     // Group template rows into sections, preserving order.
     const sections = [];
     tplRows.forEach(r => {
@@ -3944,25 +3947,63 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     });
     const rowCount = tplRows.length;
     const stats = checklistStats(statuses, values, rowCount);
-    const valueFor = (r) => values[r.section_index + ':' + r.row_index] || {};
+    const valueFor = (r) => values[r.id] || {};
     const attention = tplRows.filter(r => { const m = statusMeta(valueFor(r).status); return !!(m && m.attention); });
     const routable = cfg.flagOnAttention || template.mode === 'signoff';
     const needsRouting = routable ? attention.filter(r => { const v = valueFor(r); return !v.flag_id && !v.action_id; }) : [];
     const thin = cfg.requireDetail ? tplRows.filter(r => { const v = valueFor(r); return v.status && !(v.note || '').trim(); }) : [];
     const dirty = JSON.stringify(values) !== baseline || notes !== notesBaseline;
+    // The checklist still holds unsaved answers between explicit saves, so it
+    // subscribes to the bus behind a dirty guard: it re-reads when a flag or
+    // action changes underneath it, and never while the user has edits pending.
+    const dirtyRef = React.useRef(false);
+    dirtyRef.current = dirty;
+    useLiveData(['checklists', 'actions', 'flags'], React.useCallback(() => { if (!dirtyRef.current) load(); }, [load]));
     const setRow = (r, patch) => {
-        const key = r.section_index + ':' + r.row_index;
-        setValues(prev => Object.assign(Object.assign({}, prev), { [key]: Object.assign(Object.assign({}, prev[key] || {}), patch) }));
+        setValues(prev => Object.assign(Object.assign({}, prev), { [r.id]: Object.assign(Object.assign({}, prev[r.id] || {}), patch) }));
+    };
+    // The row payload for a write. section_index / row_index are display order
+    // now, always sourced from the template rather than treated as the key.
+    const rowPayload = (r, v) => ({
+        project_id: project.id, module_key: template.module_key, template_item_id: r.id,
+        section_index: r.section_index, row_index: r.row_index,
+        status: v.status || null, note: v.note || null,
+        flag_id: v.flag_id || null, action_id: v.action_id || null,
+        updated_by: currentUser ? currentUser.id : null,
+    });
+    // RX-B — persist a single source row immediately, used when a flag or an
+    // action is raised from it. The invariant is that no persisted flag/action
+    // may point at an unsaved row: before this, the flag was written instantly
+    // but its answer only on an explicit Save, so navigating away orphaned the
+    // flag onto a row showing no answer at all.
+    const persistRow = async (r, patch) => {
+        const merged = Object.assign({}, values[r.id] || {}, patch);
+        const { error } = await sb.from('project_checklist_items')
+            .upsert(rowPayload(r, merged), { onConflict: 'project_id,template_item_id' });
+        if (error)
+            throw error;
+        setValues(prev => Object.assign(Object.assign({}, prev), { [r.id]: merged }));
+        // Move the baseline for this row too — it is saved now, so it must not
+        // count as a pending edit.
+        setBaseline(prev => {
+            let b;
+            try {
+                b = JSON.parse(prev);
+            }
+            catch (_) {
+                return prev;
+            }
+            b[r.id] = merged;
+            return JSON.stringify(b);
+        });
     };
     const save = async () => {
         setSaving(true);
         try {
-            const rows = tplRows.map(r => {
-                const v = valueFor(r);
-                return { project_id: project.id, module_key: template.module_key, section_index: r.section_index, row_index: r.row_index, status: v.status || null, note: v.note || null, flag_id: v.flag_id || null, action_id: v.action_id || null, updated_by: currentUser ? currentUser.id : null };
-            }).filter(r => r.status || r.note || r.flag_id || r.action_id);
+            const rows = tplRows.map(r => rowPayload(r, valueFor(r)))
+                .filter(r => r.status || r.note || r.flag_id || r.action_id);
             if (rows.length > 0) {
-                const { error } = await sb.from('project_checklist_items').upsert(rows, { onConflict: 'project_id,module_key,section_index,row_index' });
+                const { error } = await sb.from('project_checklist_items').upsert(rows, { onConflict: 'project_id,template_item_id' });
                 if (error)
                     throw error;
             }
@@ -4010,8 +4051,10 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
                 }).select().single();
                 if (error)
                     throw error;
-                setRow(r, { flag_id: data.id });
-                flash('Flag raised to the ' + ((MEETING_TYPES[modal.target] || { short: modal.target }).short) + ' team');
+                // RX-B: the row that raised the flag is saved in the same step,
+                // including whatever the modal captured as its note.
+                await persistRow(r, { flag_id: data.id, note: (modal.note || '').trim() || (valueFor(r).note || null) });
+                flash('Flag raised to the ' + ((MEETING_TYPES[modal.target] || { short: modal.target }).short) + ' team' + ' · row saved');
             }
             else {
                 const { data, error } = await sb.from('actions').insert({
@@ -4021,9 +4064,10 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
                 }).select().single();
                 if (error)
                     throw error;
-                setRow(r, { action_id: data.id });
+                // RX-B: same invariant for actions raised from a row.
+                await persistRow(r, { action_id: data.id, note: (modal.note || '').trim() || (valueFor(r).note || null) });
                 const ow = users.find(u => u.id === modal.target);
-                flash('Action assigned' + (ow ? ' to ' + ow.display_name : ''));
+                flash('Action assigned' + (ow ? ' to ' + ow.display_name : '') + ' · row saved');
             }
             setModal(null);
             if (onDataChanged)
@@ -4424,7 +4468,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             const [tplRes, tItemRes, pItemRes] = await Promise.all([
                 sb.from('module_templates').select('*').eq('active', true).order('sort_order'),
                 sb.from('module_template_items').select('module_key, section_index, row_index'),
-                sb.from('project_checklist_items').select('module_key, section_index, row_index, status').eq('project_id', projectId),
+                sb.from('project_checklist_items').select('module_key, status').eq('project_id', projectId),
             ]);
             const tpls = tplRes.data || [];
             setModuleTemplates(tpls);

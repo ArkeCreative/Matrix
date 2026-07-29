@@ -15,7 +15,9 @@ source (`shell-head.html` + `app.jsx` + `shell-tail.html` + `rebuild.sh`) is alr
 > Counts below re-verified against the live DB. **⚠ These batch-2 tabs were seeded *before* P0-3 was
 > addressed** — no data corruption occurred (whole new templates, no mid-template inserts), but the
 > positional-binding risk now spans 8 templates instead of 4, so P0-3 is more urgent, not less.
-> P0-1 re-verified still-open on 2026-07-27 (all four helpers retain the `=X/postgres` PUBLIC grant).
+> P0-1 re-verified still-open on 2026-07-27 (all four helpers retain the `=X/postgres` PUBLIC grant) —
+> **since closed, 2026-07-27.** The positional-binding risk called out here (**P0-3**) was **closed
+> 2026-07-29**: answers are now bound to `template_item_id`, so editing a template in place is safe.
 
 ## What this is
 Internal PM web app for **Arke Creative** (commercial office design & fit-out). Rebranded/
@@ -28,10 +30,11 @@ https://arkecreative.github.io/Matrix/ (auto-deploys on merge to `main`, ~1 min 
 - **Supabase** `matrix` = `tpxabhqsjngalilbznhz`, eu-west-2, PG17. Anon key public by design (RLS
   is the guard). Schema changes via Supabase MCP (`apply_migration` DDL / `execute_sql` data);
   `service_role` key must never reach the repo.
-- **24 tables**, all RLS-enabled. Row counts verified 2026-07-27: projects 30, project_key_dates 159,
-  meetings 25, meeting_entries 63, actions 35, meeting_handoffs 13, project_contacts 195,
-  module_templates 8, module_template_items 244, project_checklists 1, project_checklist_items 4,
-  audit_log 5, notifications 43.
+- **24 tables**, all RLS-enabled. Row counts **re-verified 2026-07-29**: projects 30,
+  project_key_dates 159, meeting_entries 63, actions 36 (19 open), meeting_handoffs 13 (5 open),
+  module_templates 8, module_template_items 244, project_checklist_items 6, queries 5, item_events 95.
+  (2026-07-27 figures, not re-checked this batch: meetings 25, project_contacts 195,
+  project_checklists 1, audit_log 5, notifications 43.)
 - **Dev org** `dawlish` (`c6e9cc3c-…`), all fictional data. **No real Arke data yet** — deferred to the
   org/permissions + RLS go-live gate (Phase 6). Seed scripts are versioned under `seed/`.
 
@@ -68,7 +71,8 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 # ⛔ P0 — verified defects, fix before further feature work
 
 All four were found by querying the live database on 2026-07-26. Re-verification queries are in the
-appendix. **Ship these as one small batch/PR before anything else.**
+appendix. **P0-1 (2026-07-27) and P0-3 (2026-07-29) are now closed and verified; P0-2 and P0-4 remain
+open — P0-2 must be closed before a second org exists at all.**
 
 > **P0-1 — ✅ FIXED 2026-07-27** (folded into the My Actions rework PR1, `db/migrations/myactions_audit_spine.sql`).
 > Revoked EXECUTE from `public, anon, authenticated` on all the helper + audit-trigger functions
@@ -169,7 +173,22 @@ create policy "own notifications update" on public.notifications for update
   with check (user_id = auth.uid() and org_id = current_org_id());
 ```
 
-### P0-3 — checklist answers are bound to templates *positionally*
+> **P0-3 — ✅ FIXED 2026-07-29** (`db/migrations/p0_3_checklist_template_item_fk.sql`, applied +
+> verified; app write path switched in the same batch as RX-B). `template_item_id` added, backfilled
+> (**6 rows, 0 unbound**, every row resolving to the question it was actually answering), set
+> `NOT NULL`, `UNIQUE (project_id, template_item_id)` added and the positional
+> `UNIQUE (project_id, module_key, section_index, row_index)` **dropped**. FK is **`ON DELETE
+> RESTRICT`** — deleting a template question that has recorded answers now fails loudly instead of
+> silently destroying them. **Consequence to know:** re-seeding a template in place (delete +
+> re-insert) will now error if any project has answered it; handle those answers explicitly, or tell
+> me to relax it to `CASCADE`.
+> **Demonstrated, not asserted:** inserting a new question mid-template inside a self-aborting block
+> left the answer at position 0/1 still bound to *"Does it meet the criteria: above 18m in height…"*
+> before and after the shift — pre-migration it would have moved onto the inserted question. Nothing
+> committed (0 test rows, 244 template items unchanged). `get_advisors(security)` shows no new lints.
+> **P0-2 and P0-4 remain open.**
+
+### P0-3 — checklist answers are bound to templates *positionally*  *(✅ fixed — see box above)*
 `project_checklist_items` keys answers by `module_key` + `section_index` + `row_index`. There is no
 FK to `module_template_items.id`. Templates are changing constantly (workshopped in Claude Design and
 passed back). **The first time a row is inserted mid-template, every project's saved statuses, notes,
@@ -272,8 +291,12 @@ holding their own copies) was half right, and the real shape made RX *smaller* t
 **Deliberately not subscribed — editors holding unsaved user input.** `ChecklistModule` (unsaved
 RES/AWT/INFO/N-A answers) and `MeetingDetailView` (notes being typed) would have their in-progress edits
 clobbered by a refetch. Their *writes* publish normally, so every aggregate goes live; only their own
-re-read is deferred. **RX-B is the prerequisite** — once the source row persists atomically there is no
-unsaved state to protect, and both can subscribe.
+re-read is deferred.
+> **Update 2026-07-29 (RX-B batch).** `ChecklistModule` now **does** subscribe, behind a **dirty
+> guard** (re-reads only when nothing is pending). Correcting this box's original wording: RX-B does
+> not remove all unsaved state — ordinary answers still persist on explicit Save — so the guard is the
+> mechanism rather than full auto-save. `MeetingDetailView` is still unsubscribed and needs its
+> monolithic loader split before it can be.
 
 **Not done, deliberately:** Supabase **Realtime**. It's the natural second publisher into the same bus
 (one `postgres_changes` channel → `emit`), and the bus is what makes it a small change — but it needs
@@ -292,14 +315,35 @@ project_checklist_items 5 — **~460 rows across every aggregate**.
 - **Acceptance (Tom, on the live app):** raising/resolving a flag moves the project KPI + Register count
   immediately, no reload.
 
-### RX-B — Checklist save atomicity  *(data-integrity bug — folds into Phase 4 checklist; pair with P0-3)*
-Flags persist the instant they're raised, but checklist RES/AWT/INFO/N-A answers persist only on
-explicit **Save checklist**. Navigate away and the answer is discarded — orphaning a flag that points at
-a row now showing no answer. **Invariant to enforce: no persisted flag/action may have an unsaved
-source row.** Recommended fix: **(a) persist the source row's answer atomically when a flag/action is
-raised from it** (the module already writes the flag/action — write the `project_checklist_item` in the
-same step). Do it alongside **P0-3** (the `template_item_id` FK), since both touch the checklist
-write path.
+### RX-B — Checklist save atomicity  *(✅ APPLIED 2026-07-29, paired with P0-3)*
+Flags persisted the instant they were raised, but checklist RES/AWT/INFO/N-A answers persisted only on
+explicit **Save checklist**. Navigate away and the answer was discarded — orphaning a flag that pointed
+at a row now showing no answer. **Invariant now enforced: no persisted flag/action may have an unsaved
+source row.**
+
+Shipped as recommended option (a): `ChecklistModule.confirmRoute` writes the flag/action *and* upserts
+that single `project_checklist_items` row in the same step, via a new `persistRow(row, patch)` helper
+that also carries the note captured in the routing modal. The row's **baseline moves with it**, so a
+row saved this way stops counting as a pending edit while genuinely-unsaved rows still do. Toasts now
+read "… · row saved" so the user can see it happened.
+
+Also in this batch, since both touch the same write path: the module's in-memory answer map is **keyed
+by `template_item_id`** rather than `section_index + ':' + row_index` (P0-3), the save upsert targets
+`onConflict: 'project_id,template_item_id'`, and `rowPayload()` centralises the row shape so the two
+write paths can't drift. `section_index` / `row_index` are still written, as display order sourced from
+the template.
+
+**Reactivity gap now closed too.** `ChecklistModule` subscribes to the bus (`checklists · actions ·
+flags`) **behind a dirty guard** — it re-reads when a flag or action changes underneath it, and never
+while the user has edits pending. Note the correction to the RX box's wording: RX-B does *not* remove
+all unsaved state (ordinary answers still persist on explicit Save), so the guard is the mechanism, not
+full auto-save. `MeetingDetailView` remains unsubscribed — its monolithic loader would clobber notes
+being typed; it needs the same treatment separately.
+
+**Verification (2026-07-29).** `./rebuild.sh` PASS/PASS, balance **0/0/0**. The new write path was
+exercised against the live DB with the same `ON CONFLICT (project_id, template_item_id)` target
+PostgREST generates: first upsert added exactly one row, second updated in place with no duplicate,
+rolled back with 0 test rows remaining. Live-interaction check is Tom's per the workflow.
 
 ### Surface-bug sweep  *(one small batch PR — quick wins)*
 - **Key Dates expander is dead** — on project Overview the `KEY DATES ›` chevron and "Expand key dates"
@@ -346,11 +390,10 @@ Chromium tooling) is the most likely fit — decide before writing it.
 
 ### Suggested sequence
 1. ✅ **Surface-bug sweep** (PR #45) and ✅ **RX live reactivity** (2026-07-29) — both shipped.
-2. **RX-B checklist atomicity + P0-3** — next, as one checklist-write-path batch. **RX now depends on
-   it:** `ChecklistModule` and `MeetingDetailView` are the two views RX deliberately left unsubscribed,
-   because a refetch would clobber unsaved answers/notes. Persisting the source row atomically removes
-   the unsaved state, and both can then subscribe to the bus — closing the last reactivity gap.
-3. **P0-2 / P0-4** security (still open) — slot around the above per go-live urgency.
+2. ✅ **RX-B checklist atomicity + P0-3** (2026-07-29) — shipped as one checklist-write-path batch.
+   `ChecklistModule` now subscribes to the bus behind a dirty guard. `MeetingDetailView` is the one
+   view still unsubscribed; splitting its monolithic loader is a small follow-up.
+3. **P0-2 / P0-4** security (both still open) — next up, per go-live urgency.
 4. **Phase 7 exec view** absorbs attribution/ageing, interactive Live Tracker, the Register strip.
 5. **Programme import** once the serverless proxy is workshopped (also unblocks timed auto-escalation).
 6. **Regression guard** after RX, to lock the chain.
@@ -409,10 +452,12 @@ Chromium tooling) is the most likely fit — decide before writing it.
     (signoff/complete, 15), **+ batch 2:** Designer (record/rag, 29), Graphics (reference/yesno, 22),
     Legal Kick Off (record/rag, 33), Legal Process (record/rag, 35). Seeds under
     `seed/2026-07-25-checklist-templates.sql` + `seed/2026-07-26-checklist-templates-batch2.sql`.
-    Owners map to real `app_users` where a role matches. **⚠ all 8 are exposed to P0-3 — fix the
-    template coupling before any tab is edited in place.**
+    Owners map to real `app_users` where a role matches. **✅ P0-3 closed 2026-07-29 — all 8 templates
+    are now safe to edit in place; answers bind to `template_item_id`, not position. Deleting a
+    question that has answers is blocked by `ON DELETE RESTRICT` rather than silently destroying them.**
   - ⬜ **Checklist follow-ups:** audit trigger so saves/sign-offs emit into the hub; "Attach evidence"
-    row action; export (PDF/XLSX buttons render but defer to a dedicated pass).
+    row action; export (PDF/XLSX buttons render but defer to a dedicated pass). ✅ Save atomicity
+    (RX-B) and template binding (P0-3) done 2026-07-29.
 
 #### ▶ Phase 4d — **Commercial spine**  *(NEW — small schema, high leverage, do before more registers)*
 `projects` currently has 27 columns and **not one of them is a value, cost, fee or margin.** There is
