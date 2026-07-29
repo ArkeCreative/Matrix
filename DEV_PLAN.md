@@ -678,15 +678,29 @@ The agenda/meeting module type: Kick Off · Pre-Adjudication · Adjudication age
 Marquee multi-select + group drag · Export chart (print/PNG) · the project-team filter select.
 The RAISE composers were built and then **removed** at Tom's request — not deferred, rejected.
 
-### ▶ Step 12 — Projects home page UI  *(small · **PARKED** by Tom 2026-07-29)*
-Raised and parked. When it comes back, the questions were: what is the page primarily for; should the
-List/Full/Map choice persist per person; and four specifics —
-- **no "just mine" filter** (the owner filter matches only `owner_user_id`, so a designer cannot filter
-  to their own work — the other five team columns are invisible to it);
-- fixed sort (always project-number ascending);
-- tall rows — 30 projects is a lot of scrolling;
-- two overlapping ways to hide things (status filter defaulting to "active" *and* a separate "Show
-  unsecured" toggle).
+### ▶ Step 12 — Projects home page UI  *(small · **PART DONE 2026-07-29**, remainder PARKED)*
+
+**Done 2026-07-29** — eight minor changes Tom specified, shipped in the projects-home PR:
+- search filter kept; **status dropdown and owner dropdown removed** (the carmine pipeline strip above
+  the list already filters by status, so the select was a competing control over the same state — this
+  also closes the "two overlapping ways to hide things" point below, and the owner filter is gone
+  rather than fixed);
+- `+ New project` no longer wraps when the filter bar narrows;
+- **open items / site area / floor columns dropped** from the row (all three appear on expand, so the
+  row duplicated the detail pane), with Project and Address widened into the freed space;
+- column minimums set to `0` so **"Open page" stays the right-most visible column** at any width —
+  with `minmax(160px,…)` the flexible columns refused to shrink and pushed it off the clipped edge;
+- **sortable headers** on Project #, Project, Address, Updated, Secured, Status — click to sort, click
+  again to reverse, chevron rotates and turns carmine; Status sorts by pipeline order, every sort ties
+  on project number. This closes the "fixed sort" point below.
+Verified in Chromium at 1400 / 1040 / 860px.
+
+**Still parked.** The open questions were: what is the page primarily for; should the List/Full/Map
+choice persist per person; and two specifics that survive the above —
+- **no "just mine" filter** (the old owner filter matched only `owner_user_id`, so a designer could not
+  filter to their own work — the other five team columns were invisible to it; if this comes back it
+  should match against all six team FKs, not one);
+- tall rows — 30 projects is a lot of scrolling.
 
 ### ▶ Step 13 — Serverless scheduler, and what it unblocks  *(needs an infra decision)*
 One missing capability blocks three features, which is why they are grouped. A public static app
