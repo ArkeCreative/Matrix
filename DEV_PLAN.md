@@ -487,6 +487,13 @@ Chromium tooling) is the most likely fit — decide before writing it.
 - **Phase 4a/4c** (PR #28, merged/live): clickable metric tiles → catalogues (+ collapsible
   Completed); team-change data integrity (warn + offer reassign).
 
+### Nav + chrome (2026-07-29, Tom)
+- Ribbon tabs renamed: **My Actions → MY WORK**, **Register & activity → REGISTER**. Page headings
+  and the "→ My Actions" cross-links moved with them; the routes (`#/actions`, `#/register`) and the
+  `my-actions` / `register` view keys are unchanged, so nothing deep-linked breaks.
+- The **arke [matrix] wordmark is now a link home** — clicking (or Enter/Space, it is focusable)
+  clears the current project/meeting and returns to the Projects list, with a subtle hover fade.
+
 ### Carried over unshipped from PR12 feedback — confirm or close
 - **Rename status `won` → `LTA`.** `org_statuses` still holds `value='won', label='Won'`. Either ship
   the label change (data-only, `org_statuses` is config) or strike the item.
@@ -753,20 +760,20 @@ projects are unaffected** by the migration.
 `project_visibility_exclusions` needs `org_id` + RLS + the `set_org_id_on_insert` trigger (P0-2), and
 the helper must be `SECURITY DEFINER` with EXECUTE revoked from `public, anon, authenticated` (P0-1).
 
-**Decisions still needed before building**
-1. **Does excluding a team persist as a rule?** If Technical is excluded and a new technical person
-   joins next month, are they excluded too? **Recommend yes** — store the department rule rather than
-   expanding it to individuals at save time, because the intent is *"the Technical team shouldn't see
-   this job"*. The alternative silently leaks the job to every future joiner.
-2. **Do exclusions apply to seniors?** **Recommend no — seniors always see everything.** It prevents a
-   project being orphaned with nobody able to administer it, and Phase 7's exec/portfolio view is
-   meaningless if it is missing jobs. If Arke ever needs to hide a job from a senior that is a
-   different feature.
-3. **What if an excluded person is later appointed to the project team?** **Recommend the appointment
-   wins** — silently drop the exclusion and toast it, rather than leaving someone appointed to a job
-   they cannot open.
-4. **Historical notifications and audit rows** about a now-hidden project — hide those too
-   (recommended, for consistency), which means `notifications` and `audit_log` also take the predicate.
+**✅ All four decisions settled by Tom, 2026-07-29**
+1. **Excluding a team persists as a rule.** Store the `department` exclusion, not a snapshot of
+   today's members — a technical hire next month is excluded too, because the intent is *"the
+   Technical team shouldn't see this job"*.
+2. **Seniors are exempt from exclusions** — they always see everything. This also removes the
+   orphaning risk (a project nobody can administer) and keeps Phase 7's exec/portfolio view complete.
+3. **Appointment beats exclusion.** Naming an excluded person to one of the six team FK roles drops
+   their exclusion automatically, with a toast — nobody is ever appointed to a job they cannot open.
+4. **Historical notifications and audit rows are hidden too.** Follows directly from Tom's own
+   framing — *"this project won't appear anywhere in app for them"*. If the old rows stayed, an
+   excluded person would keep seeing "flag raised on <project>" in their bell, learn the job exists
+   and roughly what is happening on it, and click through to nothing. So `notifications` and
+   `audit_log` take the predicate as well. **Known cost, accepted:** a notification someone remembers
+   reading can silently disappear from their bell when a project is later restricted.
 
 **Knock-on:** `project_audience()` must intersect with visibility, or an excluded person still gets
 notified about a project they cannot open. Same fan-out helper that P0-2 just fixed.
