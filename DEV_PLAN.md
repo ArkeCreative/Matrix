@@ -18,6 +18,12 @@ source (`shell-head.html` + `app.jsx` + `shell-tail.html` + `rebuild.sh`) is alr
 > P0-1 re-verified still-open on 2026-07-27 (all four helpers retain the `=X/postgres` PUBLIC grant) —
 > **since closed, 2026-07-27.** The positional-binding risk called out here (**P0-3**) was **closed
 > 2026-07-29**: answers are now bound to `template_item_id`, so editing a template in place is safe.
+>
+> **Revision note (2026-07-29) — the plan is now ONE NUMBERED LIST.** Phases and letters (4d, 9a, P0-4b)
+> were folding over each other and had stopped being useful to talk about. Everything still outstanding
+> is now **Step 1 … Step 14** in build order under **▶ ROADMAP**, with a crosswalk from the old
+> numbering. Work from Step 1 down. The sections above this line are the historical record and keep
+> their original names — the crosswalk is how they map.
 
 ## What this is
 Internal PM web app for **Arke Creative** (commercial office design & fit-out). Rebranded/
@@ -36,7 +42,9 @@ https://arkecreative.github.io/Matrix/ (auto-deploys on merge to `main`, ~1 min 
   (2026-07-27 figures, not re-checked this batch: meetings 25, project_contacts 195,
   project_checklists 1, audit_log 5, notifications 43.)
 - **Dev org** `dawlish` (`c6e9cc3c-…`), all fictional data. **No real Arke data yet** — deferred to the
-  org/permissions + RLS go-live gate (Phase 6). Seed scripts are versioned under `seed/`.
+  go-live gate (**Step 10**). Seed scripts are versioned under `seed/`. Project addresses were replaced
+  with real central-London ones on 2026-07-29 (`seed/2026-07-29-real-london-addresses.sql`) so the map
+  geocodes truthfully rather than confidently placing a pin in the wrong place.
 
 ## How the code works
 - Single self-contained `index.html`; React 18 CDN; **pre-compiled JSX — write
@@ -72,8 +80,9 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 
 All four were found by querying the live database on 2026-07-26. Re-verification queries are in the
 appendix. **✅ ALL FOUR ARE NOW CLOSED AND VERIFIED** — P0-1 (2026-07-27), then P0-3, P0-2, P0-4a and
-P0-4b (all 2026-07-29). The Phase 6 go-live gate is no longer blocked by a known defect; what remains
-there is the behavioural RLS test pass and the org/permissions UI, not a hole to plug.
+P0-4b (all 2026-07-29). The go-live gate (**Step 10**) is no longer blocked by a known defect; what
+remains there is the behavioural RLS test pass and the go-live UI, not a hole to plug. The one piece of
+P0-4 still outstanding — operational *write* scoping — is now **Step 2**.
 
 > **P0-1 — ✅ FIXED 2026-07-27** (folded into the My Actions rework PR1, `db/migrations/myactions_audit_spine.sql`).
 > Revoked EXECUTE from `public, anon, authenticated` on all the helper + audit-trigger functions
@@ -516,492 +525,89 @@ Self now prefers the full `profile` record.
 
 ---
 
-## ▶ REMAINING PLAN — work top to bottom, confirm scope per phase
+## ▶ ROADMAP — one numbered list, in build order
 
-### Phase 4 — Project detail pane build-out  *(large, iterative — in progress)*
-- ✅ **4a / 4c** merged/live (see DONE above).
-- ↪ **4b — Audit trail → per-user activity** was expanded into the Register & activity hub (Phase 5).
-- **Source of truth for the modules:** Tom's Excel process matrix `CLIENT_NAME_Arke_Process_Matrix.xlsm`
-  (29 tabs), which collapse into a handful of reusable module **types**, not 29 bespoke builds:
-  - **Overview** (Summary tab) · **Directory** (built, below)
-  - **Checklist** type: BD / Designer / Technical Designer / Graphics / Building Regs / Legal Process /
-    Legal Kick Off / Adjudication Checklist / 70% Close Out. **Not built as modules:** PM Checklist
-    (it is a blank per-project *register*, not a fixed-question checklist — see below); WPB Kick Off,
-    Onsite Handover, Accountant On Site (seeded 2026-07-26, **removed 2026-07-27** at Tom's request —
-    niche operational tabs he did not want surfaced as modules).
-  - **Register/log** type: RFI Schedule / Risk Register / Long Lead Items / Budget Movement Log /
-    Quotes / Additional Sales Opportunities / Schedule of Derogation / **PM Checklist** (info-required
-    log). **See 4d — several of these are commercial and must not be built as generic tables.**
-  - **Agenda/meeting** type: Kick Off / Pre-Adjudication / Adjudication agendas.
-  - **Documents/links** type: Hyperlink Page (K-drive links).
-  - **Programme**: Programme Links → work-span (date-range) view. **See Phase 9.**
-  - **Form/sign-off**: Bond Application, Leadership Sign Off.
-  - ✅ **Standard module-page skeleton** (`MODULE_DEFS` + `ProjectModulePage`).
-  - ✅ **Project Directory** — dashboard tab, `project_contacts` (195 rows live), role dropdown over
-    the workbook taxonomy, company memory / auto-fill with tinted cells, history seeded across 19
-    projects. **Next:** wire directory contacts into module people-fields as modules are built.
-  - ✅ **Checklist module type — BUILT.** One `ChecklistModule` driven by a template row: `mode`
-    (reference/record/signoff/tracked) · `status_set` (rag/yesno/complete) · `requireDetail` ·
-    `flagOnAttention`. Sticky header, collapsible sections, status spine, notes, sign-off, toast.
-    Row routing is real (writes `meeting_handoffs` / `actions` and shows the tie chip).
-  - ✅ **8 checklist tabs seeded, 244 template items** (verified 2026-07-27): Building Regs
-    (record/rag, 58), BD (reference/yesno, 22), Adjudication (record/rag, 30), 70% Close Out
-    (signoff/complete, 15), **+ batch 2:** Designer (record/rag, 29), Graphics (reference/yesno, 22),
-    Legal Kick Off (record/rag, 33), Legal Process (record/rag, 35). Seeds under
-    `seed/2026-07-25-checklist-templates.sql` + `seed/2026-07-26-checklist-templates-batch2.sql`.
-    Owners map to real `app_users` where a role matches. **✅ P0-3 closed 2026-07-29 — all 8 templates
-    are now safe to edit in place; answers bind to `template_item_id`, not position. Deleting a
-    question that has answers is blocked by `ON DELETE RESTRICT` rather than silently destroying them.**
-  - ⬜ **Checklist follow-ups:** audit trigger so saves/sign-offs emit into the hub; "Attach evidence"
-    row action; export (PDF/XLSX buttons render but defer to a dedicated pass). ✅ Save atomicity
-    (RX-B) and template binding (P0-3) done 2026-07-29.
+**Work from Step 1 down.** Each step carries its own size, dependencies and status, so nothing needs
+cross-referencing a phase letter any more. Restructured 2026-07-29 at Tom's request, because
+"9a" and "4d" in the same breath had stopped being useful.
 
-#### ▶ Phase 4d — **Commercial spine**  *(NEW — small schema, high leverage, do before more registers)*
-`projects` currently has 27 columns and **not one of them is a value, cost, fee or margin.** There is
-no money anywhere in the application.
+### Crosswalk — old numbering → new
+Anything committed before 2026-07-29 uses the old scheme; this is how it maps.
 
-This is not a missing feature, it's a missing axis. Look at what sits in the "register" bucket above:
-Budget Movement Log, Quotes, Additional Sales Opportunities, Schedule of Derogation, Bond Application,
-Adjudication. Those are not six unrelated tables that happen to share a shape — they are six views
-onto **one number and its movement** from tender through adjudication to final account. Classifying
-them by table shape is correct for the UI and wrong for the data: built as generic typed grids, the
-Budget Movement Log becomes rows that roll up to nothing.
+| Old | Now |
+|---|---|
+| P0-1 · P0-2 · P0-3 · P0-4a · P0-4b | ✅ all closed 2026-07-27 → 29 |
+| P0-4 leftover — operational write scoping | **Step 2** |
+| RX · RX-B · RX-C (reactivity, checklist atomicity, auto-save) | ✅ done |
+| Phase 4a / 4c — project detail, directory | ✅ done |
+| Phase 4b — audit trail per user | ✅ absorbed into the Register hub |
+| Phase 4d — commercial spine | **Step 6** |
+| Phase 4 — register/log modules | **Step 8** |
+| Phase 4 — agenda modules | **Step 9** |
+| Phase 4 — checklist follow-ups | **Step 3** |
+| Phase 5 — register & activity hub | ✅ done, bar the scheduler items → **Step 13** |
+| Phase 6 — org & permissions | ✅ done, bar follow-ups → **Step 11** and go-live → **Step 10** |
+| Phase 7 — executive health view | **split**: **Step 4** (buildable now) + **Step 7** (needs 1 and 6) |
+| Phase 8 — schema cleanup | **Step 3** |
+| Phase 9a — baseline schema | **Step 1** |
+| Phase 9b — delay record views | **Step 5** |
+| Map view · Organisation tab · project permissions | ✅ done |
 
-The consequence lands in Phase 7, which currently defines project health as *information
-completeness* — how much of the form is filled in. No MD of a fit-out business asks that. They ask
-what's the value on site, what's the margin erosion since adjudication, what's due to invoice, and
-what's the pipeline worth weighted by stage. As specified, the exec view cannot answer any of them.
+---
 
-**Scope (confirm with Tom before building):**
-- Columns on `projects`: `tender_value`, `contract_value`, `forecast_value`, `forecast_cost`,
-  `value_confidence` (or reuse `secured`), all `numeric(14,2)`, GBP assumed.
-- `budget_movements` table — *this is the Budget Movement Log register*, built as a ledger not a grid:
-  `project_id, movement_date, direction (add/omit), category, description, value, status
-  (potential/instructed/agreed/rejected), raised_by, agreed_at, source_ref`. The register view is a
-  view over it; the project's current forecast is a rollup of it.
-- Derived, not stored: stage-weighted pipeline value (weight per `org_statuses.value`, senior-editable).
-- Pipeline pie in Phase 7 keyed by **value**, not count.
+### ▶ Step 1 — Programme baseline & delay record: schema  *(small · **URGENT** · no dependencies)*
+**Do this first. It is the only item in the plan with a clock on it.** `project_key_dates` has a
+single mutable `target_date`: when a date moves the previous value is **gone**, and the only trace is
+`audit_log.changes`. There is no baseline, no revision history and no recorded cause. Every week this
+isn't deployed is a week of programme history that cannot be reconstructed later. The views can wait;
+the accrual cannot.
 
-**Open question for Tom:** does Arke want cost/margin in this tool at all, or only value + movement?
-Margin is the sharper number but it is also the one people will object to being visible org-wide.
-The RLS answer differs (a senior-only column set vs a normal one) so decide before building.
-
-### Phase 5 — Register & activity: notifications hub + site-wide audit  *(large — in progress)*
-- ✅ **Hub UI** — bell + unread badge + dropdown activity panel. Reads per-user `notifications`.
-- ✅ **Open register** — cross-project register of open actions / flags / key dates; summary tiles,
-  scope filters, grouping, inline Mark complete / Mark met.
-- ✅ **Audit + fan-out backend applied** — `audit_log` (senior-read) + generic triggers on projects,
-  key dates/programme, meetings, flags, actions → `record_activity()` writes the audit row and fans
-  out per-user `notifications` to `project_audience()`. SQL at
-  `db/migrations/phase5_notifications_audit.sql`.
-  **⚠ CORRECTION:** the accompanying claim that direct-RPC EXECUTE was revoked is **false as
-  deployed** — see P0-1 (re-verified still-open 2026-07-27). And `project_audience()` is cross-org —
-  see P0-2.
-- ⚠️ **KNOWN ISSUE — activity log under-wired.** The Activity tab and bell read the **per-user
-  `notifications`** table, so a user only sees events fanned out to them. It behaves like a personal
-  inbox, not a cross-user activity log. The complete record lives in **`audit_log`** and is not
-  surfaced. `audit_log` currently holds **5 rows, all 2026-07-24/25** — the triggers only populate
-  going forward.
-  **Fix direction:** point the Activity / "full audit log" view at `audit_log` (seniors = all;
-  contributors = their visible projects once Phase 6 lands); keep the bell on `notifications`.
-  Consider a one-off back-population. Verify actor attribution from the live app with a real JWT —
-  the dev-org test ran without a user context, and `record_activity` writes `auth.uid()`, which is
-  null for non-app writes.
-- ⬜ **Deferred:** flag **severity** field (`meeting_handoffs` has no severity column — the register
-  buckets by age as a stand-in); external transport (email/Teams via M365).
-
-#### ▶ My Actions rework  *(in progress — from Tom's Claude Design handoff `design_handoff_my_actions`)*
-Rebuild `MyActionsView` into three categories (your actions / collaborating / your team), with **ball
-in court**, a **state ribbon**, a capped **query ping-pong** that blocks completion, and a **reusable
-site-wide item modal** (`openItem(kind,id)`) that **delivers the deferred Phase 5 item-detail modal**
-and will replace every list's row-click app-wide. Decisions (2026-07-27): **5 incremental PRs**;
-**P0-1 folded into PR1**; **manual escalation only** now (timed auto-escalation + Monday digest
-deferred to when a serverless scheduler exists — same gap as programme-import; banner copy reworded,
-no false promise); **flags stay acknowledge-*or*-convert** (plus a third "query it back" response per
-the addendum). Escalation targets: lead = active `is_team_lead` in the ball-holder's `department`,
-else the project's `project_manager_user_id`.
-- **Addendum baked in (2026-07-27):** **queries are a first-class, POLYMORPHIC item type** — a query
-  is raised against an action, a flag *or* a key date, with its own card/modal/audit. Collapsible page
-  sections (localStorage-persisted, per-user) + the query surface as-built: a `Queries` section at the
-  top of the actions column (replaces the "Needs your answer" band), the inline query block on the
-  parent action becomes a compact meta chip, filter tabs become `All · Queries · Overdue · Due this
-  week · Chasing others · Closed` (drop `Blocked`). Icons go through the app's own `lucide()` helper
-  (add `pause`/`lock`/`chevron-right`/`help-circle` paths) — no CDN, no emoji.
-- ✅ **PR1 — audit spine + polymorphic queries + P0-1** (`db/migrations/myactions_audit_spine.sql`,
-  applied): `item_events` append-only audit table over all four item types (org-scoped select; insert
-  forces `actor_id = auth.uid()`, no update/delete — genuinely tamper-evident); **`queries`** (first-
-  class, polymorphic `parent_type ∈ action|flag|date` + `parent_id`, one-open-per-parent partial unique
-  index, `resolution_note`) + **`query_messages`** thread; `actions.source_type`+`source_ref` for the
-  provenance chip; `meeting_handoffs.acknowledged_note`. Backfilled 71 lifecycle events + migrated the
-  4 legacy `action_queries` into the polymorphic model (`seed/2026-07-27-item-events-backfill.sql`).
-  P0-1 closed + verified (box in the P0 section). **Legacy `action_queries` kept until the app cuts
-  over** (deployed app still uses it); a later PR migrates any interim rows and drops it.
-- ✅ **PR2 — reusable site-wide item modal + query state machine** (app.jsx): module-level
-  `openItem(kind,id)` (registered by `App`, no prop-drilling) mounts `ItemModal` at the root. Handles
-  `action` + `query` kinds: shell + kind chip + **state ribbon** (`StateRibbon`) + **ball chip**
-  (`queryBall`/`queryExchange`/`querySpent` derived, never cached); left column = fact grid,
-  collaborators, complete-with-mandatory-note (locked while a query is open), raise-query, senior
-  reassign/move-date panel; right column tabs Thread / Audit trail / Related. Full query machine —
-  raise / answer / counter / resolve (mandatory note) / escalate (`escalationTarget` → dept lead else
-  PM) / chase — every step writing an `item_events` row via `logItemEvent`. Icons via `lucide()`
-  (+4 paths). Entry point: the action title on the existing card opens the modal (the full page/card
-  rebuild is PR3). `MA` local palette holds the handoff's exact hexes. Parse + 0/0/0 verified;
-  live-interaction check is Tom's per the workflow. **Transitional:** the modal uses the new `queries`
-  table; the legacy inline QueriesPanel (on `action_queries`) still shows alongside until PR3 removes it.
-- ✅ **PR3 — the My Actions page rebuild** (app.jsx): `MyActionsView` rewritten. Full-bleed carmine
-  header (H1 + context line + **WAITING ON YOU** figure, ball-derived), flat filter row
-  (`All · Queries · Overdue · Due this week · Chasing others · Closed`), **collapsible sections**
-  (per-user localStorage `arke.myactions.collapsed.v1.<uid>`, Collapse-all/Expand-all scoped to the
-  sections actually rendered) — `Queries` (amber, first), `Your actions`, `Collaborating`, `Your team`
-  (senior only), plus a Closed toggle. New **`MAActionCard`** (ribbon + ball chip + provenance chip +
-  query-blocked chip; whole card opens the modal) and **`MAQueryCard`** (Asked→Answered→Resolved
-  ribbon, parent anchor). Retired the legacy `QueriesPanel`/`ActionSection`/`MyActionCard`. Single
-  column for now — the Flags/Dates **right rail is PR4**. Parse + 0/0/0 verified; visual/interaction
-  check is Tom's on the live app.
-- ✅ **PR4 — Flags + Dates right rail + flag/date modal kinds** (app.jsx): My Actions is now
-  two-column (`minmax(0,1fr) 340px`). Right rail = **Flags** (addressed to the user's `department`,
-  open/acknowledged/converted states + age clock) and **Dates** (key dates on the user's projects,
-  overdue + next 14 days, urgency-coloured), both collapsible via the same persistence. Header context
-  line gained open-flag + dates counts. `ItemModal` extended to **`flag`** and **`date`** kinds:
-  flag modal has facts + FLAG_RIBBON + the team-lead-only **acknowledge-with-note / convert-to-action
-  (owner + due) / query-it-back**, non-leads get read-only + **nudge**; date modal has facts, an
-  overdue banner and **raise-a-recovery-action** (self-owned, `source_type='date'`). `doRaiseQuery`
-  generalised so query-it-back works on any parent kind. New `MARailFlag` / `MARailDate` cards open the
-  modal. Parse + 0/0/0 verified; visual/interaction check is Tom's.
-- ✅ **PR5 — app-wide `openItem` rollout + legacy retirement** (app.jsx + DB): the item modal is now
-  reachable from the **Open register** (this delivers Phase 5's deferred "item detail modal" — its
-  placeholder `onDeferredAction('Open detail')` row-click is now `openItem(it.kind, it.id)`), the
-  **project dashboard** action + flag rows, and the **meeting-detail** action rows. The meeting-detail
-  query flow (`raiseQueryOnAction`/`answerQueryOnAction` + the fetch) was **repointed off
-  `action_queries` onto the polymorphic `queries`/`query_messages`** (answer = a thread message +
-  resolve, with an `item_events` row), so the inline meeting query UX is preserved on the new model.
-  **Legacy `action_queries` dropped** (`db/migrations/drop_legacy_action_queries.sql`) — no code
-  references remain; all rows were migrated in PR1. Advisor still clean.
-  - Role gating is client-side only (senior/lead controls omitted for others in the modal + page) —
-    real RLS enforcement is **P0-4 / Phase 6**, unchanged by this rework.
-  - ⬜ **Deferred (need a serverless scheduler — same gap as programme-import):** timed
-    auto-escalation of stale queries + the weekly Monday "ball-in-your-court" digest. Also still open:
-    wiring `openItem` into the Live Tracker + checklist rows (lower value); the checklist→hub audit
-    trigger; "attach evidence"; export.
-
-**▶ My Actions rework — COMPLETE** (PRs #39–#43). Actions, queries (first-class + polymorphic), flags
-and dates all share one append-only-audited lifecycle, one reusable site-wide modal, and one page with
-ball-in-court, state ribbons, the capped query ping-pong + escalation ladder, and the Flags/Dates rail.
-P0-1 was closed as part of it.
-  Notes: `parent_type` uses the modal's `kind` vocabulary (`action/flag/date`, not `key_date`) so it
-  feeds `openItem` directly; the handoff's `from_meeting_type` on `actions` doesn't exist — replaced by
-  `source_type`/`source_ref`, set at every creation point in PR2+.
-
-### Phase 6 — Organisation & permissions layer  *(large — GO-LIVE GATE)*
-- **Two specified deliverables now sit here:** the **Organisation tab** (interactive org chart) and
-  **Project permissions** (default-visible + exclusions) — both below.
-- Org dashboard (add/edit users incl. title + team-lead; per-member project visibility; per-team
-  meeting-status config); **new-org wizard** + persistent "which org am I in" indicator;
-  permission-based project visibility + "assigned to me" filter; **new-project approval flow**
-  (contributor creates → "pending" → senior approves) + duplicate address/name detection; "lead"
-  projects below-the-line in meetings; **"My Team" view**.
-- **⚠ Re-scoped by P0-4.** The current policy set is org-scoped only; role restrictions are enforced
-  in client JS. This phase must therefore **rewrite the operational RLS policies** (senior vs
-  contributor predicates + a per-project visibility join), not sit on top of them. Budget accordingly.
-  - ✅ **P0-4a done (2026-07-29)** — the *role* half, on the records the app already treats as
-    senior-owned: `projects` and `meetings` UPDATE.
-  - ✅ **P0-4b — project visibility, DONE 2026-07-29**
-    (`db/migrations/p0_4b_project_visibility_policies.sql`). `user_can_see_project(project_id)` added
-    to the SELECT/UPDATE/DELETE/INSERT policies on projects, actions, meeting_entries,
-    meeting_handoffs, project_key_dates, project_contacts, both checklist tables, queries, audit_log
-    and notifications. Nullable `project_id` rows stay org-visible. `item_events` and `query_messages`
-    are deliberately uncovered — no `project_id`, and unreachable without their already-filtered
-    parent.
-    **⚠ Never revoke EXECUTE on `user_can_see_project(uuid)` from anon/authenticated.** RLS policy
-    expressions evaluate as the *invoking* role, so revoking it fails every read with "permission
-    denied for function". It is the same accepted exception as `current_org_id()`, and it is why
-    `get_advisors(security)` now reports **two** `anon_security_definer_function_executable` lints
-    instead of one. Both are expected.
-  - ⬜ **Still open and separate from visibility — operational write scoping.** `actions` UPDATE/DELETE
-    is org-wide (narrow to owner / creator / collaborator / senior) and `meeting_handoffs` is a single
-    `ALL` policy (split it, and key acknowledge/convert on **`is_team_lead`** — see the settled
-    team-lead decision). These are about *who may change what*, not who may see it.
-#### ▶ Project permissions — default-visible, exclusion-based  *(NEW — Tom's decision 2026-07-29)*
-**The scenario that settled it (Tom):** Marcus from Technical converts a landlord drawing for space
-planning when a job first comes in. Later the person formally appointed to that project from Technical
-is someone else. *"Marcus won't be shown as the appointed person on that project but he should have
-visibility of it having done work on it."*
-
-That kills assignment-based visibility outright. Anyone who has ever touched a job may legitimately
-need to see it, and the six team FK columns record only who is **currently appointed** — a snapshot,
-not a history. Deriving permissions from them would hide projects from exactly the people who did the
-early work on them.
-
-**The model instead: visible to everyone by default, with an explicit exclusion list.**
-- A new project is visible to the whole organisation unless someone says otherwise.
-- Exclusions are **subtractive**: remove a whole team, or named individuals within a team.
-- An excluded person does not see the project **anywhere in the app** — not the Projects list, the
-  Live Tracker, the Register, My Actions, a meeting's project rail, its actions, flags, key dates,
-  contacts or checklists, and not in notifications or the activity feed.
-
-**Why this is a much better fit than what the plan previously assumed:** it matches how a 13-person
-firm actually works (everyone can see the work; the rare confidential job is the exception), and it
-means the existing flat `org_id = current_org_id()` SELECT policies are **already correct for the
-default case**. See the re-scoped P0-4b above — this turns a rewrite into an opt-out predicate.
-
-**Where it lives in the UI**
-- **Create project modal** — an **"Everyone can see this project"** checkbox, ticked by default.
-  Unticking reveals a picker: a list of teams, each expandable to the individuals inside it. Deselect
-  a whole team or single people.
-- **Project detail** — a new **PERMISSIONS** tab alongside Modules and Actions & Flags
-  (`TABS` becomes `overview · directory · modules · actions · permissions`), so access can be changed
-  after creation, not only at setup. Senior-only to edit, consistent with P0-4a.
-- A restricted project should carry a visible marker (a chip on the project row/header) so it is never
-  a surprise that someone else can't see it.
-
-> **✅ APPLIED 2026-07-29** — `db/migrations/project_permissions_model.sql` (schema + helper +
-> triggers) and `db/migrations/p0_4b_project_visibility_policies.sql` (the RLS), plus the app work:
-> the **create-project modal** now carries the "Everyone can see this project" checkbox with the
-> team/individual picker, the project detail has a senior-only **PERMISSIONS** tab, and a restricted
-> project shows a **RESTRICTED** chip on both the projects list and the dashboard header. The picker
-> (`ProjectVisibilityPicker`) is shared by both, and mirrors `user_can_see_project()` exactly — it
-> marks seniors "Senior · always" and appointed people "Appointed · always" rather than offering a
-> switch the database would override.
-
-**Schema as applied**
-```sql
-alter table public.projects add column visible_to_all boolean not null default true;
-
-create table public.project_visibility_exclusions (
-  id          uuid primary key default gen_random_uuid(),
-  org_id      uuid not null references public.organisations(id),
-  project_id  uuid not null references public.projects(id) on delete cascade,
-  department  text null,                                   -- exclude a whole team
-  user_id     uuid null references public.app_users(id) on delete cascade,
-  created_by  uuid references public.app_users(id),
-  created_at  timestamptz not null default now(),
-  check (num_nonnulls(department, user_id) = 1),           -- exactly one kind per row
-  unique (project_id, department),
-  unique (project_id, user_id)
-);
-```
-Then one helper, called by every operational policy:
-`user_can_see_project(p_project) → boolean`. `default true` on the flag means **all 30 existing
-projects are unaffected** by the migration.
-
-**⚠ Carry the P0 lessons into it** (both are now standing traps for any new table):
-`project_visibility_exclusions` needs `org_id` + RLS + the `set_org_id_on_insert` trigger (P0-2), and
-the helper must be `SECURITY DEFINER` with EXECUTE revoked from `public, anon, authenticated` (P0-1).
-
-**✅ All four decisions settled by Tom, 2026-07-29**
-1. **Excluding a team persists as a rule.** Store the `department` exclusion, not a snapshot of
-   today's members — a technical hire next month is excluded too, because the intent is *"the
-   Technical team shouldn't see this job"*.
-2. **Seniors are exempt from exclusions** — they always see everything. This also removes the
-   orphaning risk (a project nobody can administer) and keeps Phase 7's exec/portfolio view complete.
-3. **Appointment beats exclusion.** Naming an excluded person to one of the six team FK roles drops
-   their exclusion automatically, with a toast — nobody is ever appointed to a job they cannot open.
-4. **Historical notifications and audit rows are hidden too.** Follows directly from Tom's own
-   framing — *"this project won't appear anywhere in app for them"*. If the old rows stayed, an
-   excluded person would keep seeing "flag raised on <project>" in their bell, learn the job exists
-   and roughly what is happening on it, and click through to nothing. So `notifications` and
-   `audit_log` take the predicate as well. **Known cost, accepted:** a notification someone remembers
-   reading can silently disappear from their bell when a project is later restricted.
-
-**Knock-on:** `project_audience()` must intersect with visibility, or an excluded person still gets
-notified about a project they cannot open. Same fan-out helper that P0-2 just fixed.
-
-#### ▶ Organisation tab — interactive org chart  *(✅ BUILT 2026-07-29 —
-from Tom's Claude Design handoff `design_handoff_organisation_tab`)*
-
-> **✅ SHIPPED 2026-07-29** (`db/migrations/org_chart_manager_and_layout.sql` + app.jsx).
-> New **ORGANISATION** ribbon tab at `#/organisation`. Org header with live counts, the six
-> department tiles as filters, toolbar (search · workload toggle · 40–140% zoom), and the pannable
-> dot-grid canvas with the tidy top-down layout, one shared connector bus per parent, drag-to-move on
-> a 20px snap, drag-onto-a-card to re-parent (loops refused by name), the always-on escalation trace,
-> the inline card editor, the vacancy card, ME badge, workload dots on the carmine ramp, and the
-> unsaved-changes bar with Discard. `manager_id` + `org_chart_layout` applied, and **P0-2's field
-> guard extended to `manager_id`** — the trap flagged when this was folded in, closed with the build.
-> **Team lead and Senior are independent toggles** per Tom's decision; neither forces the other, and
-> the card carries both chips where both apply.
-> **Verified:** the tree + layout logic unit-tested against the real 13 users, **10/10** — one root,
-> no orphans or cycles, leads directly under the exec, no card overlap on any row, injected cycles
-> broken not hung. The centring test **failed first and caught a real defect** (parents centred over
-> their allocated block rather than their first/last child, which leaves them visibly off-centre under
-> an asymmetric subtree); fixed to the standard tidy-layout form. Chart rendered in standalone
-> Chromium against real data.
->
-> **⚠ ADD PERSON works differently from the handoff, because the handoff's version cannot work.**
-> `app_users.id` is a foreign key to `auth.users`, so a person cannot exist before they have an auth
-> account — a direct insert fails. It now creates an **`org_invites`** row (that table exists and
-> already holds 13 rows, one per current user), and the modal says so: *"they appear on the chart once
-> they sign in."*
->
-> **RAISE row — built, then REMOVED at Tom's request (2026-07-29):** *"an unnecessary
-> overcomplication of the org chart."* Actions, queries and flags are raised from the item modal and
-> the meeting/checklist flows where they belong; the chart is for structure and accountability.
-> Still deferred: **marquee multi-select + group drag**, **Export chart** (print/PNG), and the
-> **project-team filter** select.
->
-> **⚠ A query cannot be raised free-standing, and the composer reflects that.** `queries.parent_type`
-> is constrained to `action|flag|date` and a partial unique index enforces **one open query per
-> parent** — the invariant the whole ball-in-court model rests on. Adding `parent_type = 'project'`
-> would have silently capped each project at one open query, so instead the Query composer asks which
-> open item on that project the question is about. If nothing is open it says so and points at
-> raising an action. Action and Flag map straight onto `actions` / `meeting_handoffs`; all three write
-> an `item_events` row and carry `source_type = 'org-chart'` provenance.
->
-> **Senior-only "Reset password" on a card** (`db/migrations/reset_password_to_temporary.sql`) puts
-> someone back on the temporary value and re-arms the forced reset, so a fictional person can be
-> signed in as again after they have set their own password. It is an impersonation-capable action, so:
-> the new value is **fixed server-side** (the function takes no password argument, making it "reset to
-> the known value", never "set anyone's password"); the senior check lives **inside** the function,
-> since it must be EXECUTE-able by `authenticated` to be callable at all; and **every use writes an
-> `org_audit_log` row**. It is the only one of the three accepted SECURITY DEFINER exceptions that
-> grants a power rather than answering a question. **Revisit before real people.**
->
-> **⚠ Temporary passwords are a DEV PLACEHOLDER right now.** `makeTempPassword()` returns the fixed
-> constant `DEV_TEMP_PASSWORD = '123123'` so fictional people can be signed in as without a password
-> round-trip. The production generator is preserved in a comment directly beneath it — **swap that one
-> constant back before real people are onboarded.** The surrounding flow (shown once, shared out of
-> band, forced reset on first sign-in) is already what it will be in production.
->
-> **⚠ Invited sign-ups skip email confirmation** (`db/migrations/confirm_invited_signups.sql`).
-> The project's confirmation link points at localhost, so a created account could never be used, and
-> fictional people have no inbox. `handle_new_auth_user` now confirms an account **only when it claims
-> an unclaimed invite** — the invite is the authorisation. Narrower than switching "Confirm email" off
-> project-wide, because a self-service signup with no invite still confirms normally. **Decide before
-> real people:** keep it (an invited colleague never verifies their address — fine if invites only ever
-> come from a senior inside the app), or drop it and fix Site URL + the redirect allow-list in the
-> Supabase dashboard instead.
->
-> **ADD PERSON creates the Supabase auth account** (Tom, 2026-07-29): an `org_invites` row first —
-> the `auth.users` trigger reads it to build `app_users` — then `auth.signUp` on a **second,
-> non-persisting Supabase client**. That second client is the crux: `signUp` replaces the *current*
-> session, so on the normal client a senior would be signed out and back in as the person they had
-> just added. The senior is shown a generated temporary password once, and
-> `app_users.must_reset_password` gates the app behind a **Set your password** screen until the person
-> replaces it. The invite is rolled back if signup fails, so a retry cannot trip the trigger twice.
-> If the project has email confirmation switched on, the modal says so.
-A new top-level ribbon tab, **ORGANISATION**, routed at `#/organisation`, giving the company one
-canonical view of who reports to whom. Every active `app_users` record renders as a card on a pannable
-snap-grid canvas with elbow connectors; seniors edit people in place (name, job title, initials,
-department, seniority, team lead, reports-to), add/remove people, trace an escalation path, gauge
-workload, and raise an action, query or flag against anyone but themselves. Read-only for everyone
-else (pan, zoom, search, filters, workload and escalation stay available to all).
-
-It is **the Phase 6 "Org dashboard" item, specified** — build it as that deliverable rather than as a
-separate feature. The handoff is high-fidelity and final on colour, type, spacing, geometry, copy and
-interaction; it is an HTML prototype on a bespoke runtime and **must not be ported structurally** —
-rebuild in `app.jsx` with `C` / `FONT` / `lucide()` / `React.createElement` / the `#/` hash router.
-
-**Schema it needs**
-- `app_users.manager_id uuid null references app_users(id)` — an explicit reporting line overriding
-  the derived default. `null` = fall back to: active team lead of the person's department → exec.
-  Cycle-break by walking ancestors (cap ~50) and resetting a repeat to the exec; refuse a drop that
-  would loop, and exclude the person's own descendants from the "Reports to" picker.
-- `org_chart_layout (user_id pk, x, y, updated_at)` — shared, saved card positions.
-
-**⚠ Both need P0-work applied at the same time, or they reopen what we just closed:**
-- `manager_id` **must be added to the `enforce_app_user_field_guard` trigger** (P0-2) alongside
-  role/department/is_team_lead/active — otherwise any contributor can re-parent themselves in the
-  org chart by forging one request.
-- `org_chart_layout` **must carry `org_id` + RLS + the `set_org_id_on_insert` trigger.** The handoff
-  spec has no `org_id`; a new table without one is exactly the P0-2 defect, freshly minted.
-
-**✅ SETTLED 2026-07-29 — team lead is separate from seniority.** Tom: *"team lead should be a
-separate indicator to 'is senior'. Someone may be a team lead but might not carry the permissions that
-come with senior."* This matches the app's existing model (`ProfileModal`'s hint reads *"Leads their
-department — separate from seniority"*) and the live data — of the five team leads only Priya Anand is
-senior; Grace Boateng, Carlos Garcia, Jen Okafor and Marcus Bell are `is_team_lead = true` with
-`role = 'contributor'`.
-- **The handoff's force-to-senior rule is dropped.** Building it as written would have promoted those
-  four to senior on first use of the tab — and P0-4a has made `senior` the database-enforced authority
-  to edit any project, so that would have been a privilege escalation performed by a UI convention.
-- The chart's three levels stay **derived**: exec = `senior` with no department · team lead =
-  `is_team_lead` (whatever the role) · contributor = everyone else. The **TEAM LEAD** and **SENIOR**
-  toggles on a card are independent; neither forces the other. Setting a lead still clears the
-  previous lead of that department (one lead per department).
-- **Consequence for P0-4b — do not miss this.** Authority a *team lead* needs (acknowledging a flag
-  addressed to their department, converting it to an action, answering an escalated query) must key on
-  **`is_team_lead`, not on `role = 'senior'`**. Four of the five current leads are contributors, so a
-  senior-only predicate on `meeting_handoffs` would break the flag ladder the My Actions rework built.
-- P0-2's field guard already prevents self-promotion: only an active senior in the same org can change
-  `role` / `is_team_lead` / `department` / `active`, so a contributor team lead cannot make themselves
-  senior — and the org chart is senior-only to edit in any case.
-
-**Corrections to the handoff, checked against the live DB 2026-07-29**
-- Its open question 1 is moot: `job_title` is **13/13 populated**, not empty. Use the live values.
-- `actions` has **no `assignee_id`** — the column is `owner_user_id` (same class of slip as the
-  `from_meeting_type` correction in the My Actions rework). Raise → action writes `owner_user_id`,
-  and should set `source_type`/`source_ref` so the provenance chip reads "raised from the org chart".
-- Raise → query writes the polymorphic `queries` table (`parent_type`/`parent_id`), not a new one.
-  Raise → flag writes `meeting_handoffs.to_department`. Both flows already exist end-to-end.
-- Its vacancy-card path (department with no `is_team_lead`) **will not appear with live data** — all
-  five departments have a lead. The screenshots show four vacancy cards because the prototype's data
-  is invented. Build it anyway (a lead can be removed), but don't expect to see it.
-- Open question 5 (realtime): the **RX bus** now exists — the chart subscribes via
-  `useLiveData(['users'], …)`. That covers refresh; it does **not** solve two seniors saving
-  conflicting edits, which the save-bar diff model resolves last-write-wins. Acceptable for 13 people;
-  note it rather than build locking.
-- Open question 4 (multiple roots): live data has exactly one exec (Tom Staples), so the single-root
-  assumption holds today.
-
-**Answered here:** layout is shared, not per-user (as specified). Export = print-to-PDF plus a PNG for
-induction packs.
-
-- **Also fix here:** `projects.site_manager` is free `text` — the last team-shaped free-text escape
-  hatch in a strict-FK schema. Either FK it to `app_users` or accept it explicitly and note why.
-- **Structural note:** the six hardcoded team FK columns on `projects` and the five `org_meeting_types`
-  rows that map onto them are rigid. Adding a discipline (M&E lead, QS, site manager) means a schema
-  change + a meeting type + a `project_audience()` change + UI. If Arke's team shape is likely to
-  change, normalise to a `project_team (project_id, user_id, role)` table **during this phase** —
-  it is far cheaper before per-project visibility joins are written against the current shape.
-- **Gate:** run the outstanding **RLS behavioural verification** (two accounts, table-by-table
-  pass/fail, against the *new* policies) and `get_advisors` **before** the real `arke` org and the
-  first user migration. ✅ P0-2 closed 2026-07-29, so a second org is no longer unsafe by construction
-  — but P0-4 still is, and it is this phase.
-- **Technique proven in the P0-2 batch, reuse it here:** the behavioural test ran inside a
-  self-aborting `DO` block with `set_config('request.jwt.claims', ...)` to impersonate a real user,
-  so policies and triggers were exercised under an actual JWT and the whole thing rolled back. That is
-  the harness the table-by-table pass/fail gate should be written in — no throwaway accounts needed.
-
-### Phase 7 — Executive health view  *(large — depends on 4d and 9)*
-- Accountability register (open actions/flags by staff × severity/urgency); pipeline pie **by value**
-  (needs 4d); clickable project register; audit log (needs P0-1 to be worth anything); meetings
-  register; portfolio clash calendar (needs Phase 9).
-- **Redefine project health.** "Health = information completeness" measures form-filling, not the
-  project. Replace with a composite: **slip against baseline** (Phase 9) + **margin/value movement**
-  (4d) + **overdue actions and unacknowledged flags** (exists today), with completeness as a fourth,
-  smallest term. This is the difference between a dashboard seniors open once and one they use.
-
-### Phase 8 — Schema & decisions cleanup  *(small)*
-- Drop dead `meeting_entries.flag`; settle `owner_name_fallback`; `org_meeting_types.group_field` **is**
-  populated with real FK column names (`pre_con_lead_user_id` etc.) — confirm the app actually reads it,
-  else drop.
-- `action_queries` carries three overlapping policies (two `ALL`, one redundant `SELECT`) — collapse.
-- `project_checklists` has no `DELETE` policy — add or confirm intentional.
-
-### ▶ Phase 9 — **Baselined programme & self-writing delay record**  *(NEW — the differentiator)*
-`project_key_dates` has a single mutable `target_date`. When a date moves, the previous value is
-**gone** — the only trace is `audit_log.changes`, which has existed since 24 July and holds 5 rows.
-There is no baseline, no revision history, and no recorded cause.
-
-**9a — schema only. Do this early, ideally in the P0 batch.** It is a handful of columns and one
-trigger, and it is **time-sensitive in a way nothing else in this plan is**: every week it isn't
-deployed is a week of programme history that cannot be recovered later. The UI can wait; the accrual
-cannot.
 - `project_key_dates.baseline_date date`, `baseline_set_at timestamptz`, `baseline_set_by uuid` —
   frozen when the project is secured (mirror the existing `secured_at` / `secured_by` pattern).
 - `key_date_revisions (id, org_id, key_date_id, project_id, previous_date, new_date, changed_by,
   changed_at, meeting_id, cause_flag_id, cause_action_id, reason text)`.
-- Trigger on `UPDATE OF target_date` writes the revision row. `meeting_id` / cause FKs populate when
-  the change originates in a meeting or from a flag/action — all four objects already exist and are
-  already linked, which is the whole reason this is cheap here and expensive elsewhere.
+- Trigger on `UPDATE OF target_date` writes the revision row. `meeting_id` and the cause FKs populate
+  when the change originates in a meeting or from a flag/action — all four objects already exist and
+  are already linked, which is exactly why this is cheap here and expensive anywhere else.
 - Same treatment for `projects.site_start_date` / `projected_completion_date` /
   `contracted_completion_date`.
+- New table takes `org_id` + RLS + `set_org_id_on_insert` from birth (the P0-2 lesson).
 
-**9b — the views (later, once history has accrued).**
-1. **Internal:** project health stops being form-completeness and becomes *slip against baseline,
-   attributed* — which projects are moving, by how much, and whose decisions moved them. Feeds the
-   Phase 7 exec view and the portfolio clash calendar directly.
-2. **External, and this is the point:** what accrues is a **contemporaneous record**. When a fit-out
-   job goes wrong, the entire delay / EOT argument turns on who knew what, when, and what it pushed.
+### ▶ Step 2 — Operational write scoping  *(small · security · no dependencies)*
+The last piece of P0-4. Visibility is solved; *who may change what* is not.
+- `actions` UPDATE/DELETE is org-wide — narrow to owner / creator / collaborator / senior.
+- `meeting_handoffs` is a single blanket `ALL` policy — split it, and key acknowledge/convert on
+  **`is_team_lead`, not `role = 'senior'`**. Four of the five current team leads are contributors, so
+  a senior-only predicate would break the flag ladder the My Actions rework built.
+
+### ▶ Step 3 — Housekeeping batch  *(small · no dependencies)*
+Several one-liners that have been carried for weeks. Worth one batch rather than one each.
+- `org_statuses` still stores `label = 'Won'`; the app already renders **LTA** from the `STATUSES`
+  const. Align the data or strike the item.
+- Drop dead `meeting_entries.flag`; settle `owner_name_fallback`; confirm the app actually reads
+  `org_meeting_types.group_field` (it is populated with real FK column names) or drop it.
+- `action_queries` carried three overlapping policies — confirm gone with the legacy table.
+- `project_checklists` has no `DELETE` policy — add or confirm intentional.
+- **Flag severity:** `meeting_handoffs` has no severity column, so the register cannot rank flags.
+- **Checklist follow-ups:** audit trigger so saves/sign-offs emit into the hub; "attach evidence" row
+  action; export (the PDF/XLSX buttons render but do nothing).
+
+### ▶ Step 4 — Executive view, part 1: accountability & registers  *(medium · no dependencies)*
+The half of the old Phase 7 that is buildable **today**, on data that already exists:
+- accountability register — open actions and flags by person, aged;
+- clickable project register;
+- meetings register;
+- the audit log surfaced properly (worth something now P0-1 is closed).
+
+Deliberately **excludes** anything needing money or baselines — that is Step 7. Building this first
+gets seniors a usable view without waiting on the commercial spine.
+
+### ▶ Step 5 — Delay record: the views  *(medium · needs Step 1, plus accrued history)*
+Once revisions have been accruing for a few weeks:
+1. **Internal** — project health stops being form-completeness and becomes *slip against baseline,
+   attributed*: which projects are moving, by how much, and whose decisions moved them.
+2. **External, and this is the point** — what accrues is a **contemporaneous record**. When a fit-out
+   job goes wrong the entire delay/EOT argument turns on who knew what, when, and what it pushed.
    Contractors lose that argument routinely because the record gets reconstructed from email threads
    nine months later by someone who wasn't in the room. A tool that emits a timestamped, attributed,
    evidence-linked delay narrative **as a byproduct of people just running their weekly meetings** is
@@ -1011,60 +617,91 @@ cannot.
 - Nobody in this market does this well. Procore and Fieldwire log events; they don't build the causal
   chain. arke [matrix] is unusually close to it because meetings, flags and actions are already
   first-class linked objects rather than comment threads.
-- **Merges with:** the Programme Links tab's work-span (date-range) view — build the span model and
-  the revision model together, once.
+- **Merges with** the Programme Links work-span (date-range) view — build the span model and the
+  revision model together, once.
 
-#### ▶ Projects — Map view  *(✅ BUILT 2026-07-29)*
+### ▶ Step 6 — Commercial spine  *(medium schema, high leverage · needs a decision from Tom)*
+`projects` has 27 columns and **not one is a value, cost, fee or margin.** There is no money anywhere
+in the application. That is not a missing feature, it is a missing axis — and it is what stops the
+exec view answering the questions an MD actually asks.
 
-> **✅ SHIPPED.** Third mode on the Projects view switcher — **List · Full · Map**. Leaflet 1.9.4 +
-> CARTO light tiles, custom teardrop pins coloured by stage (carmine live · green handed-over · grey
-> lost) with the per-stage Lucide glyph and the diagonal hazard hatch for On-site, hover label, click
-> callout with **Expand project page**, stage legend, **Fit all**, and the geocode status line.
-> Positions come from each project's `address` via one bulk `api.postcodes.io` call — **no schema
-> change**, as the handoff allowed.
-> **Verified:** the postcode regex extracts a code from **30 of 30** live addresses. What could not be
-> checked from the dev sandbox is whether those fictional postcodes *resolve* — outbound calls to
-> postcodes.io are blocked here, so resolution is Tom's to confirm on the live app.
-> Because of that the unmapped notice now distinguishes **two different failures**, which the handoff
-> conflated: an address with no postcode in it (someone should edit the address) versus a postcode the
-> lookup did not recognise (nothing to fix in the app). Sending someone to correct the wrong thing is
-> worse than saying nothing.
-> Leaflet is loaded in `shell-head.html`; the existing dependency check deliberately does **not** treat
-> it as fatal, and the map frame shows its own message if the library or the lookup is unreachable, so
-> the Projects page still works without them.
-> **Still worth doing later:** cache `latitude`/`longitude` on `projects` so the map is instant and a
-> wrong pin can be corrected by hand. Note P0-4a makes `projects` senior-only to write, so a
-> contributor's client cannot populate the cache — it wants a small writable side table or a
-> senior-only backfill, not a naive client write.
-A third option — **Map** — on the existing List / Full switcher on the Projects home page
-(`TrackerView`). A Central London basemap with one custom teardrop marker per project, positioned from
-each project's existing `address`. Hover reveals a compact label (number · name · stage); click opens a
-callout card with an expand control into the existing project page (`onOpenProjectDashboard`).
-Markers are stage-coloured with a Lucide glyph per stage, a hazard-hatch fill for On-site, a stage
-legend bottom-left, and an italic notice counting any project whose address has no recognisable
-postcode. Handoff: `design_handoff_projects_map_view`.
+Budget Movement Log, Quotes, Additional Sales Opportunities, Schedule of Derogation, Bond Application
+and Adjudication are not six unrelated tables that share a shape. They are six views onto **one number
+and its movement** from tender through adjudication to final account. Built as generic typed grids the
+Budget Movement Log becomes rows that roll up to nothing.
 
-**Notes for whoever builds it:**
-- **No schema change is strictly required** — coordinates are derived by pulling a UK postcode off the
-  tail of `address` and bulk-resolving it via `api.postcodes.io` (free, no key, UK-only). The handoff
-  recommends, and so do I, adding nullable `latitude`/`longitude` to `projects` and falling back to the
-  lookup only when null: it takes a third party off the render path and lets a wrong pin be corrected
-  by hand.
-- **Three new external dependencies on the render path** — Leaflet 1.9.4 (unpkg), CARTO raster tiles,
-  and postcodes.io. The app is otherwise self-contained bar the React CDN, so this is a real change in
-  the app's failure surface; the map should degrade to the empty frame + notice rather than break the
-  Projects page.
-- **Permissions are already handled.** The map reads the same RLS-filtered `projects` query as the
-  List and Full views, so a restricted project is absent from the map for free — no extra work, but
-  worth a check when it is built.
-- **Deferred by agreement** — the value is real but it is a self-contained addition; nothing else
-  waits on it.
+**Scope:**
+- Columns on `projects`: `tender_value`, `contract_value`, `forecast_value`, `forecast_cost`,
+  `value_confidence`, all `numeric(14,2)`, GBP assumed.
+- `budget_movements` — the Budget Movement Log, built as a **ledger not a grid**: `project_id,
+  movement_date, direction (add/omit), category, description, value, status
+  (potential/instructed/agreed/rejected), raised_by, agreed_at, source_ref`. The register view is a
+  view over it; the project's forecast is a rollup of it.
+- Derived, not stored: stage-weighted pipeline value (weight per `org_statuses.value`, senior-editable).
 
-### Cross-cutting / parallel
-- **Claude programme-import** — wire the real API behind the Project Detail Page Excel stub
-  (`importProgramme` / `convertArkeProgrammeToKeyDates` TODO): xlsx → Claude → `{event_name,
-  target_date}[]` → `project_key_dates`. **Needs a serverless proxy** (public static app can't hold the
-  key). Note this is also the natural place to set the **baseline** on first import (Phase 9a).
+**⚠ Open question for Tom, needed before building:** does Arke want **cost/margin** in this tool, or
+only **value + movement**? Margin is the sharper number and the one people will object to being
+visible org-wide. The RLS answer differs — a senior-only column set versus a normal one — so it has
+to be settled first.
+
+### ▶ Step 7 — Executive view, part 2: health & value  *(medium · needs Steps 1, 5, 6)*
+The half that has real dependencies:
+- pipeline pie keyed by **value**, not count (needs Step 6);
+- portfolio clash calendar (needs Step 1);
+- **redefined project health** — a composite of *slip against baseline* (Step 1/5) + *margin/value
+  movement* (Step 6) + *overdue actions and unacknowledged flags* (exists today), with completeness as
+  a fourth and smallest term. This is the difference between a dashboard seniors open once and one
+  they use.
+
+### ▶ Step 8 — Project registers & logs  *(large · the commercial ones need Step 6)*
+The register/log module type, from Tom's process matrix: RFI Schedule · Risk Register · Long Lead
+Items · Quotes · Schedule of Derogation · **PM Checklist** (which is a blank per-project *register*,
+not a fixed-question checklist). Budget Movement Log is delivered by Step 6 as a ledger, not here.
+
+### ▶ Step 9 — Meeting agenda modules  *(medium)*
+The agenda/meeting module type: Kick Off · Pre-Adjudication · Adjudication agendas.
+
+### ▶ Step 10 — Go-live: real Arke data  *(gate)*
+- Run the **RLS behavioural verification** — two roles, table by table, pass/fail — and
+  `get_advisors` before the real `arke` org and the first user migration.
+  **Use the harness this session proved:** a self-aborting `DO` block with
+  `set_config('request.jwt.claims', …)` to impersonate a real user, so policies and triggers are
+  exercised under an actual JWT and the whole thing rolls back. No throwaway accounts needed.
+- Decide the two dev-mode carve-outs before real people arrive:
+  **(a)** swap `DEV_TEMP_PASSWORD` back to the random generator;
+  **(b)** keep or drop invite-based email-confirmation skipping, and keep or drop the senior-only
+  `reset_password_to_temporary` (impersonation-capable, audited).
+- New-org wizard; persistent "which org am I in" indicator; new-project approval flow (contributor
+  creates → pending → senior approves) + duplicate address/name detection; "My Team" view.
+
+### ▶ Step 11 — Organisation chart follow-ups  *(small)*
+Marquee multi-select + group drag · Export chart (print/PNG) · the project-team filter select.
+The RAISE composers were built and then **removed** at Tom's request — not deferred, rejected.
+
+### ▶ Step 12 — Projects home page UI  *(small · **PARKED** by Tom 2026-07-29)*
+Raised and parked. When it comes back, the questions were: what is the page primarily for; should the
+List/Full/Map choice persist per person; and four specifics —
+- **no "just mine" filter** (the owner filter matches only `owner_user_id`, so a designer cannot filter
+  to their own work — the other five team columns are invisible to it);
+- fixed sort (always project-number ascending);
+- tall rows — 30 projects is a lot of scrolling;
+- two overlapping ways to hide things (status filter defaulting to "active" *and* a separate "Show
+  unsecured" toggle).
+
+### ▶ Step 13 — Serverless scheduler, and what it unblocks  *(needs an infra decision)*
+One missing capability blocks three features, which is why they are grouped. A public static app
+cannot hold an API key or run a cron.
+- **Claude programme-import** — wire the real API behind the Excel stub (`importProgramme` /
+  `convertArkeProgrammeToKeyDates`): xlsx → Claude → `{event_name, target_date}[]` →
+  `project_key_dates`. Also the natural place to set the **baseline** on first import (Step 1).
+- **Timed auto-escalation** of stale queries.
+- **The weekly Monday "ball-in-your-court" digest.**
+
+### ▶ Step 14 — Regression guard  *(WORKSHOP — no test harness exists)*
+Nothing automated protects the cross-reference chain. Two candidates proved useful this session and
+should inform it: the **self-aborting SQL block** for anything touching the database, and the
+**mock-PostgREST unit test** used on the RX bus for pure client logic. A Playwright pass over the
+deployed app is the third leg.
 
 ## Open decisions
 - **Workflow:** one PR per batch, fresh branch off `main`, opened at the end.
