@@ -791,8 +791,36 @@ the helper must be `SECURITY DEFINER` with EXECUTE revoked from `public, anon, a
 **Knock-on:** `project_audience()` must intersect with visibility, or an excluded person still gets
 notified about a project they cannot open. Same fan-out helper that P0-2 just fixed.
 
-#### ▶ Organisation tab — interactive org chart  *(NEW — from Tom's Claude Design handoff
-`design_handoff_organisation_tab`, folded in 2026-07-29)*
+#### ▶ Organisation tab — interactive org chart  *(✅ BUILT 2026-07-29 —
+from Tom's Claude Design handoff `design_handoff_organisation_tab`)*
+
+> **✅ SHIPPED 2026-07-29** (`db/migrations/org_chart_manager_and_layout.sql` + app.jsx).
+> New **ORGANISATION** ribbon tab at `#/organisation`. Org header with live counts, the six
+> department tiles as filters, toolbar (search · workload toggle · 40–140% zoom), and the pannable
+> dot-grid canvas with the tidy top-down layout, one shared connector bus per parent, drag-to-move on
+> a 20px snap, drag-onto-a-card to re-parent (loops refused by name), the always-on escalation trace,
+> the inline card editor, the vacancy card, ME badge, workload dots on the carmine ramp, and the
+> unsaved-changes bar with Discard. `manager_id` + `org_chart_layout` applied, and **P0-2's field
+> guard extended to `manager_id`** — the trap flagged when this was folded in, closed with the build.
+> **Team lead and Senior are independent toggles** per Tom's decision; neither forces the other, and
+> the card carries both chips where both apply.
+> **Verified:** the tree + layout logic unit-tested against the real 13 users, **10/10** — one root,
+> no orphans or cycles, leads directly under the exec, no card overlap on any row, injected cycles
+> broken not hung. The centring test **failed first and caught a real defect** (parents centred over
+> their allocated block rather than their first/last child, which leaves them visibly off-centre under
+> an asymmetric subtree); fixed to the standard tidy-layout form. Chart rendered in standalone
+> Chromium against real data.
+>
+> **⚠ ADD PERSON works differently from the handoff, because the handoff's version cannot work.**
+> `app_users.id` is a foreign key to `auth.users`, so a person cannot exist before they have an auth
+> account — a direct insert fails. It now creates an **`org_invites`** row (that table exists and
+> already holds 13 rows, one per current user), and the modal says so: *"they appear on the chart once
+> they sign in."*
+>
+> **⬜ Deferred to a follow-up, deliberately:** the **RAISE row** (action/query/flag composers on a
+> card — these duplicate flows that already exist behind `openItem`, and are the largest remaining
+> chunk), **marquee multi-select + group drag**, **Export chart** (print/PNG), and the **project-team
+> filter** select. Everything else in the handoff is built.
 A new top-level ribbon tab, **ORGANISATION**, routed at `#/organisation`, giving the company one
 canonical view of who reports to whom. Every active `app_users` record renders as a card on a pannable
 snap-grid canvas with elbow connectors; seniors edit people in place (name, job title, initials,
@@ -928,6 +956,31 @@ cannot.
   first-class linked objects rather than comment threads.
 - **Merges with:** the Programme Links tab's work-span (date-range) view — build the span model and
   the revision model together, once.
+
+#### ▶ Projects — Map view  *(NEW handoff, folded in 2026-07-29 — **DEFERRED**, Tom's call)*
+A third option — **Map** — on the existing List / Full switcher on the Projects home page
+(`TrackerView`). A Central London basemap with one custom teardrop marker per project, positioned from
+each project's existing `address`. Hover reveals a compact label (number · name · stage); click opens a
+callout card with an expand control into the existing project page (`onOpenProjectDashboard`).
+Markers are stage-coloured with a Lucide glyph per stage, a hazard-hatch fill for On-site, a stage
+legend bottom-left, and an italic notice counting any project whose address has no recognisable
+postcode. Handoff: `design_handoff_projects_map_view`.
+
+**Notes for whoever builds it:**
+- **No schema change is strictly required** — coordinates are derived by pulling a UK postcode off the
+  tail of `address` and bulk-resolving it via `api.postcodes.io` (free, no key, UK-only). The handoff
+  recommends, and so do I, adding nullable `latitude`/`longitude` to `projects` and falling back to the
+  lookup only when null: it takes a third party off the render path and lets a wrong pin be corrected
+  by hand.
+- **Three new external dependencies on the render path** — Leaflet 1.9.4 (unpkg), CARTO raster tiles,
+  and postcodes.io. The app is otherwise self-contained bar the React CDN, so this is a real change in
+  the app's failure surface; the map should degrade to the empty frame + notice rather than break the
+  Projects page.
+- **Permissions are already handled.** The map reads the same RLS-filtered `projects` query as the
+  List and Full views, so a restricted project is absent from the map for free — no extra work, but
+  worth a check when it is built.
+- **Deferred by agreement** — the value is real but it is a self-contained addition; nothing else
+  waits on it.
 
 ### Cross-cutting / parallel
 - **Claude programme-import** — wire the real API behind the Project Detail Page Excel stub
