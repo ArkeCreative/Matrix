@@ -220,19 +220,77 @@ tab, and the global Register (on reload). The findings below harden and extend t
 review's P-numbers into where they land in this plan; test artefacts it left (a "TEST FLAG (Claude)…"
 on #2305 and a "Claude Test Consultancy / Jane Tester" directory row) were **cleaned from the dev DB**.
 
-### RX — Live aggregate reactivity  *(the big one — WORKSHOP; core to the value prop)*
-Aggregated views don't update in place — they only refresh on a full page reload. Raise a flag from a
-checklist and the toast fires, but the project's Open Flags KPI, the Actions & Flags tab, and the
-Register counts stay stale until reload. **This directly undercuts the "single source of truth, live"
-pitch** — the propagation is correct, but it isn't *reactive*.
-- **Root cause (likely):** refresh is prop-drilled callbacks (`refreshProjectActions`, `onDataChanged`
-  etc.) that a deep write doesn't reach, and sibling views (Register, Live Tracker) hold their own
-  fetched copies that only re-run on mount. Not a data bug — a state-propagation architecture gap.
-- **Workshop the approach before building:** a lightweight shared reactive layer (a small store /
-  event bus that aggregate views subscribe to, invalidated on every write), vs. threading a single
-  `bumpVersion()` through every write path. Prefer the former — it's what makes this scale to more
-  modules. **Subsumes the "Last updated" staleness finding** (same root).
-- **Acceptance:** raising/resolving a flag moves the project KPI + Register count immediately, no reload.
+### RX — Live aggregate reactivity  *(✅ BUILT 2026-07-29 — see box below)*
+Aggregated views didn't update in place — they only refreshed on a full page reload. Raise a flag from
+a checklist and the toast fired, but the project's Open Flags KPI, the Actions & Flags tab, and the
+Register counts stayed stale until reload. **This directly undercut the "single source of truth, live"
+pitch** — the propagation was correct, but it wasn't *reactive*.
+
+> **✅ RX APPLIED 2026-07-29** (app.jsx only, no schema change). Approach chosen with Tom: a shared
+> **live data bus** with **auto-emit at the Supabase client boundary**, plus focus revalidation.
+> Verification recorded below.
+
+**Root cause — corrected against the source.** The review's guess (prop-drilled callbacks + siblings
+holding their own copies) was half right, and the real shape made RX *smaller* than assumed:
+- **The shared store already existed.** `Dashboard` holds `projects / users / meetings / latestNotes /
+  keyDates / projectActions / projectFlags / notifications`, and Tracker, Register, Live Tracker,
+  Meetings and Project Dashboard all read them **as props** — already reactive to it. The job was
+  making writes reach the store, not building one.
+- **There was no flags refresher at all.** `projectFlags` was fetched exactly once, in the mount effect,
+  and nothing re-ran it — ever. Every other resource had a refresher; flags didn't. That single
+  omission *was* the headline repro, since the front-page indicator, the project Open Flags KPI, the
+  Register count and the inline detail pane all read that one frozen array.
+- **`ItemModal` had no change callback.** Mounted at the app root (so `openItem` needs no prop-drilling)
+  with no way to signal a write — and since PR5 it is the primary write surface app-wide (~12 write
+  sites: complete, resolve/escalate/answer query, acknowledge, convert, reassign, move date). Not
+  fixable by prop-drilling; that's the whole point of `openItem`.
+- **"Last updated" staleness, same root:** projects were loaded once and thereafter only mutated
+  optimistically in memory, so DB-written `updated_at` / `last_updated_by` and other users' edits never
+  appeared.
+
+**What shipped.**
+- **`dataBus`** (module-level, ~60 lines, same pattern as the `_openItemHandler` registry PR2 proved):
+  `subscribe(topics, fn)` / `emit(topics)` over resource topics (`projects · actions · flags · dates ·
+  notes · meetings · queries · events · notifications · checklists · contacts · users`). Emits coalesce
+  on a 120 ms trailing flush, and a subscriber registered on several invalidated topics runs **once**
+  per flush.
+- **Auto-emit publisher:** `sb.from(table)` is wrapped so `insert / upsert / update / delete` emit that
+  table's topics when the write returns clean. **Reads are untouched**, so a subscriber's refetch can
+  never re-trigger the bus. Zero call-site edits — and future write paths are reactive by construction.
+  `sbQuiet` is the raw non-emitting client, used **only** for the debounced per-field project save,
+  where the row is already applied optimistically and a refetch would race the debounce.
+- **`useLiveData(topics, loader)`** — subscribes any component's own loader, at any depth, wherever it's
+  mounted. Wired to: the 8 Dashboard loaders (including the two new ones, **`refreshProjectFlags`** and
+  **`refreshProjects`**); `ItemModal` (silently — `load(silent)` now skips the spinner, which also
+  removes the flash that followed every modal action before); `MyActionsView`; `ProjectDashboardView`'s
+  module rings + Completed catalogue.
+- **Focus/visibility revalidation** (30 s throttle) replaces the hand-maintained per-view refresh table,
+  which covered notes/actions/meetings/dates and silently never covered flags or projects at all. View
+  switches revalidate on the same throttle. `refreshProjects` keeps the local row for any project with a
+  save still in flight, so a refetch can't overwrite mid-edit state.
+
+**Deliberately not subscribed — editors holding unsaved user input.** `ChecklistModule` (unsaved
+RES/AWT/INFO/N-A answers) and `MeetingDetailView` (notes being typed) would have their in-progress edits
+clobbered by a refetch. Their *writes* publish normally, so every aggregate goes live; only their own
+re-read is deferred. **RX-B is the prerequisite** — once the source row persists atomically there is no
+unsaved state to protect, and both can subscribe.
+
+**Not done, deliberately:** Supabase **Realtime**. It's the natural second publisher into the same bus
+(one `postgres_changes` channel → `emit`), and the bus is what makes it a small change — but it needs
+the realtime publication + RLS verified, and it doesn't address the actual complaint (your own write, in
+your own tab). Revisit when two users are genuinely concurrent.
+
+**Verification (2026-07-29).** `./rebuild.sh` PASS/PASS, balance **0/0/0**. The publisher is the
+load-bearing piece, so it was unit-tested against a mock PostgREST builder rather than assumed —
+`10/10 passing`: a write emits its table's topic; `insert().select().single()` (the PR2 write style)
+keeps the patched thenable and returns the real result; **reads emit nothing**; a **failed** write emits
+nothing; three writes → each affected topic refreshes exactly once; two writes to one table → one
+refresh; a multi-topic subscriber runs once per flush; `sbQuiet` emits nothing; a throwing subscriber
+can't block the others. Live row counts confirming refetch cost is trivial: projects 30 · actions 36
+(19 open) · handoffs 13 (5 open) · key_dates 159 · meeting_entries 63 · queries 5 · item_events 95 ·
+project_checklist_items 5 — **~460 rows across every aggregate**.
+- **Acceptance (Tom, on the live app):** raising/resolving a flag moves the project KPI + Register count
+  immediately, no reload.
 
 ### RX-B — Checklist save atomicity  *(data-integrity bug — folds into Phase 4 checklist; pair with P0-3)*
 Flags persist the instant they're raised, but checklist RES/AWT/INFO/N-A answers persist only on
@@ -245,7 +303,15 @@ write path.
 
 ### Surface-bug sweep  *(one small batch PR — quick wins)*
 - **Key Dates expander is dead** — on project Overview the `KEY DATES ›` chevron and "Expand key dates"
-  link do nothing; the dates never reveal. (Regression in the `kdOpen` wiring — cheap fix.)
+  link do nothing; the dates never reveal. **⚠ Probably already fixed — awaiting Tom's repro.**
+  Re-traced 2026-07-29: the wiring is correct (`onClick: () => setKdOpen(v => !v)` on the whole header
+  row, `kdOpen && …` body, in `constructionCard` on the Overview tab), and the Pages deploy of `6a420af`
+  is green with #45's defensive empty-state shipped. **Hypothesis:** before #45, an expander opening
+  onto an empty `myKeyDates` rendered *nothing at all* — indistinguishable from a dead chevron. #45's
+  "No key dates recorded for this project yet." placeholder would make the same click now look like it
+  works. To settle it we need the project it was seen on + the account role; if it's still inert there
+  with real dates on screen, it's a different bug. (The sandbox can't confirm on the live app: the
+  network policy blocks `arkecreative.github.io`, and the page needs auth to render.)
 - **Register nav + deep-link** — the top-nav "Register & activity" link often needs two clicks (first
   lands on Projects), and `#/register` isn't deep-linkable (loads Projects on refresh). Register the
   route + fix the first-click resolve.
@@ -279,11 +345,12 @@ the harness is a decision: **Playwright E2E against the deployed app** (fits the
 Chromium tooling) is the most likely fit — decide before writing it.
 
 ### Suggested sequence
-1. **Surface-bug sweep** + **RX-B checklist atomicity** — small, high-value, ship first (RX-B pairs with
-   P0-3 in the checklist write-path batch).
-2. **RX live reactivity** — workshop the store/bus approach, then build; it's the value-prop fix and
-   everything exec-facing reads better once it lands.
-3. **P0-2 / P0-3 / P0-4** security + schema (still open) — slot around the above per go-live urgency.
+1. ✅ **Surface-bug sweep** (PR #45) and ✅ **RX live reactivity** (2026-07-29) — both shipped.
+2. **RX-B checklist atomicity + P0-3** — next, as one checklist-write-path batch. **RX now depends on
+   it:** `ChecklistModule` and `MeetingDetailView` are the two views RX deliberately left unsubscribed,
+   because a refetch would clobber unsaved answers/notes. Persisting the source row atomically removes
+   the unsaved state, and both can then subscribe to the bus — closing the last reactivity gap.
+3. **P0-2 / P0-4** security (still open) — slot around the above per go-live urgency.
 4. **Phase 7 exec view** absorbs attribution/ageing, interactive Live Tracker, the Register strip.
 5. **Programme import** once the serverless proxy is workshopped (also unblocks timed auto-escalation).
 6. **Regression guard** after RX, to lock the chain.
