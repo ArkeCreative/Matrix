@@ -71,8 +71,8 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 # ⛔ P0 — verified defects, fix before further feature work
 
 All four were found by querying the live database on 2026-07-26. Re-verification queries are in the
-appendix. **P0-1 (2026-07-27), P0-3 and P0-2 (both 2026-07-29) are closed and verified. Only P0-4
-remains open** — it is the Phase 6 RLS rewrite, and the gate for real Arke data.
+appendix. **P0-1 (2026-07-27), P0-3, P0-2 and P0-4a (all 2026-07-29) are closed and verified. Only
+P0-4b — per-project visibility — remains open**, and it is the gate for real Arke data.
 
 > **P0-1 — ✅ FIXED 2026-07-27** (folded into the My Actions rework PR1, `db/migrations/myactions_audit_spine.sql`).
 > Revoked EXECUTE from `public, anon, authenticated` on all the helper + audit-trigger functions
@@ -237,7 +237,24 @@ it before any template is edited in place.
 constraint on `(project_id, template_item_id)`, and switch the component's read/write path to join on
 it. Keep `section_index` / `row_index` as display-order only, sourced from the template.
 
-### P0-4 — role enforcement is client-side only (scope correction, not a same-day fix)
+> **P0-4a — ✅ FIXED 2026-07-29** (`db/migrations/p0_4a_project_write_authority.sql` + app.jsx).
+> `projects` and `meetings` UPDATE are now senior-only at the database, not by convention.
+> **⚠ Correction to the claim below:** P0-4 says these controls are "enforced in JavaScript". For the
+> project **name, number and address** inline fields on the Projects list they were **not enforced in
+> JavaScript either** — `ProjectRow` uses `isSenior` exactly once, to gate the status control. Any
+> contributor could rename any project from the Projects list, and it saved. A live defect, not merely
+> a weak control.
+> **Verified** under real JWTs for both roles in a self-aborting block: contributor rename → **0 rows**;
+> senior rename → **1 row**; rolled back.
+> **The failure mode drove an app change in the same batch:** a policy-filtered UPDATE returns from
+> PostgREST as *success with zero rows*, not an error. `updateProjectField`/`updateProjectFields` only
+> threw on `error`, so a refused edit would have applied optimistically, shown "saved", and silently
+> reverted on reload. Both now `.select('id')` and treat an empty result as a refusal — undoing the
+> optimistic edit via `refreshProjects()` (the RX loader) and telling the user. `ProjectRow`'s three
+> inline inputs are `readOnly` for non-seniors.
+> **P0-4b remains open** — see the box in Phase 6.
+
+### P0-4 — role enforcement is client-side only (scope correction, not a same-day fix)  *(part a fixed — see box above)*
 Every RLS policy on the operational tables is **org-scoped, not role- or project-scoped**. Notably
 `members edit projects` is `USING (org_id = current_org_id())` for `UPDATE` — so **any authenticated
 org member can update any project**, including `status`, `name`, `secured` and the team FK columns.
@@ -449,8 +466,8 @@ Chromium tooling) is the most likely fit — decide before writing it.
    (2026-07-29, Tom's call after using it) — the Save button is gone; every answer persists itself.
    `MeetingDetailView` is the one view still unsubscribed; splitting its monolithic loader is a small
    follow-up.
-3. ✅ **P0-2** cross-org containment (2026-07-29) — plus two live holes found alongside it
-   (`app_users` self-edit, `projects`/`meetings` INSERT org checks). **P0-4** is the last P0 open.
+3. ✅ **P0-2** cross-org containment and ✅ **P0-4a** project write authority (both 2026-07-29).
+   **P0-4b** (per-project visibility) is the last P0 open, and is blocked on the team-model decision.
 4. **Phase 7 exec view** absorbs attribution/ageing, interactive Live Tracker, the Register strip.
 5. **Programme import** once the serverless proxy is workshopped (also unblocks timed auto-escalation).
 6. **Regression guard** after RX, to lock the chain.
@@ -661,6 +678,78 @@ P0-1 was closed as part of it.
 - **⚠ Re-scoped by P0-4.** The current policy set is org-scoped only; role restrictions are enforced
   in client JS. This phase must therefore **rewrite the operational RLS policies** (senior vs
   contributor predicates + a per-project visibility join), not sit on top of them. Budget accordingly.
+  - ✅ **P0-4a done (2026-07-29)** — the *role* half, on the records the app already treats as
+    senior-owned: `projects` and `meetings` UPDATE.
+  - ⬜ **P0-4b — per-project visibility, the last P0.** Which projects a contributor may see and touch
+    at all, across `project_key_dates`, `project_contacts`, `meeting_handoffs`, `project_checklists`,
+    `project_checklist_items`, `actions` and `meeting_entries`. These were deliberately left alone in
+    4a: contributors legitimately write flags, dates, directory rows and checklist answers, so the
+    defect there is **missing project scoping, not missing role scoping**. Also here: narrow `actions`
+    UPDATE/DELETE from org-wide to owner / creator / collaborator / senior.
+  - **Blocked on a decision:** 4b's visibility join is written against the team model, so the
+    `project_team` vs six-hardcoded-FKs question below must be settled **first** — that is the whole
+    reason the plan says to decide it before the joins are written.
+#### ▶ Organisation tab — interactive org chart  *(NEW — from Tom's Claude Design handoff
+`design_handoff_organisation_tab`, folded in 2026-07-29)*
+A new top-level ribbon tab, **ORGANISATION**, routed at `#/organisation`, giving the company one
+canonical view of who reports to whom. Every active `app_users` record renders as a card on a pannable
+snap-grid canvas with elbow connectors; seniors edit people in place (name, job title, initials,
+department, seniority, team lead, reports-to), add/remove people, trace an escalation path, gauge
+workload, and raise an action, query or flag against anyone but themselves. Read-only for everyone
+else (pan, zoom, search, filters, workload and escalation stay available to all).
+
+It is **the Phase 6 "Org dashboard" item, specified** — build it as that deliverable rather than as a
+separate feature. The handoff is high-fidelity and final on colour, type, spacing, geometry, copy and
+interaction; it is an HTML prototype on a bespoke runtime and **must not be ported structurally** —
+rebuild in `app.jsx` with `C` / `FONT` / `lucide()` / `React.createElement` / the `#/` hash router.
+
+**Schema it needs**
+- `app_users.manager_id uuid null references app_users(id)` — an explicit reporting line overriding
+  the derived default. `null` = fall back to: active team lead of the person's department → exec.
+  Cycle-break by walking ancestors (cap ~50) and resetting a repeat to the exec; refuse a drop that
+  would loop, and exclude the person's own descendants from the "Reports to" picker.
+- `org_chart_layout (user_id pk, x, y, updated_at)` — shared, saved card positions.
+
+**⚠ Both need P0-work applied at the same time, or they reopen what we just closed:**
+- `manager_id` **must be added to the `enforce_app_user_field_guard` trigger** (P0-2) alongside
+  role/department/is_team_lead/active — otherwise any contributor can re-parent themselves in the
+  org chart by forging one request.
+- `org_chart_layout` **must carry `org_id` + RLS + the `set_org_id_on_insert` trigger.** The handoff
+  spec has no `org_id`; a new table without one is exactly the P0-2 defect, freshly minted.
+
+**⚠ Conflict to resolve before building — team lead vs seniority.** The handoff states team lead =
+`role = 'senior'` + `is_team_lead`, and that turning Team lead on **forces `role = 'senior'`**. The
+app's existing model says the opposite: `ProfileModal`'s own hint reads *"Leads their department —
+separate from seniority."* **Live data agrees with the app, not the handoff** — of the five team
+leads, only Priya Anand is senior; Grace Boateng, Carlos Garcia, Jen Okafor and Marcus Bell are
+`is_team_lead = true` with `role = 'contributor'`.
+Implementing the handoff rule literally would **promote four contributors to senior on first use** —
+and since **P0-4a** now makes `senior` the database-enforced authority to edit any project, that is a
+privilege escalation performed by a UI convention. **Do not implement the force-to-senior rule without
+Tom's explicit decision.** Either the chart drops it (recommended — three levels stay *derived*:
+exec = senior with no department, lead = `is_team_lead`, contributor = everyone else), or Arke accepts
+that department leads are seniors and the four promotions are made deliberately.
+
+**Corrections to the handoff, checked against the live DB 2026-07-29**
+- Its open question 1 is moot: `job_title` is **13/13 populated**, not empty. Use the live values.
+- `actions` has **no `assignee_id`** — the column is `owner_user_id` (same class of slip as the
+  `from_meeting_type` correction in the My Actions rework). Raise → action writes `owner_user_id`,
+  and should set `source_type`/`source_ref` so the provenance chip reads "raised from the org chart".
+- Raise → query writes the polymorphic `queries` table (`parent_type`/`parent_id`), not a new one.
+  Raise → flag writes `meeting_handoffs.to_department`. Both flows already exist end-to-end.
+- Its vacancy-card path (department with no `is_team_lead`) **will not appear with live data** — all
+  five departments have a lead. The screenshots show four vacancy cards because the prototype's data
+  is invented. Build it anyway (a lead can be removed), but don't expect to see it.
+- Open question 5 (realtime): the **RX bus** now exists — the chart subscribes via
+  `useLiveData(['users'], …)`. That covers refresh; it does **not** solve two seniors saving
+  conflicting edits, which the save-bar diff model resolves last-write-wins. Acceptable for 13 people;
+  note it rather than build locking.
+- Open question 4 (multiple roots): live data has exactly one exec (Tom Staples), so the single-root
+  assumption holds today.
+
+**Answered here:** layout is shared, not per-user (as specified). Export = print-to-PDF plus a PNG for
+induction packs.
+
 - **Also fix here:** `projects.site_manager` is free `text` — the last team-shaped free-text escape
   hatch in a strict-FK schema. Either FK it to `app_users` or accept it explicitly and note why.
 - **Structural note:** the six hardcoded team FK columns on `projects` and the five `org_meeting_types`
@@ -744,7 +833,12 @@ cannot.
 - **NEW — commercial scope (4d):** value + movement only, or cost/margin too? Determines whether a
   senior-only column set is needed.
 - **NEW — team model (Phase 6):** keep six hardcoded role FKs on `projects`, or normalise to
-  `project_team`? Decide before per-project visibility joins are written.
+  `project_team`? Decide before per-project visibility joins are written. **⚠ Now blocking P0-4b**,
+  the last open P0 — the visibility join is written against whichever shape wins.
+- **NEW — team lead vs seniority (Organisation tab):** does making someone a department team lead
+  force `role = 'senior'` (the handoff's rule) or stay independent of seniority (the app's current
+  rule, and what live data reflects)? **Blocking**, because P0-4a makes `senior` the enforced
+  authority to edit any project, so the answer promotes four people or doesn't.
 - **NEW — baseline trigger (9a):** does baseline freeze on `secured = true`, on first programme
   import, or on an explicit "baseline this programme" action? Tom's call; the last is most honest.
 
