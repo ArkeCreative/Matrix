@@ -670,6 +670,8 @@ P0-1 was closed as part of it.
   `source_type`/`source_ref`, set at every creation point in PR2+.
 
 ### Phase 6 — Organisation & permissions layer  *(large — GO-LIVE GATE)*
+- **Two specified deliverables now sit here:** the **Organisation tab** (interactive org chart) and
+  **Project permissions** (default-visible + exclusions) — both below.
 - Org dashboard (add/edit users incl. title + team-lead; per-member project visibility; per-team
   meeting-status config); **new-org wizard** + persistent "which org am I in" indicator;
   permission-based project visibility + "assigned to me" filter; **new-project approval flow**
@@ -680,15 +682,95 @@ P0-1 was closed as part of it.
   contributor predicates + a per-project visibility join), not sit on top of them. Budget accordingly.
   - ✅ **P0-4a done (2026-07-29)** — the *role* half, on the records the app already treats as
     senior-owned: `projects` and `meetings` UPDATE.
-  - ⬜ **P0-4b — per-project visibility, the last P0.** Which projects a contributor may see and touch
-    at all, across `project_key_dates`, `project_contacts`, `meeting_handoffs`, `project_checklists`,
-    `project_checklist_items`, `actions` and `meeting_entries`. These were deliberately left alone in
-    4a: contributors legitimately write flags, dates, directory rows and checklist answers, so the
-    defect there is **missing project scoping, not missing role scoping**. Also here: narrow `actions`
-    UPDATE/DELETE from org-wide to owner / creator / collaborator / senior.
-  - **Blocked on a decision:** 4b's visibility join is written against the team model, so the
-    `project_team` vs six-hardcoded-FKs question below must be settled **first** — that is the whole
-    reason the plan says to decide it before the joins are written.
+  - ⬜ **P0-4b — project visibility.** **Re-scoped 2026-07-29 by Tom's decision that projects default
+    to visible to everyone** (see *Project permissions* in Phase 6). This makes 4b **much smaller than
+    the plan assumed**: every operational SELECT policy is currently a flat
+    `org_id = current_org_id()`, and under a default-visible model **that is already correct**. 4b is
+    therefore no longer "rewrite every read policy with a per-project visibility join" — it is
+    "add an opt-out predicate", i.e. `and user_can_see_project(project_id)`, to the same policies.
+    It is also **no longer a go-live blocker in its own right**: nothing is currently hidden from
+    anyone, and nothing is supposed to be. It becomes required the moment a project exists that must
+    be hidden from someone.
+  - ⬜ **Still open and separate from visibility — operational write scoping.** `actions` UPDATE/DELETE
+    is org-wide (narrow to owner / creator / collaborator / senior) and `meeting_handoffs` is a single
+    `ALL` policy (split it, and key acknowledge/convert on **`is_team_lead`** — see the settled
+    team-lead decision). These are about *who may change what*, not who may see it.
+#### ▶ Project permissions — default-visible, exclusion-based  *(NEW — Tom's decision 2026-07-29)*
+**The scenario that settled it (Tom):** Marcus from Technical converts a landlord drawing for space
+planning when a job first comes in. Later the person formally appointed to that project from Technical
+is someone else. *"Marcus won't be shown as the appointed person on that project but he should have
+visibility of it having done work on it."*
+
+That kills assignment-based visibility outright. Anyone who has ever touched a job may legitimately
+need to see it, and the six team FK columns record only who is **currently appointed** — a snapshot,
+not a history. Deriving permissions from them would hide projects from exactly the people who did the
+early work on them.
+
+**The model instead: visible to everyone by default, with an explicit exclusion list.**
+- A new project is visible to the whole organisation unless someone says otherwise.
+- Exclusions are **subtractive**: remove a whole team, or named individuals within a team.
+- An excluded person does not see the project **anywhere in the app** — not the Projects list, the
+  Live Tracker, the Register, My Actions, a meeting's project rail, its actions, flags, key dates,
+  contacts or checklists, and not in notifications or the activity feed.
+
+**Why this is a much better fit than what the plan previously assumed:** it matches how a 13-person
+firm actually works (everyone can see the work; the rare confidential job is the exception), and it
+means the existing flat `org_id = current_org_id()` SELECT policies are **already correct for the
+default case**. See the re-scoped P0-4b above — this turns a rewrite into an opt-out predicate.
+
+**Where it lives in the UI**
+- **Create project modal** — an **"Everyone can see this project"** checkbox, ticked by default.
+  Unticking reveals a picker: a list of teams, each expandable to the individuals inside it. Deselect
+  a whole team or single people.
+- **Project detail** — a new **PERMISSIONS** tab alongside Modules and Actions & Flags
+  (`TABS` becomes `overview · directory · modules · actions · permissions`), so access can be changed
+  after creation, not only at setup. Senior-only to edit, consistent with P0-4a.
+- A restricted project should carry a visible marker (a chip on the project row/header) so it is never
+  a surprise that someone else can't see it.
+
+**Proposed schema** (to confirm before building)
+```sql
+alter table public.projects add column visible_to_all boolean not null default true;
+
+create table public.project_visibility_exclusions (
+  id          uuid primary key default gen_random_uuid(),
+  org_id      uuid not null references public.organisations(id),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  department  text null,                                   -- exclude a whole team
+  user_id     uuid null references public.app_users(id) on delete cascade,
+  created_by  uuid references public.app_users(id),
+  created_at  timestamptz not null default now(),
+  check (num_nonnulls(department, user_id) = 1),           -- exactly one kind per row
+  unique (project_id, department),
+  unique (project_id, user_id)
+);
+```
+Then one helper, called by every operational policy:
+`user_can_see_project(p_project) → boolean`. `default true` on the flag means **all 30 existing
+projects are unaffected** by the migration.
+
+**⚠ Carry the P0 lessons into it** (both are now standing traps for any new table):
+`project_visibility_exclusions` needs `org_id` + RLS + the `set_org_id_on_insert` trigger (P0-2), and
+the helper must be `SECURITY DEFINER` with EXECUTE revoked from `public, anon, authenticated` (P0-1).
+
+**Decisions still needed before building**
+1. **Does excluding a team persist as a rule?** If Technical is excluded and a new technical person
+   joins next month, are they excluded too? **Recommend yes** — store the department rule rather than
+   expanding it to individuals at save time, because the intent is *"the Technical team shouldn't see
+   this job"*. The alternative silently leaks the job to every future joiner.
+2. **Do exclusions apply to seniors?** **Recommend no — seniors always see everything.** It prevents a
+   project being orphaned with nobody able to administer it, and Phase 7's exec/portfolio view is
+   meaningless if it is missing jobs. If Arke ever needs to hide a job from a senior that is a
+   different feature.
+3. **What if an excluded person is later appointed to the project team?** **Recommend the appointment
+   wins** — silently drop the exclusion and toast it, rather than leaving someone appointed to a job
+   they cannot open.
+4. **Historical notifications and audit rows** about a now-hidden project — hide those too
+   (recommended, for consistency), which means `notifications` and `audit_log` also take the predicate.
+
+**Knock-on:** `project_audience()` must intersect with visibility, or an excluded person still gets
+notified about a project they cannot open. Same fan-out helper that P0-2 just fixed.
+
 #### ▶ Organisation tab — interactive org chart  *(NEW — from Tom's Claude Design handoff
 `design_handoff_organisation_tab`, folded in 2026-07-29)*
 A new top-level ribbon tab, **ORGANISATION**, routed at `#/organisation`, giving the company one
@@ -841,15 +923,12 @@ cannot.
 - **NEW — commercial scope (4d):** value + movement only, or cost/margin too? Determines whether a
   senior-only column set is needed.
 - **NEW — team model (Phase 6):** keep six hardcoded role FKs on `projects`, or normalise to
-  `project_team`? **No longer blocking P0-4b** — see below. The question in plain terms: *can a
-  project ever have two people in the same discipline, or someone on the team who isn't one of the six
-  roles (M&E lead, QS, site manager)?* If yes, the list model wins eventually; if no, the six slots
-  are fine. **Recommendation: keep the six slots for now.**
-  **De-risked:** P0-4b will be written behind a single SECURITY DEFINER helper
-  `user_can_see_project(p_project)` that today checks the six FK columns. Normalising later changes
-  that one function; every policy calling it is untouched. That makes the decision cheaply reversible
-  on the database side. (App screens reading `project.designer_user_id` etc. still need reworking if
-  it is ever normalised — that cost is unchanged either way.)
+  `project_team`? **Fully decoupled from permissions as of 2026-07-29** — visibility no longer derives
+  from team assignment at all (see *Project permissions*), so the six FKs now mean only *who is
+  appointed*, never *who can see*. That removes the urgency entirely. The remaining question is a
+  product one: *can a project ever have two people in the same discipline, or someone on the team who
+  isn't one of the six roles (M&E lead, QS, site manager)?* If yes the list model wins eventually; if
+  no, the six slots are fine. **Recommendation: keep the six slots; revisit when a real case appears.**
 - ~~**team lead vs seniority (Organisation tab)**~~ — **SETTLED 2026-07-29 (Tom): team lead is a
   separate indicator from seniority.** *"Someone may be a team lead but might not carry the
   permissions that come with senior."* The handoff's force-to-senior rule is **dropped**; no one is
