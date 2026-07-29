@@ -2174,7 +2174,7 @@ function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates,
                 borderRadius: 2, cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out',
                 outline: active ? '2px solid #fff' : '2px solid transparent', outlineOffset: 2,
             } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, lineHeight: 1, color: 'rgba(255,255,255,0.5)' } }, count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'rgba(255,255,255,0.5)' } }, s.short));
-    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 28px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 14, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement(ToggleSwitch, { on: showUnsecured, onChange: setShowUnsecured }), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Show unsecured")), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), React.createElement("div", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', background: C.g100, borderRadius: 4, padding: 4, gap: 2, flexShrink: 0 } }, [{ m: 'list', label: 'List', icon: 'list' }, { m: 'full', label: 'Full', icon: 'layout-grid' }, { m: 'map', label: 'Map', icon: 'map-pin' }].map(o => React.createElement("button", { key: o.m, onClick: () => setViewMode(o.m), style: { display: 'inline-flex', alignItems: 'center', gap: 7, background: viewMode === o.m ? C.carmine : 'transparent', color: viewMode === o.m ? '#fff' : C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.04em', padding: '8px 14px', borderRadius: 2, border: 'none', cursor: 'pointer', transition: `all 240ms ${EASE}` } }, lucide(o.icon, 15, 'currentColor', 2), o.label))), isSenior && (React.createElement("button", { onClick: onNewProject, onMouseEnter: e => e.currentTarget.style.background = C.carmineDark, onMouseLeave: e => e.currentTarget.style.background = C.carmine, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 12 }) }, "+ New project")))), React.createElement("main", { style: { padding: '16px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: 48, textAlign: 'center', color: C.g500, fontFamily: FONT } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (viewMode === 'map'
+    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 28px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 14, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement(ToggleSwitch, { on: showUnsecured, onChange: setShowUnsecured }), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Show unsecured")), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), React.createElement("div", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', background: C.g100, borderRadius: 4, padding: 4, gap: 2, flexShrink: 0 } }, [{ m: 'list', label: 'List', icon: 'list' }, { m: 'full', label: 'Full', icon: 'layout-grid' }, { m: 'map', label: 'Map', icon: 'map-pin' }].map(o => React.createElement("button", { key: o.m, onClick: () => setViewMode(o.m), style: { display: 'inline-flex', alignItems: 'center', gap: 7, background: viewMode === o.m ? C.carmine : 'transparent', color: viewMode === o.m ? '#fff' : C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.04em', padding: '8px 14px', borderRadius: 2, border: 'none', cursor: 'pointer', transition: `all 240ms ${EASE}` } }, lucide(o.icon, 15, 'currentColor', 2), o.label))), isSenior && (React.createElement("button", { onClick: onNewProject, onMouseEnter: e => e.currentTarget.style.background = C.carmineDark, onMouseLeave: e => e.currentTarget.style.background = C.carmine, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 12, whiteSpace: 'nowrap', flexShrink: 0 }) }, "+ New project")))), React.createElement("main", { style: { padding: '16px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: 48, textAlign: 'center', color: C.g500, fontFamily: FONT } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (viewMode === 'map'
                     ? React.createElement(ProjectsMapView, { projects: filteredProjects, onOpenProjectDashboard: onOpenProjectDashboard })
                     : React.createElement(viewMode === 'list' ? ProjectListTable : ProjectFullCards, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
 }
@@ -2666,42 +2666,68 @@ function ProjectListTable({ projects, users, latestNotes, keyDates, projectActio
     const [expanded, setExpanded] = React.useState({});
     const anyOpen = Object.keys(expanded).some(k => expanded[k]);
     const today = new Date().toISOString().slice(0, 10);
-    // Trimmed so the whole row — including the rightmost "Open page" expand
-    // button — fits common laptop widths (≥1280) instead of being clipped off
-    // the right edge by the container's overflow. (Was 52…140/48 @ gap 14.)
-    const COLS = '48px 92px minmax(160px,1.3fr) minmax(160px,1.4fr) 96px 88px 92px 92px 108px 132px 44px';
-    const th = (label, opts) => React.createElement("div", { style: Object.assign({ fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, fontFamily: FONT }, opts || {}) }, label);
+    // Open items, site area and floor were removed — all three are revealed on
+    // expand, so the row was duplicating the detail pane. Project and Address
+    // absorb the freed width.
+    // The 0 minimums matter: with minmax(160px,…) the two flexible columns
+    // refused to shrink, so a narrow window pushed "Open page" off the right
+    // edge and the container clipped it. At min 0 they compress instead, and
+    // every fixed column — Updated, Secured, Status, Open page — stays put.
+    const COLS = '48px 92px minmax(0,1.35fr) minmax(0,1.55fr) 92px 108px 132px 44px';
+    const STATUS_ORDER = {};
+    STATUSES.forEach((st, i) => { STATUS_ORDER[st.value] = i; });
+    const [sort, setSort] = React.useState({ key: 'project_number', dir: 'asc' });
+    const sortVal = (pr, key) => {
+        if (key === 'project_number') { const n = parseInt(pr.project_number, 10); return isNaN(n) ? Number.MAX_SAFE_INTEGER : n; }
+        if (key === 'name') return (pr.name || '').toLowerCase();
+        if (key === 'address') return (pr.address || '').toLowerCase();
+        if (key === 'updated_at') return pr.updated_at || '';
+        if (key === 'secured') return pr.secured ? 1 : 0;
+        if (key === 'status') return STATUS_ORDER[pr.status] != null ? STATUS_ORDER[pr.status] : 99;
+        return '';
+    };
+    const sortedProjects = React.useMemo(() => {
+        const arr = projects.slice();
+        arr.sort((x, y) => {
+            const a2 = sortVal(x, sort.key), b2 = sortVal(y, sort.key);
+            let c = a2 < b2 ? -1 : (a2 > b2 ? 1 : 0);
+            // Project number is the tie-break, so equal statuses or dates keep a
+            // stable, meaningful order rather than shuffling.
+            if (c === 0) {
+                const nx = parseInt(x.project_number, 10), ny = parseInt(y.project_number, 10);
+                c = (isNaN(nx) ? 0 : nx) - (isNaN(ny) ? 0 : ny);
+            }
+            return sort.dir === 'asc' ? c : -c;
+        });
+        return arr;
+    }, [projects, sort.key, sort.dir]);
+    const th = (label, sortKey, opts) => {
+        const active = sortKey && sort.key === sortKey;
+        return React.createElement("div", {
+            onClick: sortKey ? () => setSort(st => ({ key: sortKey, dir: (st.key === sortKey && st.dir === 'asc') ? 'desc' : 'asc' })) : undefined,
+            title: sortKey ? ('Sort by ' + label) : undefined,
+            style: Object.assign({ fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: active ? C.carmine : C.g500, fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: sortKey ? 'pointer' : 'default', userSelect: 'none', minWidth: 0 }, opts || {}),
+        },
+            React.createElement("span", { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, label),
+            sortKey ? React.createElement("span", { style: { display: 'inline-flex', flexShrink: 0, opacity: active ? 1 : 0.3, transform: (active && sort.dir === 'desc') ? 'rotate(180deg)' : 'none', transition: `transform 160ms ${EASE}` } }, lucide('chevron-down', 12, 'currentColor', 2.4)) : null);
+    };
     const header = React.createElement("div", { style: { display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '14px 22px', background: C.g50, borderBottom: `1px solid ${C.line}` } },
         React.createElement("span", null),
-        th('Project #'), th('Project'), th('Address'),
-        th('Act · Flg · Od', { fontSize: 10, letterSpacing: '0.1em', textAlign: 'center' }),
-        th('Site area'), th('Floor'), th('Updated'), th('Secured'), th('Status'),
-        th('Open page', { fontSize: 10, letterSpacing: '0.1em', textAlign: 'center', lineHeight: 1.15 }));
-    const rows = projects.map(project => {
-        const acts = (projectActions || []).filter(a => a.project_id === project.id);
-        const nActions = acts.length;
-        const nFlags = (projectFlags || []).filter(f => f.project_id === project.id).length;
-        const nOverdue = acts.filter(a => a.due_date && a.due_date < today).length;
+        th('Project #', 'project_number'), th('Project', 'name'), th('Address', 'address'),
+        th('Updated', 'updated_at'), th('Secured', 'secured'), th('Status', 'status'),
+        th('Open', null, { fontSize: 10, letterSpacing: '0.1em', justifyContent: 'center', lineHeight: 1.15 }));
+    const rows = sortedProjects.map(project => {
         const isOpen = !!expanded[project.id];
         const dim = anyOpen && !isOpen;
-        const m2 = project.site_area_m2 != null ? Number(project.site_area_m2) : null;
-        const siteArea = m2 != null ? (m2.toLocaleString() + ' / ' + Math.round(m2 * 10.7639).toLocaleString()) : '—';
-        const siteUnit = m2 != null ? 'm² / ft²' : '';
-        const floor = project.whole_building ? 'Whole building' : (project.floor_level || '—');
-        const floorColor = (project.whole_building || project.floor_level) ? C.ink0 : C.g300;
         const upd = project.updated_at ? formatRelative(project.updated_at) : '—';
         const sec = securedBits(project);
         const stage = stagePillFor(project);
-        const numCell = (n, col) => React.createElement("span", { style: { color: n ? col : C.g300 } }, n);
         return React.createElement("div", { key: project.id, onMouseEnter: e => { e.currentTarget.style.transform = 'translateX(8px)'; e.currentTarget.style.boxShadow = SHADOW_MD; e.currentTarget.style.zIndex = 5; if (!isOpen) e.currentTarget.firstChild.style.background = C.g50; }, onMouseLeave: e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = isOpen ? SHADOW_MD : 'none'; e.currentTarget.style.zIndex = isOpen ? 2 : 1; if (!isOpen) e.currentTarget.firstChild.style.background = '#fff'; }, style: { position: 'relative', zIndex: isOpen ? 2 : 1, borderLeft: `4px solid ${isOpen ? C.carmine : 'transparent'}`, background: isOpen ? '#fff' : 'transparent', boxShadow: isOpen ? SHADOW_MD : 'none', opacity: dim ? 0.4 : 1, borderBottom: `1px solid ${C.line}`, transition: `box-shadow 240ms ${EASE}, opacity 240ms ${EASE}, transform 240ms ${EASE}`, fontFamily: FONT, boxSizing: 'border-box' } },
             React.createElement("div", { onClick: () => setExpanded(e => Object.assign({}, e, { [project.id]: !e[project.id] })), style: { display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '14px 22px', paddingLeft: isOpen ? 18 : 22, cursor: 'pointer', background: isOpen ? C.carmineSoft : '#fff', transition: `background 240ms ${EASE}`, boxSizing: 'border-box' } },
                 React.createElement("span", { style: { width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${isOpen ? C.carmine : C.line}`, borderRadius: '50%', background: isOpen ? C.carmineSoft : '#fff', color: isOpen ? C.carmine : C.g500, transition: `all 240ms ${EASE}` } }, React.createElement("span", { style: { display: 'inline-flex', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: `transform 240ms ${EASE}` } }, lucide('chevron-down', 16, 'currentColor', 2.4))),
                 React.createElement("span", { style: { fontWeight: 700, fontSize: 15, letterSpacing: '0.02em', color: C.carmine } }, project.project_number || '—'),
                 React.createElement("span", { style: { fontWeight: 700, fontSize: 17, color: C.ink0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, project.name || 'Untitled'),
                 React.createElement("span", { style: { fontSize: 15, color: C.g500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, project.address || '—'),
-                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'baseline', justifyContent: 'center', gap: 7, fontWeight: 700, fontSize: 14 } }, numCell(nActions, C.ink0), React.createElement("span", { style: { color: C.g300, fontWeight: 400 } }, "·"), numCell(nFlags, C.carmine), React.createElement("span", { style: { color: C.g300, fontWeight: 400 } }, "·"), numCell(nOverdue, C.carmine)),
-                React.createElement("span", { style: { lineHeight: 1.15 } }, React.createElement("span", { style: { display: 'block', fontSize: 13, fontWeight: 600, color: m2 != null ? C.ink0 : C.g300 } }, siteArea), siteUnit && React.createElement("span", { style: { display: 'block', fontSize: 10, color: C.g500 } }, siteUnit)),
-                React.createElement("span", { style: { fontSize: 13, color: floorColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, floor),
                 React.createElement("span", { style: { fontSize: 12, color: C.g500, whiteSpace: 'nowrap' } }, upd),
                 React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 9 } }, React.createElement("span", { style: { width: 10, height: 10, borderRadius: '50%', background: sec.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: sec.fg } }, sec.label)),
                 React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, background: stage.bg, border: stage.border, padding: '6px 13px', borderRadius: 9999, width: 'fit-content', boxSizing: 'border-box' } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: stage.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontWeight: 600, fontSize: 13, color: stage.fg, whiteSpace: 'nowrap' } }, stage.label)),
