@@ -71,8 +71,9 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 # ⛔ P0 — verified defects, fix before further feature work
 
 All four were found by querying the live database on 2026-07-26. Re-verification queries are in the
-appendix. **P0-1 (2026-07-27), P0-3, P0-2 and P0-4a (all 2026-07-29) are closed and verified. Only
-P0-4b — per-project visibility — remains open**, and it is the gate for real Arke data.
+appendix. **✅ ALL FOUR ARE NOW CLOSED AND VERIFIED** — P0-1 (2026-07-27), then P0-3, P0-2, P0-4a and
+P0-4b (all 2026-07-29). The Phase 6 go-live gate is no longer blocked by a known defect; what remains
+there is the behavioural RLS test pass and the org/permissions UI, not a hole to plug.
 
 > **P0-1 — ✅ FIXED 2026-07-27** (folded into the My Actions rework PR1, `db/migrations/myactions_audit_spine.sql`).
 > Revoked EXECUTE from `public, anon, authenticated` on all the helper + audit-trigger functions
@@ -689,15 +690,18 @@ P0-1 was closed as part of it.
   contributor predicates + a per-project visibility join), not sit on top of them. Budget accordingly.
   - ✅ **P0-4a done (2026-07-29)** — the *role* half, on the records the app already treats as
     senior-owned: `projects` and `meetings` UPDATE.
-  - ⬜ **P0-4b — project visibility.** **Re-scoped 2026-07-29 by Tom's decision that projects default
-    to visible to everyone** (see *Project permissions* in Phase 6). This makes 4b **much smaller than
-    the plan assumed**: every operational SELECT policy is currently a flat
-    `org_id = current_org_id()`, and under a default-visible model **that is already correct**. 4b is
-    therefore no longer "rewrite every read policy with a per-project visibility join" — it is
-    "add an opt-out predicate", i.e. `and user_can_see_project(project_id)`, to the same policies.
-    It is also **no longer a go-live blocker in its own right**: nothing is currently hidden from
-    anyone, and nothing is supposed to be. It becomes required the moment a project exists that must
-    be hidden from someone.
+  - ✅ **P0-4b — project visibility, DONE 2026-07-29**
+    (`db/migrations/p0_4b_project_visibility_policies.sql`). `user_can_see_project(project_id)` added
+    to the SELECT/UPDATE/DELETE/INSERT policies on projects, actions, meeting_entries,
+    meeting_handoffs, project_key_dates, project_contacts, both checklist tables, queries, audit_log
+    and notifications. Nullable `project_id` rows stay org-visible. `item_events` and `query_messages`
+    are deliberately uncovered — no `project_id`, and unreachable without their already-filtered
+    parent.
+    **⚠ Never revoke EXECUTE on `user_can_see_project(uuid)` from anon/authenticated.** RLS policy
+    expressions evaluate as the *invoking* role, so revoking it fails every read with "permission
+    denied for function". It is the same accepted exception as `current_org_id()`, and it is why
+    `get_advisors(security)` now reports **two** `anon_security_definer_function_executable` lints
+    instead of one. Both are expected.
   - ⬜ **Still open and separate from visibility — operational write scoping.** `actions` UPDATE/DELETE
     is org-wide (narrow to owner / creator / collaborator / senior) and `meeting_handoffs` is a single
     `ALL` policy (split it, and key acknowledge/convert on **`is_team_lead`** — see the settled
@@ -735,7 +739,16 @@ default case**. See the re-scoped P0-4b above — this turns a rewrite into an o
 - A restricted project should carry a visible marker (a chip on the project row/header) so it is never
   a surprise that someone else can't see it.
 
-**Proposed schema** (to confirm before building)
+> **✅ APPLIED 2026-07-29** — `db/migrations/project_permissions_model.sql` (schema + helper +
+> triggers) and `db/migrations/p0_4b_project_visibility_policies.sql` (the RLS), plus the app work:
+> the **create-project modal** now carries the "Everyone can see this project" checkbox with the
+> team/individual picker, the project detail has a senior-only **PERMISSIONS** tab, and a restricted
+> project shows a **RESTRICTED** chip on both the projects list and the dashboard header. The picker
+> (`ProjectVisibilityPicker`) is shared by both, and mirrors `user_can_see_project()` exactly — it
+> marks seniors "Senior · always" and appointed people "Appointed · always" rather than offering a
+> switch the database would override.
+
+**Schema as applied**
 ```sql
 alter table public.projects add column visible_to_all boolean not null default true;
 
