@@ -717,18 +717,26 @@ rebuild in `app.jsx` with `C` / `FONT` / `lucide()` / `React.createElement` / th
 - `org_chart_layout` **must carry `org_id` + RLS + the `set_org_id_on_insert` trigger.** The handoff
   spec has no `org_id`; a new table without one is exactly the P0-2 defect, freshly minted.
 
-**⚠ Conflict to resolve before building — team lead vs seniority.** The handoff states team lead =
-`role = 'senior'` + `is_team_lead`, and that turning Team lead on **forces `role = 'senior'`**. The
-app's existing model says the opposite: `ProfileModal`'s own hint reads *"Leads their department —
-separate from seniority."* **Live data agrees with the app, not the handoff** — of the five team
-leads, only Priya Anand is senior; Grace Boateng, Carlos Garcia, Jen Okafor and Marcus Bell are
-`is_team_lead = true` with `role = 'contributor'`.
-Implementing the handoff rule literally would **promote four contributors to senior on first use** —
-and since **P0-4a** now makes `senior` the database-enforced authority to edit any project, that is a
-privilege escalation performed by a UI convention. **Do not implement the force-to-senior rule without
-Tom's explicit decision.** Either the chart drops it (recommended — three levels stay *derived*:
-exec = senior with no department, lead = `is_team_lead`, contributor = everyone else), or Arke accepts
-that department leads are seniors and the four promotions are made deliberately.
+**✅ SETTLED 2026-07-29 — team lead is separate from seniority.** Tom: *"team lead should be a
+separate indicator to 'is senior'. Someone may be a team lead but might not carry the permissions that
+come with senior."* This matches the app's existing model (`ProfileModal`'s hint reads *"Leads their
+department — separate from seniority"*) and the live data — of the five team leads only Priya Anand is
+senior; Grace Boateng, Carlos Garcia, Jen Okafor and Marcus Bell are `is_team_lead = true` with
+`role = 'contributor'`.
+- **The handoff's force-to-senior rule is dropped.** Building it as written would have promoted those
+  four to senior on first use of the tab — and P0-4a has made `senior` the database-enforced authority
+  to edit any project, so that would have been a privilege escalation performed by a UI convention.
+- The chart's three levels stay **derived**: exec = `senior` with no department · team lead =
+  `is_team_lead` (whatever the role) · contributor = everyone else. The **TEAM LEAD** and **SENIOR**
+  toggles on a card are independent; neither forces the other. Setting a lead still clears the
+  previous lead of that department (one lead per department).
+- **Consequence for P0-4b — do not miss this.** Authority a *team lead* needs (acknowledging a flag
+  addressed to their department, converting it to an action, answering an escalated query) must key on
+  **`is_team_lead`, not on `role = 'senior'`**. Four of the five current leads are contributors, so a
+  senior-only predicate on `meeting_handoffs` would break the flag ladder the My Actions rework built.
+- P0-2's field guard already prevents self-promotion: only an active senior in the same org can change
+  `role` / `is_team_lead` / `department` / `active`, so a contributor team lead cannot make themselves
+  senior — and the org chart is senior-only to edit in any case.
 
 **Corrections to the handoff, checked against the live DB 2026-07-29**
 - Its open question 1 is moot: `job_title` is **13/13 populated**, not empty. Use the live values.
@@ -833,12 +841,19 @@ cannot.
 - **NEW — commercial scope (4d):** value + movement only, or cost/margin too? Determines whether a
   senior-only column set is needed.
 - **NEW — team model (Phase 6):** keep six hardcoded role FKs on `projects`, or normalise to
-  `project_team`? Decide before per-project visibility joins are written. **⚠ Now blocking P0-4b**,
-  the last open P0 — the visibility join is written against whichever shape wins.
-- **NEW — team lead vs seniority (Organisation tab):** does making someone a department team lead
-  force `role = 'senior'` (the handoff's rule) or stay independent of seniority (the app's current
-  rule, and what live data reflects)? **Blocking**, because P0-4a makes `senior` the enforced
-  authority to edit any project, so the answer promotes four people or doesn't.
+  `project_team`? **No longer blocking P0-4b** — see below. The question in plain terms: *can a
+  project ever have two people in the same discipline, or someone on the team who isn't one of the six
+  roles (M&E lead, QS, site manager)?* If yes, the list model wins eventually; if no, the six slots
+  are fine. **Recommendation: keep the six slots for now.**
+  **De-risked:** P0-4b will be written behind a single SECURITY DEFINER helper
+  `user_can_see_project(p_project)` that today checks the six FK columns. Normalising later changes
+  that one function; every policy calling it is untouched. That makes the decision cheaply reversible
+  on the database side. (App screens reading `project.designer_user_id` etc. still need reworking if
+  it is ever normalised — that cost is unchanged either way.)
+- ~~**team lead vs seniority (Organisation tab)**~~ — **SETTLED 2026-07-29 (Tom): team lead is a
+  separate indicator from seniority.** *"Someone may be a team lead but might not carry the
+  permissions that come with senior."* The handoff's force-to-senior rule is **dropped**; no one is
+  promoted. See the Organisation tab section for what this means for the build.
 - **NEW — baseline trigger (9a):** does baseline freeze on `secured = true`, on first programme
   import, or on an explicit "baseline this programme" action? Tom's call; the last is most honest.
 
