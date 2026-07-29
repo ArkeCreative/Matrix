@@ -487,6 +487,13 @@ Chromium tooling) is the most likely fit — decide before writing it.
 - **Phase 4a/4c** (PR #28, merged/live): clickable metric tiles → catalogues (+ collapsible
   Completed); team-change data integrity (warn + offer reassign).
 
+### Nav + chrome (2026-07-29, Tom)
+- Ribbon tabs renamed: **My Actions → MY WORK**, **Register & activity → REGISTER**. Page headings
+  and the "→ My Actions" cross-links moved with them; the routes (`#/actions`, `#/register`) and the
+  `my-actions` / `register` view keys are unchanged, so nothing deep-linked breaks.
+- The **arke [matrix] wordmark is now a link home** — clicking (or Enter/Space, it is focusable)
+  clears the current project/meeting and returns to the Projects list, with a subtle hover fade.
+
 ### Carried over unshipped from PR12 feedback — confirm or close
 - **Rename status `won` → `LTA`.** `org_statuses` still holds `value='won', label='Won'`. Either ship
   the label change (data-only, `org_statuses` is config) or strike the item.
@@ -670,6 +677,8 @@ P0-1 was closed as part of it.
   `source_type`/`source_ref`, set at every creation point in PR2+.
 
 ### Phase 6 — Organisation & permissions layer  *(large — GO-LIVE GATE)*
+- **Two specified deliverables now sit here:** the **Organisation tab** (interactive org chart) and
+  **Project permissions** (default-visible + exclusions) — both below.
 - Org dashboard (add/edit users incl. title + team-lead; per-member project visibility; per-team
   meeting-status config); **new-org wizard** + persistent "which org am I in" indicator;
   permission-based project visibility + "assigned to me" filter; **new-project approval flow**
@@ -680,15 +689,95 @@ P0-1 was closed as part of it.
   contributor predicates + a per-project visibility join), not sit on top of them. Budget accordingly.
   - ✅ **P0-4a done (2026-07-29)** — the *role* half, on the records the app already treats as
     senior-owned: `projects` and `meetings` UPDATE.
-  - ⬜ **P0-4b — per-project visibility, the last P0.** Which projects a contributor may see and touch
-    at all, across `project_key_dates`, `project_contacts`, `meeting_handoffs`, `project_checklists`,
-    `project_checklist_items`, `actions` and `meeting_entries`. These were deliberately left alone in
-    4a: contributors legitimately write flags, dates, directory rows and checklist answers, so the
-    defect there is **missing project scoping, not missing role scoping**. Also here: narrow `actions`
-    UPDATE/DELETE from org-wide to owner / creator / collaborator / senior.
-  - **Blocked on a decision:** 4b's visibility join is written against the team model, so the
-    `project_team` vs six-hardcoded-FKs question below must be settled **first** — that is the whole
-    reason the plan says to decide it before the joins are written.
+  - ⬜ **P0-4b — project visibility.** **Re-scoped 2026-07-29 by Tom's decision that projects default
+    to visible to everyone** (see *Project permissions* in Phase 6). This makes 4b **much smaller than
+    the plan assumed**: every operational SELECT policy is currently a flat
+    `org_id = current_org_id()`, and under a default-visible model **that is already correct**. 4b is
+    therefore no longer "rewrite every read policy with a per-project visibility join" — it is
+    "add an opt-out predicate", i.e. `and user_can_see_project(project_id)`, to the same policies.
+    It is also **no longer a go-live blocker in its own right**: nothing is currently hidden from
+    anyone, and nothing is supposed to be. It becomes required the moment a project exists that must
+    be hidden from someone.
+  - ⬜ **Still open and separate from visibility — operational write scoping.** `actions` UPDATE/DELETE
+    is org-wide (narrow to owner / creator / collaborator / senior) and `meeting_handoffs` is a single
+    `ALL` policy (split it, and key acknowledge/convert on **`is_team_lead`** — see the settled
+    team-lead decision). These are about *who may change what*, not who may see it.
+#### ▶ Project permissions — default-visible, exclusion-based  *(NEW — Tom's decision 2026-07-29)*
+**The scenario that settled it (Tom):** Marcus from Technical converts a landlord drawing for space
+planning when a job first comes in. Later the person formally appointed to that project from Technical
+is someone else. *"Marcus won't be shown as the appointed person on that project but he should have
+visibility of it having done work on it."*
+
+That kills assignment-based visibility outright. Anyone who has ever touched a job may legitimately
+need to see it, and the six team FK columns record only who is **currently appointed** — a snapshot,
+not a history. Deriving permissions from them would hide projects from exactly the people who did the
+early work on them.
+
+**The model instead: visible to everyone by default, with an explicit exclusion list.**
+- A new project is visible to the whole organisation unless someone says otherwise.
+- Exclusions are **subtractive**: remove a whole team, or named individuals within a team.
+- An excluded person does not see the project **anywhere in the app** — not the Projects list, the
+  Live Tracker, the Register, My Actions, a meeting's project rail, its actions, flags, key dates,
+  contacts or checklists, and not in notifications or the activity feed.
+
+**Why this is a much better fit than what the plan previously assumed:** it matches how a 13-person
+firm actually works (everyone can see the work; the rare confidential job is the exception), and it
+means the existing flat `org_id = current_org_id()` SELECT policies are **already correct for the
+default case**. See the re-scoped P0-4b above — this turns a rewrite into an opt-out predicate.
+
+**Where it lives in the UI**
+- **Create project modal** — an **"Everyone can see this project"** checkbox, ticked by default.
+  Unticking reveals a picker: a list of teams, each expandable to the individuals inside it. Deselect
+  a whole team or single people.
+- **Project detail** — a new **PERMISSIONS** tab alongside Modules and Actions & Flags
+  (`TABS` becomes `overview · directory · modules · actions · permissions`), so access can be changed
+  after creation, not only at setup. Senior-only to edit, consistent with P0-4a.
+- A restricted project should carry a visible marker (a chip on the project row/header) so it is never
+  a surprise that someone else can't see it.
+
+**Proposed schema** (to confirm before building)
+```sql
+alter table public.projects add column visible_to_all boolean not null default true;
+
+create table public.project_visibility_exclusions (
+  id          uuid primary key default gen_random_uuid(),
+  org_id      uuid not null references public.organisations(id),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  department  text null,                                   -- exclude a whole team
+  user_id     uuid null references public.app_users(id) on delete cascade,
+  created_by  uuid references public.app_users(id),
+  created_at  timestamptz not null default now(),
+  check (num_nonnulls(department, user_id) = 1),           -- exactly one kind per row
+  unique (project_id, department),
+  unique (project_id, user_id)
+);
+```
+Then one helper, called by every operational policy:
+`user_can_see_project(p_project) → boolean`. `default true` on the flag means **all 30 existing
+projects are unaffected** by the migration.
+
+**⚠ Carry the P0 lessons into it** (both are now standing traps for any new table):
+`project_visibility_exclusions` needs `org_id` + RLS + the `set_org_id_on_insert` trigger (P0-2), and
+the helper must be `SECURITY DEFINER` with EXECUTE revoked from `public, anon, authenticated` (P0-1).
+
+**✅ All four decisions settled by Tom, 2026-07-29**
+1. **Excluding a team persists as a rule.** Store the `department` exclusion, not a snapshot of
+   today's members — a technical hire next month is excluded too, because the intent is *"the
+   Technical team shouldn't see this job"*.
+2. **Seniors are exempt from exclusions** — they always see everything. This also removes the
+   orphaning risk (a project nobody can administer) and keeps Phase 7's exec/portfolio view complete.
+3. **Appointment beats exclusion.** Naming an excluded person to one of the six team FK roles drops
+   their exclusion automatically, with a toast — nobody is ever appointed to a job they cannot open.
+4. **Historical notifications and audit rows are hidden too.** Follows directly from Tom's own
+   framing — *"this project won't appear anywhere in app for them"*. If the old rows stayed, an
+   excluded person would keep seeing "flag raised on <project>" in their bell, learn the job exists
+   and roughly what is happening on it, and click through to nothing. So `notifications` and
+   `audit_log` take the predicate as well. **Known cost, accepted:** a notification someone remembers
+   reading can silently disappear from their bell when a project is later restricted.
+
+**Knock-on:** `project_audience()` must intersect with visibility, or an excluded person still gets
+notified about a project they cannot open. Same fan-out helper that P0-2 just fixed.
+
 #### ▶ Organisation tab — interactive org chart  *(NEW — from Tom's Claude Design handoff
 `design_handoff_organisation_tab`, folded in 2026-07-29)*
 A new top-level ribbon tab, **ORGANISATION**, routed at `#/organisation`, giving the company one
@@ -717,18 +806,26 @@ rebuild in `app.jsx` with `C` / `FONT` / `lucide()` / `React.createElement` / th
 - `org_chart_layout` **must carry `org_id` + RLS + the `set_org_id_on_insert` trigger.** The handoff
   spec has no `org_id`; a new table without one is exactly the P0-2 defect, freshly minted.
 
-**⚠ Conflict to resolve before building — team lead vs seniority.** The handoff states team lead =
-`role = 'senior'` + `is_team_lead`, and that turning Team lead on **forces `role = 'senior'`**. The
-app's existing model says the opposite: `ProfileModal`'s own hint reads *"Leads their department —
-separate from seniority."* **Live data agrees with the app, not the handoff** — of the five team
-leads, only Priya Anand is senior; Grace Boateng, Carlos Garcia, Jen Okafor and Marcus Bell are
-`is_team_lead = true` with `role = 'contributor'`.
-Implementing the handoff rule literally would **promote four contributors to senior on first use** —
-and since **P0-4a** now makes `senior` the database-enforced authority to edit any project, that is a
-privilege escalation performed by a UI convention. **Do not implement the force-to-senior rule without
-Tom's explicit decision.** Either the chart drops it (recommended — three levels stay *derived*:
-exec = senior with no department, lead = `is_team_lead`, contributor = everyone else), or Arke accepts
-that department leads are seniors and the four promotions are made deliberately.
+**✅ SETTLED 2026-07-29 — team lead is separate from seniority.** Tom: *"team lead should be a
+separate indicator to 'is senior'. Someone may be a team lead but might not carry the permissions that
+come with senior."* This matches the app's existing model (`ProfileModal`'s hint reads *"Leads their
+department — separate from seniority"*) and the live data — of the five team leads only Priya Anand is
+senior; Grace Boateng, Carlos Garcia, Jen Okafor and Marcus Bell are `is_team_lead = true` with
+`role = 'contributor'`.
+- **The handoff's force-to-senior rule is dropped.** Building it as written would have promoted those
+  four to senior on first use of the tab — and P0-4a has made `senior` the database-enforced authority
+  to edit any project, so that would have been a privilege escalation performed by a UI convention.
+- The chart's three levels stay **derived**: exec = `senior` with no department · team lead =
+  `is_team_lead` (whatever the role) · contributor = everyone else. The **TEAM LEAD** and **SENIOR**
+  toggles on a card are independent; neither forces the other. Setting a lead still clears the
+  previous lead of that department (one lead per department).
+- **Consequence for P0-4b — do not miss this.** Authority a *team lead* needs (acknowledging a flag
+  addressed to their department, converting it to an action, answering an escalated query) must key on
+  **`is_team_lead`, not on `role = 'senior'`**. Four of the five current leads are contributors, so a
+  senior-only predicate on `meeting_handoffs` would break the flag ladder the My Actions rework built.
+- P0-2's field guard already prevents self-promotion: only an active senior in the same org can change
+  `role` / `is_team_lead` / `department` / `active`, so a contributor team lead cannot make themselves
+  senior — and the org chart is senior-only to edit in any case.
 
 **Corrections to the handoff, checked against the live DB 2026-07-29**
 - Its open question 1 is moot: `job_title` is **13/13 populated**, not empty. Use the live values.
@@ -833,12 +930,16 @@ cannot.
 - **NEW — commercial scope (4d):** value + movement only, or cost/margin too? Determines whether a
   senior-only column set is needed.
 - **NEW — team model (Phase 6):** keep six hardcoded role FKs on `projects`, or normalise to
-  `project_team`? Decide before per-project visibility joins are written. **⚠ Now blocking P0-4b**,
-  the last open P0 — the visibility join is written against whichever shape wins.
-- **NEW — team lead vs seniority (Organisation tab):** does making someone a department team lead
-  force `role = 'senior'` (the handoff's rule) or stay independent of seniority (the app's current
-  rule, and what live data reflects)? **Blocking**, because P0-4a makes `senior` the enforced
-  authority to edit any project, so the answer promotes four people or doesn't.
+  `project_team`? **Fully decoupled from permissions as of 2026-07-29** — visibility no longer derives
+  from team assignment at all (see *Project permissions*), so the six FKs now mean only *who is
+  appointed*, never *who can see*. That removes the urgency entirely. The remaining question is a
+  product one: *can a project ever have two people in the same discipline, or someone on the team who
+  isn't one of the six roles (M&E lead, QS, site manager)?* If yes the list model wins eventually; if
+  no, the six slots are fine. **Recommendation: keep the six slots; revisit when a real case appears.**
+- ~~**team lead vs seniority (Organisation tab)**~~ — **SETTLED 2026-07-29 (Tom): team lead is a
+  separate indicator from seniority.** *"Someone may be a team lead but might not carry the
+  permissions that come with senior."* The handoff's force-to-senior rule is **dropped**; no one is
+  promoted. See the Organisation tab section for what this means for the build.
 - **NEW — baseline trigger (9a):** does baseline freeze on `secured = true`, on first programme
   import, or on an explicit "baseline this programme" action? Tom's call; the last is most honest.
 
