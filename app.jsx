@@ -1443,14 +1443,23 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             throw new Error('Not permitted — editing a project is senior-only.');
         }
     }, [user.id]);
-    const createProject = async (data) => {
+    const createProject = async (data, visibility) => {
         try {
+            const vis = visibility || { visibleToAll: true, excludedDepts: [], excludedUsers: [] };
             const { data: inserted, error } = await sb.from('projects')
-                .insert(Object.assign(Object.assign({}, data), { created_by: user.id, last_updated_by: user.id }))
+                .insert(Object.assign(Object.assign({}, data), { created_by: user.id, last_updated_by: user.id, visible_to_all: !!vis.visibleToAll }))
                 .select()
                 .single();
             if (error)
                 throw error;
+            // Exclusions are subtractive and only meaningful once the project
+            // row exists, so they are written straight after it.
+            const rows = saveProjectExclusionRows(inserted.id, vis, profile ? profile.org_id : null, user.id);
+            if (rows.length > 0) {
+                const { error: xErr } = await sb.from('project_visibility_exclusions').insert(rows);
+                if (xErr)
+                    throw xErr;
+            }
             setProjects(prev => [...prev, inserted]);
             setShowNewProject(false);
         }
@@ -2322,7 +2331,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
             background: 'transparent', border: 'none',
             fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.carmine, fontFamily: FONT,
             padding: 0, margin: 0, width: 72, outline: 'none',
-        }, onFocus: e => { e.target.style.background = C.g50; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement(SaveIndicator, { status: saveStatus })), React.createElement("input", { defaultValue: project.address || '', onBlur: (e) => {
+        }, onFocus: e => { e.target.style.background = C.g50; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement(SaveIndicator, { status: saveStatus }), project.visible_to_all === false && React.createElement("span", { title: "Restricted — hidden from some teams or people", style: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 2, background: C.carmineSoft, border: `1px solid ${C.carmineMid}`, color: C.carmine, fontFamily: FONT, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' } }, lucide('lock', 10, 'currentColor', 2.4), "Restricted")), React.createElement("input", { defaultValue: project.address || '', onBlur: (e) => {
             if (e.target.value !== project.address)
                 updateField('address', e.target.value);
         }, placeholder: "Address", readOnly: !isSenior, title: isSenior ? undefined : "Senior only", style: {
@@ -4533,6 +4542,31 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         catch (_) { /* module tables may be absent on older schemas */ }
     }, [projectId]);
     React.useEffect(() => { loadModules(); }, [loadModules]);
+    // ---- project visibility (permissions tab) ----
+    const [vis, setVis] = React.useState(null);        // working copy
+    const [visBase, setVisBase] = React.useState(null); // last saved, for the dirty diff
+    const [visSaving, setVisSaving] = React.useState(false);
+    const loadVisibility = React.useCallback(async () => {
+        if (!isSenior)
+            return;
+        try {
+            const [xRes, pRes] = await Promise.all([
+                sb.from('project_visibility_exclusions').select('department, user_id').eq('project_id', projectId),
+                sb.from('projects').select('visible_to_all').eq('id', projectId).maybeSingle(),
+            ]);
+            const rows = xRes.data || [];
+            const next = {
+                visibleToAll: !(pRes && pRes.data && pRes.data.visible_to_all === false),
+                excludedDepts: rows.filter(r => r.department).map(r => r.department),
+                excludedUsers: rows.filter(r => r.user_id).map(r => r.user_id),
+            };
+            setVis(next);
+            setVisBase(JSON.stringify(next));
+        }
+        catch (_) { /* table absent on older schemas */ }
+    }, [projectId, isSenior]);
+    React.useEffect(() => { loadVisibility(); }, [loadVisibility]);
+    useLiveData(['projects'], loadVisibility);
     // Module completion rings are a projection of checklist answers, so any
     // checklist write anywhere (including inside an open module) re-derives them.
     useLiveData(['checklists'], loadModules);
@@ -4634,7 +4668,10 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         plannedCard('Open RFIs', '—', 'Planned', false),
         plannedCard('Long lead', '—', 'Planned', false));
     // ----- TABS ----------------------------------------------------------------
-    const TABS = [['overview', 'OVERVIEW'], ['directory', 'DIRECTORY'], ['modules', 'MODULES'], ['actions', 'ACTIONS & FLAGS']];
+    // Permissions is senior-only: project_visibility_exclusions is senior-read
+    // at the database, so the tab would be empty for anyone else.
+    const TABS = [['overview', 'OVERVIEW'], ['directory', 'DIRECTORY'], ['modules', 'MODULES'], ['actions', 'ACTIONS & FLAGS']]
+        .concat(isSenior ? [['permissions', 'PERMISSIONS']] : []);
     const tabStrip = React.createElement("div", { style: { display: 'flex', borderBottom: `1px solid ${C.line}`, marginBottom: 22 } }, TABS.map(([key, label]) => React.createElement("span", { key: key, onClick: () => setActiveTab(key), style: { display: 'inline-flex', alignItems: 'center', fontFamily: FONT, fontWeight: activeTab === key ? 700 : 600, fontSize: 13, letterSpacing: '0.12em', color: activeTab === key ? C.carmine : C.g500, padding: '12px 4px', borderBottom: activeTab === key ? `3px solid ${C.carmine}` : '3px solid transparent', marginBottom: -1, marginRight: 36, cursor: 'pointer', transition: `color 240ms ${EASE}` } }, label, (key === 'actions' && (myActions.length + myFlags.length) > 0) && React.createElement("span", { style: { marginLeft: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9999, background: activeTab === key ? C.carmine : C.g100, color: activeTab === key ? C.white : C.g700, fontSize: 10, fontWeight: 700, letterSpacing: 0 } }, myActions.length + myFlags.length))));
     // ----- PROJECT INFORMATION card --------------------------------------------
     const statusControl = isSenior
@@ -4715,6 +4752,41 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                     : lucide('arrow-right', 15, C.g300, 2));
         }))));
     // ----- ACTIONS & FLAGS tab -------------------------------------------------
+    const visDirty = vis && visBase && JSON.stringify(vis) !== visBase;
+    const saveVisibility = async () => {
+        if (!vis)
+            return;
+        setVisSaving(true);
+        try {
+            await onProjectSave(projectId, { visible_to_all: !!vis.visibleToAll });
+            // Replace wholesale — the set is tiny and this keeps the saved rows
+            // exactly what the picker shows, with no diffing to get wrong.
+            const { error: dErr } = await sb.from('project_visibility_exclusions').delete().eq('project_id', projectId);
+            if (dErr)
+                throw dErr;
+            const rows = saveProjectExclusionRows(projectId, vis, project.org_id, currentUser ? currentUser.id : null);
+            if (rows.length > 0) {
+                const { error: iErr } = await sb.from('project_visibility_exclusions').insert(rows);
+                if (iErr)
+                    throw iErr;
+            }
+            setVisBase(JSON.stringify(vis));
+        }
+        catch (e) {
+            alert('Could not save permissions: ' + e.message);
+        }
+        setVisSaving(false);
+    };
+    const permissionsCard = card(React.createElement(React.Fragment, null,
+        React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "WHO CAN SEE THIS PROJECT"),
+        React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 4, marginBottom: 16, maxWidth: '68ch', lineHeight: 1.5 } },
+            "Projects are visible to everyone by default. Hiding a team keeps it hidden from anyone who joins that team later. Seniors always retain access, and so does anyone appointed to the project team."),
+        vis
+            ? React.createElement(ProjectVisibilityPicker, { users: users, value: vis, onChange: setVis, project: project })
+            : React.createElement("div", { style: { fontSize: 12.5, color: C.g500, fontFamily: FONT } }, "Loading permissions…"),
+        vis ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.line}` } },
+            React.createElement("span", { onClick: (visDirty && !visSaving) ? saveVisibility : undefined, style: { cursor: (visDirty && !visSaving) ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 2, fontFamily: FONT, fontSize: 13, fontWeight: 600, color: '#fff', background: visDirty ? C.carmine : C.g300, opacity: visSaving ? 0.7 : 1 } }, visSaving ? 'Saving…' : 'Save permissions'),
+            visDirty ? React.createElement("span", { style: { fontSize: 12, color: C.amber, fontFamily: FONT } }, "Unsaved changes") : null) : null));
     const actionsCard = card(React.createElement(React.Fragment, null,
         sectionHead('OPEN ACTIONS', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, myActions.length, " open")),
         myActions.length === 0 ? React.createElement("div", { style: { fontSize: 14, fontStyle: 'italic', color: C.g500, padding: '6px 0' } }, "No open actions.") : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, myActions.slice().sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999')).map(a => { const ow = a.owner_user_id ? users.find(u => u.id === a.owner_user_id) : null; const overdue = a.due_date && a.due_date < today; return React.createElement("div", { key: a.id, onClick: () => openItem('action', a.id), title: "Open details, audit trail and queries", style: { display: 'flex', alignItems: 'center', gap: 16, border: `1px solid ${C.line}`, borderLeft: `3px solid ${overdue ? C.carmine : C.warn}`, borderRadius: 2, padding: '14px 16px', background: '#fff', cursor: 'pointer' } }, React.createElement("span", { style: { width: 22, height: 22, borderRadius: '50%', border: `2px solid ${C.g300}`, flex: '0 0 auto' } }), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: C.ink0 } }, a.description), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, ow ? ('by ' + ow.display_name) : 'Unassigned')), a.due_date && React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 14, color: overdue ? C.carmine : C.ink0 } }, formatMeetingDate(a.due_date)), overdue && React.createElement("span", { style: { fontWeight: 600, fontSize: 10, letterSpacing: '0.08em', color: '#fff', background: C.carmine, borderRadius: 9999, padding: '3px 9px' } }, "OVERDUE")); })), doneActions.length > 0 && React.createElement("div", { style: { marginTop: 18, borderTop: `1px solid ${C.line}`, paddingTop: 14 } }, React.createElement("div", { onClick: () => setShowDone(v => !v), style: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' } }, React.createElement("span", { style: { display: 'inline-flex', color: C.g500, transform: showDone ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 200ms ${EASE}` } }, lucide('chevron-down', 15, 'currentColor', 2)), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', color: C.g500 } }, "COMPLETED"), React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, doneActions.length)), showDone && React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 } }, doneActions.map(a => { const ow = a.owner_user_id ? users.find(u => u.id === a.owner_user_id) : null; return React.createElement("div", { key: a.id, style: { display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 14px', background: C.g50 } }, lucide('check', 15, C.success, 2.5), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.g700, textDecoration: 'line-through', textDecorationColor: C.g300 } }, a.description), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, ow ? ('by ' + ow.display_name) : 'Unassigned', a.completed_at ? (' · ' + formatMeetingDate(a.completed_at.slice(0, 10))) : '')), React.createElement("span", { style: { fontWeight: 600, fontSize: 10, letterSpacing: '0.06em', color: C.success } }, "DONE")); })))));
@@ -4725,7 +4797,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const header = React.createElement("div", { style: { background: C.carmine, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 40px', height: 88 } },
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 28 } },
             React.createElement("span", { onClick: onBack, style: { display: 'inline-flex', alignItems: 'center', gap: 8, border: '1px solid rgba(255,255,255,0.5)', borderRadius: 2, padding: '9px 15px', fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.06em', cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('arrow-left', 15, '#fff', 2), "ALL PROJECTS"),
-            React.createElement("div", { style: { lineHeight: 1.1 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 11, letterSpacing: '0.18em', opacity: 0.82 } }, "PROJECT DASHBOARD"), React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 3 } }, React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 26, letterSpacing: '-0.01em' } }, project.name || 'Untitled project'), project.project_number && React.createElement("span", { style: { fontSize: 15, opacity: 0.72 } }, "#", project.project_number)))),
+            React.createElement("div", { style: { lineHeight: 1.1 } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 11, letterSpacing: '0.18em', opacity: 0.82 } }, "PROJECT DASHBOARD"), project.visible_to_all === false && React.createElement("span", { title: "Restricted \u2014 hidden from some teams or people", style: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 2, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.42)', color: '#fff', fontFamily: FONT, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' } }, lucide('lock', 10, 'currentColor', 2.4), "Restricted")), React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 3 } }, React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 26, letterSpacing: '-0.01em' } }, project.name || 'Untitled project'), project.project_number && React.createElement("span", { style: { fontSize: 15, opacity: 0.72 } }, "#", project.project_number)))),
         React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.3)', padding: '8px 14px', borderRadius: 9999 } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: '#fff' } }), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase' } }, status.label)));
     return React.createElement("div", { style: { background: '#ECECEA', minHeight: 'calc(100vh - 64px)' } },
         header,
@@ -4746,7 +4818,8 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                     return React.createElement(ProjectModulePage, { moduleDef: activeModule, project: project, isSenior: isSenior, onBack: () => setActiveModule(null) });
                 })()
                 : modulesCard),
-            activeTab === 'actions' && React.createElement(React.Fragment, null, actionsCard, flagsCard)), teamWarn && (() => {
+            activeTab === 'actions' && React.createElement(React.Fragment, null, actionsCard, flagsCard),
+            activeTab === 'permissions' && isSenior && permissionsCard), teamWarn && (() => {
             const outUser = users.find(u => u.id === teamWarn.outgoing);
             const inUser = teamWarn.newUserId ? users.find(u => u.id === teamWarn.newUserId) : null;
             const roleLabel = (TEAM_ROWS.find(r => r.field === teamWarn.field) || {}).label || 'role';
@@ -4770,6 +4843,98 @@ function renderMetricTile(label, value, valueColour, sublabel) {
 // ============================================================
 // NEW PROJECT MODAL
 // ============================================================
+// Turns the picker's working state into project_visibility_exclusions rows.
+// Nothing is written when the project is visible to all — the flag alone says so.
+function saveProjectExclusionRows(projectId, vis, orgId, actorId) {
+    if (!vis || vis.visibleToAll)
+        return [];
+    const rows = [];
+    (vis.excludedDepts || []).forEach(d => { if (d) rows.push({ org_id: orgId, project_id: projectId, department: d, created_by: actorId }); });
+    (vis.excludedUsers || []).forEach(uid => { if (uid) rows.push({ org_id: orgId, project_id: projectId, user_id: uid, created_by: actorId }); });
+    return rows;
+}
+const DEPARTMENTS = [
+    { value: 'pre-con', label: 'Pre-Con' },
+    { value: 'design', label: 'Design' },
+    { value: 'technical', label: 'Technical' },
+    { value: 'furniture', label: 'Furniture' },
+    { value: 'pm', label: 'Project Management' },
+];
+// ============================================================
+// PROJECT VISIBILITY PICKER — default-visible, exclusion-based.
+// Shared by the create-project modal and the project Permissions tab.
+// Exclusions are subtractive: a whole department, or named individuals.
+// A department exclusion is stored as a rule, so someone who joins that team
+// later is excluded too. Seniors are exempt at the database, so they are shown
+// as always having access rather than offered as something to switch off.
+// ============================================================
+function ProjectVisibilityPicker({ users, value, onChange, project }) {
+    const [open, setOpen] = React.useState({});
+    const v = value || { visibleToAll: true, excludedDepts: [], excludedUsers: [] };
+    const active = (users || []).filter(u => u.active !== false);
+    const deptUsers = (d) => active.filter(u => (u.department || '') === d);
+    const noTeam = active.filter(u => !u.department);
+    const deptOut = (d) => v.excludedDepts.indexOf(d) >= 0;
+    const userOut = (u) => v.excludedUsers.indexOf(u.id) >= 0;
+    // Mirrors user_can_see_project() exactly, so the UI can never claim
+    // something the database would decide differently.
+    const appointed = (u) => !!project && [project.owner_user_id, project.pre_con_lead_user_id, project.designer_user_id,
+        project.technical_designer_user_id, project.furniture_consultant_user_id, project.project_manager_user_id].indexOf(u.id) >= 0;
+    const canSee = (u) => (u.role === 'senior') || v.visibleToAll || appointed(u) || !(deptOut(u.department || '') || userOut(u));
+    const hiddenFrom = active.filter(u => !canSee(u));
+    const emit = (patch) => onChange(Object.assign({}, v, patch));
+    const toggleDept = (d) => emit({ excludedDepts: deptOut(d) ? v.excludedDepts.filter(x => x !== d) : v.excludedDepts.concat([d]) });
+    const toggleUser = (u) => emit({ excludedUsers: userOut(u) ? v.excludedUsers.filter(x => x !== u.id) : v.excludedUsers.concat([u.id]) });
+    const pill = (on, label, onClick, title) => React.createElement("span", {
+        onClick: onClick, title: title, style: {
+            cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600,
+            letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+            border: `1px solid ${on ? C.line : C.carmineMid}`,
+            background: on ? C.white : C.carmineSoft, color: on ? C.g700 : C.carmine,
+        }
+    }, on ? 'Can see' : 'Hidden', label);
+    const personRow = (u) => {
+        const exempt = u.role === 'senior';
+        const app = appointed(u);
+        return React.createElement("div", { key: u.id, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px 7px 34px', borderTop: `1px solid ${C.line}` } },
+            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                React.createElement("div", { style: { fontFamily: FONT, fontSize: 12.5, fontWeight: 600, color: C.ink0 } }, u.display_name),
+                React.createElement("div", { style: { fontSize: 11, color: C.g500, fontFamily: FONT } }, u.job_title || '—')),
+            exempt
+                ? React.createElement("span", { title: "Seniors always have access", style: { fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.prussian, background: C.prussian10, border: `1px solid ${C.prussian20}`, borderRadius: 2, padding: '4px 10px' } }, "Senior · always")
+                : (app
+                    ? React.createElement("span", { title: "Appointed to this project — appointment beats exclusion", style: { fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.prussian, background: C.prussian10, border: `1px solid ${C.prussian20}`, borderRadius: 2, padding: '4px 10px' } }, "Appointed · always")
+                    : pill(!userOut(u) && !deptOut(u.department || ''), null, () => toggleUser(u),
+                        deptOut(u.department || '') ? 'Their whole team is hidden from this project' : 'Hide this project from this person')));
+    };
+    const deptBlock = (d, label, members) => {
+        const isOpen = !!open[d];
+        const out = deptOut(d);
+        return React.createElement("div", { key: d || 'none', style: { border: `1px solid ${C.line}`, borderRadius: 2, marginBottom: 8, background: C.white } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px' } },
+                React.createElement("span", { onClick: () => setOpen(o => Object.assign({}, o, { [d]: !isOpen })), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', color: C.carmine, transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 240ms ${EASE}` } }, lucide('chevron-down', 15, 'currentColor', 2.4)),
+                React.createElement("span", { onClick: () => setOpen(o => Object.assign({}, o, { [d]: !isOpen })), style: { cursor: 'pointer', flex: 1, fontFamily: FONT, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.ink0 } }, label,
+                    React.createElement("span", { style: { marginLeft: 8, fontWeight: 400, letterSpacing: 0, textTransform: 'none', fontSize: 11.5, color: C.g500 } }, members.length, members.length === 1 ? ' person' : ' people')),
+                d ? pill(!out, null, () => toggleDept(d), 'Hide this project from the whole team, including anyone who joins it later') : null),
+            isOpen ? React.createElement("div", null, members.map(personRow)) : null);
+    };
+    return React.createElement("div", null,
+        React.createElement("label", { style: { display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', padding: '2px 0' } },
+            React.createElement("input", { type: "checkbox", checked: v.visibleToAll, onChange: e => emit(e.target.checked ? { visibleToAll: true, excludedDepts: [], excludedUsers: [] } : { visibleToAll: false }), style: { accentColor: C.carmine, cursor: 'pointer', width: 15, height: 15 } }),
+            React.createElement("span", { style: { fontFamily: FONT, fontSize: 13, fontWeight: 600, color: C.ink0 } }, "Everyone can see this project")),
+        React.createElement("div", { style: { fontSize: 11.5, color: C.g500, fontFamily: FONT, marginTop: 5, marginLeft: 24, maxWidth: '62ch', lineHeight: 1.5 } },
+            v.visibleToAll
+                ? 'The whole organisation can see it. Untick to hide it from particular teams or people.'
+                : 'Hidden people won’t see this project anywhere — not the projects list, the register, their work, or its actions, flags, dates, contacts and checklists.'),
+        v.visibleToAll ? null : React.createElement("div", { style: { marginTop: 14 } },
+            DEPARTMENTS.map(o => deptBlock(o.value, o.label, deptUsers(o.value))),
+            noTeam.length ? deptBlock('', 'No team', noTeam) : null,
+            React.createElement("div", { style: { marginTop: 10, fontFamily: FONT, fontSize: 12, color: hiddenFrom.length ? C.carmine : C.g500 } },
+                hiddenFrom.length
+                    ? `Hidden from ${hiddenFrom.length} ${hiddenFrom.length === 1 ? 'person' : 'people'} — ${hiddenFrom.map(u => u.initials || u.display_name).join(', ')}`
+                    : 'Nobody is hidden yet — everyone can still see this project.')));
+}
 function NewProjectModal({ onClose, onCreate, users }) {
     const [form, setForm] = useState({
         name: '',
@@ -4785,6 +4950,9 @@ function NewProjectModal({ onClose, onCreate, users }) {
     });
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    // Default-visible: a new project is visible to the whole organisation
+    // unless someone says otherwise here.
+    const [visibility, setVisibility] = useState({ visibleToAll: true, excludedDepts: [], excludedUsers: [] });
     const handle = (k) => (e) => setForm(f => (Object.assign(Object.assign({}, f), { [k]: e.target.value })));
     const setUser = (k) => (newId) => setForm(f => (Object.assign(Object.assign({}, f), { [k]: newId })));
     const submit = async (e) => {
@@ -4800,14 +4968,14 @@ function NewProjectModal({ onClose, onCreate, users }) {
         setError('');
         setBusy(true);
         try {
-            await onCreate(Object.assign(Object.assign({}, form), { name: form.name.trim(), project_number: form.project_number.trim() }));
+            await onCreate(Object.assign(Object.assign({}, form), { name: form.name.trim(), project_number: form.project_number.trim() }), visibility);
         }
         catch (e) {
             setError(e.message);
             setBusy(false);
         }
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), React.createElement(Field, { label: "Pre-Con Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Designer" }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), React.createElement(Field, { label: "Technical Designer" }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Project Manager" }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), React.createElement(Field, { label: "Furniture Consultant" }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
+    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), React.createElement(Field, { label: "Pre-Con Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Designer" }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), React.createElement(Field, { label: "Technical Designer" }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Project Manager" }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), React.createElement(Field, { label: "Furniture Consultant" }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), React.createElement("div", { style: { marginTop: 20, paddingTop: 18, borderTop: `1px solid ${C.line}` } }, React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', color: C.g500, fontFamily: FONT, marginBottom: 10 } }, "Who can see it"), React.createElement(ProjectVisibilityPicker, { users: users, value: visibility, onChange: setVisibility, project: null })), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
 }
 // ============================================================
 // PROFILE MODAL — edit display name & initials (and more for seniors)

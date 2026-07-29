@@ -1,0 +1,92 @@
+-- =============================================================================
+-- P0-4b — project visibility carried into RLS  (the last P0 item)
+-- Applied to tpxabhqsjngalilbznhz on 2026-07-29. Verification at the bottom.
+-- =============================================================================
+-- Companion to project_permissions_model.sql. Because the model is
+-- default-visible, the pre-existing flat `org_id = current_org_id()` policies
+-- were ALREADY correct for the default case — so this is an opt-out predicate
+-- added to the same policies, not the read-model rewrite the plan feared.
+--
+-- ⚠ THE ONE THING NOT TO "TIDY" LATER:
+-- an RLS policy expression is evaluated as the INVOKING role, so the one-arg
+-- helper MUST remain executable by anon/authenticated or every read below fails
+-- with "permission denied for function". This is the same accepted exception
+-- already documented for current_org_id(), and it is why get_advisors(security)
+-- now reports TWO anon_security_definer_function_executable lints rather than
+-- one. Revoking it would take the whole app down. The TWO-arg form stays
+-- revoked: it is only called from project_audience(), which is SECURITY
+-- DEFINER and so runs as the definer.
+grant execute on function public.user_can_see_project(uuid) to anon, authenticated;
+
+-- Every policy below gains, alongside its existing org predicate:
+--   project_id NOT NULL  ->  and user_can_see_project(project_id)
+--   project_id nullable  ->  and (project_id is null or user_can_see_project(project_id))
+-- so an org-level row with no project stays visible.
+--
+--   projects .................. SELECT
+--   actions ................... SELECT / UPDATE / DELETE / INSERT   (nullable)
+--   meeting_entries ........... SELECT / UPDATE / DELETE / INSERT
+--   meeting_handoffs .......... the single ALL policy, both USING and WITH CHECK
+--   project_key_dates ......... SELECT / UPDATE / DELETE / INSERT
+--   project_contacts .......... SELECT / UPDATE / DELETE / INSERT
+--   project_checklists ........ SELECT / UPDATE / INSERT
+--   project_checklist_items ... SELECT / UPDATE / DELETE / INSERT
+--   queries ................... SELECT / UPDATE / INSERT           (nullable)
+--   audit_log ................. SELECT (senior-only already; belt and braces)
+--   notifications ............. SELECT / UPDATE via payload->>'project_id'
+--
+-- notifications has no project_id column — the id lives in the payload. The
+-- regex guard matters: a malformed value would otherwise raise on the cast and
+-- take every notification read down with it.
+--
+--   using (
+--     user_id = auth.uid() and org_id = current_org_id()
+--     and (payload->>'project_id' is null
+--          or payload->>'project_id' !~ '^[0-9a-fA-F-]{36}$'
+--          or public.user_can_see_project((payload->>'project_id')::uuid))
+--   )
+--
+-- NOT covered, deliberately: `item_events` and `query_messages` carry no
+-- project_id — they hang off an item or a query that is already filtered, so
+-- they are unreachable without their parent.
+--
+-- The full statements as applied are reproduced in the migration history of the
+-- Supabase project (migration name: p0_4b_project_visibility_policies).
+
+-- =============================================================================
+-- Verification recorded 2026-07-29 — behavioural, under real JWTs
+-- =============================================================================
+-- Run inside self-aborting DO blocks with `set local role authenticated` and
+-- `set_config('request.jwt.claims', …)` so policies and triggers were exercised
+-- as real users. Nothing was committed.
+--
+-- Excluding the Technical department from a project Marcus is NOT appointed to
+-- (project [Lumen Health]), measured as Marcus, a technical contributor:
+--
+--   projects .............. 30 -> 29      (the project itself disappears)
+--   its key dates .........  7 -> 0
+--   its flags .............  1 -> 0
+--   its actions ...........  2 -> 0
+--   its contacts ..........  9 -> 0
+--   senior, same moment ... 30            (decision 2: seniors are exempt)
+--   after appointing him .. 30            (decision 3: appointment beats exclusion)
+--
+-- Historical rows (decision 4), with a notification and an audit row seeded for
+-- the project first:
+--   Marcus's visible notifications ... 12 -> 11   (the one about it is gone)
+--   Senior's audit rows for it .......  1 ->  1   (exempt)
+--
+-- An earlier run appeared to show the exclusion having no effect: it had picked
+-- a project where Marcus WAS the technical designer, so the appointment branch
+-- correctly kept it visible. Recorded because it looks like a bug and is not.
+--
+-- Rollback confirmed clean: 0 exclusion rows, 0 projects with
+-- visible_to_all = false, 30 projects.
+--
+-- Function ACLs after the batch:
+--   user_can_see_project(uuid)      postgres, service_role, anon, authenticated  <- required
+--   user_can_see_project(uuid,uuid) postgres, service_role                       <- correct
+--
+-- get_advisors(security): the two accepted current_org_id lints, the two new
+-- and equally accepted user_can_see_project(uuid) lints, and the separate
+-- auth_leaked_password_protection toggle. No unexpected findings.
