@@ -846,6 +846,15 @@ from Tom's Claude Design handoff `design_handoff_organisation_tab`)*
 > raising an action. Action and Flag map straight onto `actions` / `meeting_handoffs`; all three write
 > an `item_events` row and carry `source_type = 'org-chart'` provenance.
 >
+> **Senior-only "Reset password" on a card** (`db/migrations/reset_password_to_temporary.sql`) puts
+> someone back on the temporary value and re-arms the forced reset, so a fictional person can be
+> signed in as again after they have set their own password. It is an impersonation-capable action, so:
+> the new value is **fixed server-side** (the function takes no password argument, making it "reset to
+> the known value", never "set anyone's password"); the senior check lives **inside** the function,
+> since it must be EXECUTE-able by `authenticated` to be callable at all; and **every use writes an
+> `org_audit_log` row**. It is the only one of the three accepted SECURITY DEFINER exceptions that
+> grants a power rather than answering a question. **Revisit before real people.**
+>
 > **⚠ Temporary passwords are a DEV PLACEHOLDER right now.** `makeTempPassword()` returns the fixed
 > constant `DEV_TEMP_PASSWORD = '123123'` so fictional people can be signed in as without a password
 > round-trip. The production generator is preserved in a comment directly beneath it — **swap that one

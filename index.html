@@ -5319,6 +5319,26 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
         setPeople(prev => prev.map(x => x.id === id ? Object.assign({}, x, { is_team_lead: on })
             : (on && x.department === p.department && x.is_team_lead ? Object.assign({}, x, { is_team_lead: false }) : x)));
     };
+    // Puts someone back on the known temporary password so they can be signed in
+    // as again — the forced first-sign-in reset otherwise leaves each new person
+    // with a password nobody recorded. The authorisation lives in the database
+    // function, not here: only an active senior in the same org gets through,
+    // the new value is fixed server-side so this can never set an arbitrary
+    // password, and every use writes an org_audit_log row.
+    const resetPassword = async (id) => {
+        const p = byId[id];
+        if (!p)
+            return;
+        if (!window.confirm('Put ' + p.display_name + '\u2019s password back to the temporary one?\n\nThey will be asked to choose a new one the next time they sign in.'))
+            return;
+        try {
+            const { error } = await sb.rpc('reset_password_to_temporary', { p_user: id });
+            if (error)
+                throw error;
+            flash(p.display_name + '\u2019s password is back to ' + DEV_TEMP_PASSWORD + ' \u2014 they set a new one on next sign-in.');
+        }
+        catch (e) { alert('Could not reset that password: ' + e.message); }
+    };
     const removePerson = async (id) => {
         const p = byId[id];
         if (!p || !window.confirm('Remove ' + p.display_name + ' from the organisation? They stay on historic records — this marks them inactive.')) return;
@@ -5531,9 +5551,12 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
                 React.createElement("span", { onClick: () => patch(n.id, { role: n.role === 'senior' ? 'contributor' : 'senior' }), style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '7px 8px', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', background: n.role === 'senior' ? C.prussian : C.white, color: n.role === 'senior' ? '#fff' : C.g500, border: `1px solid ${n.role === 'senior' ? C.prussian : C.line}` } }, "Senior"),
                 React.createElement("span", { onClick: () => setTeamLead(n.id, !n.is_team_lead), style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '7px 8px', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', background: n.is_team_lead ? C.carmine : C.white, color: n.is_team_lead ? '#fff' : C.g500, border: `1px solid ${n.is_team_lead ? C.carmine : C.line}` } }, "Team lead")),
             React.createElement("div", { style: { fontFamily: FONT, fontSize: 10, color: C.mist, lineHeight: 1.4 } }, "Team lead and Senior are independent — leading a team does not grant senior permissions."),
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 2 } },
-                React.createElement("span", { style: { fontFamily: FONT, fontSize: 10.5, color: C.g500 } }, parentNode ? ('Escalates to ' + (parentNode.display_name || orgDeptLabel(parentNode.department))) : 'Top of the tree'),
-                React.createElement("span", { onClick: () => removePerson(n.id), style: { cursor: 'pointer', padding: '6px 9px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', color: C.redStatus } }, "Remove")));
+            React.createElement("div", { style: { fontFamily: FONT, fontSize: 10.5, color: C.g500, paddingTop: 2 } }, parentNode ? ('Escalates to ' + (parentNode.display_name || orgDeptLabel(parentNode.department))) : 'Top of the tree'),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+                (currentUser && n.id === currentUser.id)
+                    ? null
+                    : React.createElement("span", { onClick: () => resetPassword(n.id), title: "Set their password back to the temporary one", style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '6px 9px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.prussian } }, "Reset password"),
+                React.createElement("span", { onClick: () => removePerson(n.id), style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '6px 9px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.redStatus } }, "Remove")));
     };
     // ---- header / toolbar / canvas -------------------------------------------
     const teamCount = DEPARTMENTS.filter(o => people.some(p => p.department === o.value)).length;
