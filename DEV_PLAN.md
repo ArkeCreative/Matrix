@@ -24,6 +24,13 @@ source (`shell-head.html` + `app.jsx` + `shell-tail.html` + `rebuild.sh`) is alr
 > is now **Step 1 … Step 14** in build order under **▶ ROADMAP**, with a crosswalk from the old
 > numbering. Work from Step 1 down. The sections above this line are the historical record and keep
 > their original names — the crosswalk is how they map.
+>
+> **Revision note (2026-07-29) — Step 1 is done.** The programme baseline and delay record shipped:
+> `programme_revisions` is accruing, so the clock that was running on this plan has stopped. Two
+> things to know. **The record is append-only and trigger-written** — no API caller can forge, amend
+> or erase a revision, which is the whole basis of its evidential value, so keep it that way.
+> **No baseline was backfilled**, deliberately: a project shows no slip figure until a senior
+> explicitly baselines it. **Step 2 is next.**
 
 ## What this is
 Internal PM web app for **Arke Creative** (commercial office design & fit-out). Rebranded/
@@ -36,7 +43,8 @@ https://arkecreative.github.io/Matrix/ (auto-deploys on merge to `main`, ~1 min 
 - **Supabase** `matrix` = `tpxabhqsjngalilbznhz`, eu-west-2, PG17. Anon key public by design (RLS
   is the guard). Schema changes via Supabase MCP (`apply_migration` DDL / `execute_sql` data);
   `service_role` key must never reach the repo.
-- **24 tables**, all RLS-enabled. Row counts **re-verified 2026-07-29**: projects 30,
+- **29 tables** (re-counted 2026-07-29; the "24" carried here for weeks was stale), all RLS-enabled.
+  `programme_revisions` was added by Step 1. Row counts **re-verified 2026-07-29**: projects 30,
   project_key_dates 159, meeting_entries 63, actions 36 (19 open), meeting_handoffs 13 (5 open),
   module_templates 8, module_template_items 244, project_checklist_items 6, queries 5, item_events 95.
   (2026-07-27 figures, not re-checked this batch: meetings 25, project_contacts 195,
@@ -549,31 +557,75 @@ Anything committed before 2026-07-29 uses the old scheme; this is how it maps.
 | Phase 6 — org & permissions | ✅ done, bar follow-ups → **Step 11** and go-live → **Step 10** |
 | Phase 7 — executive health view | **split**: **Step 4** (buildable now) + **Step 7** (needs 1 and 6) |
 | Phase 8 — schema cleanup | **Step 3** |
-| Phase 9a — baseline schema | **Step 1** |
+| Phase 9a — baseline schema | ✅ **Step 1**, done 2026-07-29 |
 | Phase 9b — delay record views | **Step 5** |
 | Map view · Organisation tab · project permissions | ✅ done |
 
 ---
 
-### ▶ Step 1 — Programme baseline & delay record: schema  *(small · **URGENT** · no dependencies)*
-**Do this first. It is the only item in the plan with a clock on it.** `project_key_dates` has a
-single mutable `target_date`: when a date moves the previous value is **gone**, and the only trace is
-`audit_log.changes`. There is no baseline, no revision history and no recorded cause. Every week this
-isn't deployed is a week of programme history that cannot be reconstructed later. The views can wait;
-the accrual cannot.
+### ▶ Step 1 — Programme baseline & delay record: schema  *(✅ **DONE 2026-07-29** — see box below)*
+**This was the only item in the plan with a clock on it.** `project_key_dates` had a single mutable
+`target_date`: when a date moved the previous value was **gone**. The trace was meant to be
+`audit_log`, which held **exactly one `key_date` row in the entire database** — so there was nothing
+to reconstruct from either. The accrual is now running; the views are Step 5.
 
-- `project_key_dates.baseline_date date`, `baseline_set_at timestamptz`, `baseline_set_by uuid` —
-  frozen when the project is secured (mirror the existing `secured_at` / `secured_by` pattern).
-- `key_date_revisions (id, org_id, key_date_id, project_id, previous_date, new_date, changed_by,
-  changed_at, meeting_id, cause_flag_id, cause_action_id, reason text)`.
-- Trigger on `UPDATE OF target_date` writes the revision row. `meeting_id` and the cause FKs populate
-  when the change originates in a meeting or from a flag/action — all four objects already exist and
-  are already linked, which is exactly why this is cheap here and expensive anywhere else.
-- Same treatment for `projects.site_start_date` / `projected_completion_date` /
-  `contracted_completion_date`.
-- New table takes `org_id` + RLS + `set_org_id_on_insert` from birth (the P0-2 lesson).
+> **✅ APPLIED 2026-07-29** — `db/migrations/step1_programme_baseline_and_revisions.sql`, applied to
+> `tpxabhqsjngalilbznhz` and verified behaviourally. Full verification is recorded at the bottom of
+> the migration file, per the P0-1 discipline.
+>
+> **Three scope decisions Tom took before the build:**
+> 1. **The baseline freezes on an explicit senior action**, not silently on `secured = true`. A
+>    baseline nobody chose to set is not evidence of anything.
+> 2. **Schema + minimal capture UI**, not schema alone — cause only exists in someone's head at the
+>    moment they move a date, so it has to be captured then or not at all.
+> 3. **One `programme_revisions` table** covers key dates *and* the three project-level date columns,
+>    so the Step 5 chronology export is a single ordered query rather than a union.
+>
+> **What shipped.**
+> - Baseline columns on `project_key_dates` (`baseline_date`, `baseline_set_at`, `baseline_set_by`)
+>   and on `projects` (three `*_baseline_date` columns + `programme_baselined_at` / `_by`).
+> - **`programme_revisions`** — `subject_kind` (`key_date` / `project_date`), `key_date_id`,
+>   `project_field`, **`subject_label`** (a *snapshot* of the name, so the record survives a rename or
+>   a delete), `previous_date`, `new_date`, `change_kind` (`moved`/`set`/`cleared`/`deleted`),
+>   `changed_by`, `changed_at`, `meeting_id`, `cause_flag_id`, `cause_action_id`, `reason`.
+>   `org_id` + RLS from birth (the P0-2 lesson).
+> - **Append-only and trigger-written.** There is a SELECT policy and *nothing else* — no INSERT,
+>   UPDATE or DELETE policy, and the table privileges are revoked, so forging, amending or erasing a
+>   revision through the API fails with a hard privilege error (42501), not a silent zero-row filter.
+> - Triggers on `project_key_dates` UPDATE **and DELETE** (delete-and-recreate — what a re-import does
+>   — would otherwise erase a milestone with no trace), and on the three `projects` date columns.
+> - **`baseline_programme(uuid)`** — senior-gated at the database, atomic, and it **refuses to
+>   overwrite an existing baseline**. A baseline that can be quietly re-set is not a baseline; agreed
+>   re-baselining after an EOT is a Step 5 decision needing its own audited path.
+>
+> **How the cause is captured, since a trigger cannot know it.** A trigger sees only OLD and NEW.
+> PostgREST has no per-request hook for a transaction-local GUC without an RPC, and an RPC would
+> **bypass the RX bus's auto-emit** (which wraps `sb.from`, not `sb.rpc`) and silently break
+> reactivity. So context rides in **transient `change_*` columns** the client sets in the *same UPDATE
+> statement* as the new date; the trigger folds them into the revision and blanks them, so they are
+> always NULL at rest. Verified: 4/4 transient columns null after a write, and a second move carried
+> no stale context. `baseline_programme` is the one `sb.rpc` call, so it emits on the bus by hand.
+>
+> **No baseline was backfilled, deliberately.** Setting `baseline_date = target_date` across the 159
+> existing rows would assert "this was always the plan" for dates that may already have slipped —
+> inventing the exact history the migration exists to protect. Existing rows have a NULL baseline and
+> no slip figure until somebody baselines them.
+>
+> **Defect found *during* verification, not after:** `changed_at` defaulted to `now()`, which is
+> *transaction* time — two revisions written in one transaction shared a timestamp and the chronology
+> could not order them. Changed to `clock_timestamp()`.
+>
+> **UI (minimal, by design).** A *Baseline this programme* control in the project CONSTRUCTION card
+> (senior-only, confirms, shows who froze it and when); a **reason prompt** on every date move —
+> key-dates list, programme timeline, and the two project-level date fields — with an optional link to
+> an open flag or action as the cause. The reason is **optional on purpose**: forcing it produces "."
+> and "update", not evidence, and would block typo corrections. A date moved inside a meeting is
+> attributed to that meeting (`meetingId` threaded through `ProjectCapturePane`).
+>
+> **Deliberately NOT built:** any *display* of slip against baseline. That is Step 5, and it wants
+> real accrued history rather than a number computed off a baseline set five minutes ago.
 
-### ▶ Step 2 — Operational write scoping  *(small · security · no dependencies)*
+### ▶ Step 2 — Operational write scoping  *(small · security · no dependencies · **NEXT**)*
 The last piece of P0-4. Visibility is solved; *who may change what* is not.
 - `actions` UPDATE/DELETE is org-wide — narrow to owner / creator / collaborator / senior.
 - `meeting_handoffs` is a single blanket `ALL` policy — split it, and key acknowledge/convert on
@@ -602,7 +654,7 @@ The half of the old Phase 7 that is buildable **today**, on data that already ex
 Deliberately **excludes** anything needing money or baselines — that is Step 7. Building this first
 gets seniors a usable view without waiting on the commercial spine.
 
-### ▶ Step 5 — Delay record: the views  *(medium · needs Step 1, plus accrued history)*
+### ▶ Step 5 — Delay record: the views  *(medium · **Step 1 done** — now needs accrued history)*
 Once revisions have been accruing for a few weeks:
 1. **Internal** — project health stops being form-completeness and becomes *slip against baseline,
    attributed*: which projects are moving, by how much, and whose decisions moved them.
@@ -746,8 +798,11 @@ deployed app is the third leg.
   separate indicator from seniority.** *"Someone may be a team lead but might not carry the
   permissions that come with senior."* The handoff's force-to-senior rule is **dropped**; no one is
   promoted. See the Organisation tab section for what this means for the build.
-- **NEW — baseline trigger (9a):** does baseline freeze on `secured = true`, on first programme
-  import, or on an explicit "baseline this programme" action? Tom's call; the last is most honest.
+- ~~**baseline trigger (9a)**~~ — **SETTLED 2026-07-29 (Tom): an explicit "Baseline this programme"
+  action**, not `secured = true` and not first import. Shipped in Step 1. The remaining question it
+  raises is **re-baselining**: `baseline_programme()` currently refuses to overwrite an existing
+  baseline, which is right for a first cut but will need an audited re-baseline path once a real EOT
+  is agreed. Decide as part of Step 5.
 
 ## Working agreement
 Scope honestly before building; confirm design choices before code; say when an idea's wrong. One PR
