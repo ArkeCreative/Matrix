@@ -71,8 +71,8 @@ held — keep Gilroy as-is.** (Medium 500 not supplied; maps to Regular. Century
 # ⛔ P0 — verified defects, fix before further feature work
 
 All four were found by querying the live database on 2026-07-26. Re-verification queries are in the
-appendix. **P0-1 (2026-07-27) and P0-3 (2026-07-29) are now closed and verified; P0-2 and P0-4 remain
-open — P0-2 must be closed before a second org exists at all.**
+appendix. **P0-1 (2026-07-27), P0-3 and P0-2 (both 2026-07-29) are closed and verified. Only P0-4
+remains open** — it is the Phase 6 RLS rewrite, and the gate for real Arke data.
 
 > **P0-1 — ✅ FIXED 2026-07-27** (folded into the My Actions rework PR1, `db/migrations/myactions_audit_spine.sql`).
 > Revoked EXECUTE from `public, anon, authenticated` on all the helper + audit-trigger functions
@@ -122,7 +122,37 @@ granted — RLS policies evaluate it as the invoking role.
 on those functions, then `get_advisors(security)` returns zero
 `anon_security_definer_function_executable` lints for them.
 
-### P0-2 — `project_audience()` has no org filter (cross-tenant leak, go-live blocker)
+> **P0-2 — ✅ FIXED 2026-07-29** (`db/migrations/p0_2_cross_org_containment.sql`, applied + verified).
+> `project_audience()` and `record_activity()`'s null-project branch are now org-filtered, and the
+> `notifications` policies carry `org_id = current_org_id()`.
+> **⚠ Scope was widened after inspecting the live policy set — two further routes would have made a
+> second org unsafe on their own:**
+> - **`projects` / `meetings` INSERT checks had no org predicate.** `set_org_id_on_insert` only fills
+>   `org_id` when NULL, so an explicit `org_id` in the request body passed straight through. Every
+>   other org-scoped table already had `org_id = current_org_id()` in its INSERT check; these two were
+>   the outliers. Now fixed.
+> - **`app_users` "users edit self" was `USING/WITH CHECK (id = auth.uid())` with no column
+>   restriction — and this one is exploitable *today*, with one org.** Any authenticated user could
+>   update their own `org_id`, and `current_org_id()` is literally
+>   `select org_id from app_users where id = auth.uid()` — a one-request move into another tenant,
+>   after which every org-scoped policy in the database resolves to the new org. The same policy
+>   allowed self-promotion to `role = 'senior'`. The app only ever sends name/initials/job title on a
+>   self-edit, but that was a **client-side convention enforced nowhere** — the P0-4 pattern, on the
+>   one table that controls tenancy. RLS cannot compare against `OLD`, so the invariant is now a
+>   `BEFORE UPDATE` trigger (`enforce_app_user_field_guard`): `org_id`/`id` immutable through the API
+>   for anyone; `role`/`department`/`is_team_lead`/`active` changeable only by an active senior in the
+>   same org. No-JWT (service_role/migration) contexts pass through untouched.
+>
+> **Verified behaviourally, not asserted.** A self-aborting block stood up a second organisation,
+> moved an active senior (deliberately one *not* on the project's team, so the all-seniors branch was
+> their only route in) into it, then set `request.jwt.claims` to a real contributor's id to exercise
+> the guard under an actual JWT: **audience 3 → 2**; foreign senior in audience **before=t, after=f**;
+> self `org_id` change **blocked**; self role escalation **blocked**; legitimate rename **saved ok**
+> (so the guard isn't over-broad). Rolled back clean — one org, 2 seniors, 0 stray rows.
+> P0-1 re-verified still closed (`proacl` shows only `postgres`/`service_role` on all three
+> functions); `get_advisors(security)` clean. **P0-4 remains open** — it is the Phase 6 rewrite.
+
+### P0-2 — `project_audience()` has no org filter (cross-tenant leak, go-live blocker)  *(✅ fixed — see box above)*
 Deployed body ends with:
 
 ```sql
@@ -419,7 +449,8 @@ Chromium tooling) is the most likely fit — decide before writing it.
    (2026-07-29, Tom's call after using it) — the Save button is gone; every answer persists itself.
    `MeetingDetailView` is the one view still unsubscribed; splitting its monolithic loader is a small
    follow-up.
-3. **P0-2 / P0-4** security (both still open) — next up, per go-live urgency.
+3. ✅ **P0-2** cross-org containment (2026-07-29) — plus two live holes found alongside it
+   (`app_users` self-edit, `projects`/`meetings` INSERT org checks). **P0-4** is the last P0 open.
 4. **Phase 7 exec view** absorbs attribution/ageing, interactive Live Tracker, the Register strip.
 5. **Programme import** once the serverless proxy is workshopped (also unblocks timed auto-escalation).
 6. **Regression guard** after RX, to lock the chain.
@@ -639,7 +670,12 @@ P0-1 was closed as part of it.
   it is far cheaper before per-project visibility joins are written against the current shape.
 - **Gate:** run the outstanding **RLS behavioural verification** (two accounts, table-by-table
   pass/fail, against the *new* policies) and `get_advisors` **before** the real `arke` org and the
-  first user migration. P0-2 must be closed before a second org exists at all.
+  first user migration. ✅ P0-2 closed 2026-07-29, so a second org is no longer unsafe by construction
+  — but P0-4 still is, and it is this phase.
+- **Technique proven in the P0-2 batch, reuse it here:** the behavioural test ran inside a
+  self-aborting `DO` block with `set_config('request.jwt.claims', ...)` to impersonate a real user,
+  so policies and triggers were exercised under an actual JWT and the whole thing rolled back. That is
+  the harness the table-by-table pass/fail gate should be written in — no throwaway accounts needed.
 
 ### Phase 7 — Executive health view  *(large — depends on 4d and 9)*
 - Accountability register (open actions/flags by staff × severity/urgency); pipeline pie **by value**
