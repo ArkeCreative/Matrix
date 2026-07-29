@@ -58,6 +58,23 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<!-- Leaflet, for the Projects map view only. Loaded here rather than lazily so
+     there is one place to see the app's external dependencies. If it fails to
+     load the map view says so and the rest of the app is unaffected — see the
+     dependency check below, which deliberately does NOT treat Leaflet as fatal. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  /* Leaflet chrome, restyled to the arke idiom: square corners, brand greys. */
+  .leaflet-container { font-family: 'Gilroy', 'Century Gothic', 'Futura', system-ui, sans-serif; background: #F4F3F1; }
+  .leaflet-bar a { border-radius: 0 !important; color: #3D3D3D; }
+  .leaflet-control-attribution { font-size: 9px; }
+  .arke-pin { background: none; border: none; }
+  @keyframes arke-pin-bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+  .arke-pin-hover .arke-pin-inner { animation: arke-pin-bounce 620ms cubic-bezier(.2,.6,.2,1) infinite; }
+</style>
 
 <script>
 // Detect if dependencies failed to load — show a clear error if so

@@ -1014,7 +1014,28 @@ cannot.
 - **Merges with:** the Programme Links tab's work-span (date-range) view — build the span model and
   the revision model together, once.
 
-#### ▶ Projects — Map view  *(NEW handoff, folded in 2026-07-29 — **DEFERRED**, Tom's call)*
+#### ▶ Projects — Map view  *(✅ BUILT 2026-07-29)*
+
+> **✅ SHIPPED.** Third mode on the Projects view switcher — **List · Full · Map**. Leaflet 1.9.4 +
+> CARTO light tiles, custom teardrop pins coloured by stage (carmine live · green handed-over · grey
+> lost) with the per-stage Lucide glyph and the diagonal hazard hatch for On-site, hover label, click
+> callout with **Expand project page**, stage legend, **Fit all**, and the geocode status line.
+> Positions come from each project's `address` via one bulk `api.postcodes.io` call — **no schema
+> change**, as the handoff allowed.
+> **Verified:** the postcode regex extracts a code from **30 of 30** live addresses. What could not be
+> checked from the dev sandbox is whether those fictional postcodes *resolve* — outbound calls to
+> postcodes.io are blocked here, so resolution is Tom's to confirm on the live app.
+> Because of that the unmapped notice now distinguishes **two different failures**, which the handoff
+> conflated: an address with no postcode in it (someone should edit the address) versus a postcode the
+> lookup did not recognise (nothing to fix in the app). Sending someone to correct the wrong thing is
+> worse than saying nothing.
+> Leaflet is loaded in `shell-head.html`; the existing dependency check deliberately does **not** treat
+> it as fatal, and the map frame shows its own message if the library or the lookup is unreachable, so
+> the Projects page still works without them.
+> **Still worth doing later:** cache `latitude`/`longitude` on `projects` so the map is instant and a
+> wrong pin can be corrected by hand. Note P0-4a makes `projects` senior-only to write, so a
+> contributor's client cannot populate the cache — it wants a small writable side table or a
+> senior-only backfill, not a naive client write.
 A third option — **Map** — on the existing List / Full switcher on the Projects home page
 (`TrackerView`). A Central London basemap with one custom teardrop marker per project, positioned from
 each project's existing `address`. Hover reveals a compact label (number · name · stage); click opens a

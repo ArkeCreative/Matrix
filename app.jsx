@@ -2079,7 +2079,9 @@ function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates,
                 borderRadius: 2, cursor: 'pointer', fontFamily: FONT, transition: 'all 160ms ease-out',
                 outline: active ? '2px solid #fff' : '2px solid transparent', outlineOffset: 2,
             } }, React.createElement("span", { style: { fontSize: 26, fontWeight: 700, lineHeight: 1, color: 'rgba(255,255,255,0.5)' } }, count), React.createElement("span", { style: { fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'rgba(255,255,255,0.5)' } }, s.short));
-    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 28px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 14, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement(ToggleSwitch, { on: showUnsecured, onChange: setShowUnsecured }), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Show unsecured")), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), React.createElement("div", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', background: C.g100, borderRadius: 4, padding: 4, gap: 2, flexShrink: 0 } }, [{ m: 'list', label: 'List', icon: 'list' }, { m: 'full', label: 'Full', icon: 'layout-grid' }].map(o => React.createElement("button", { key: o.m, onClick: () => setViewMode(o.m), style: { display: 'inline-flex', alignItems: 'center', gap: 7, background: viewMode === o.m ? C.carmine : 'transparent', color: viewMode === o.m ? '#fff' : C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.04em', padding: '8px 14px', borderRadius: 2, border: 'none', cursor: 'pointer', transition: `all 240ms ${EASE}` } }, lucide(o.icon, 15, 'currentColor', 2), o.label))), isSenior && (React.createElement("button", { onClick: onNewProject, onMouseEnter: e => e.currentTarget.style.background = C.carmineDark, onMouseLeave: e => e.currentTarget.style.background = C.carmine, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 12 }) }, "+ New project")))), React.createElement("main", { style: { padding: '16px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: 48, textAlign: 'center', color: C.g500, fontFamily: FONT } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (React.createElement(viewMode === 'list' ? ProjectListTable : ProjectFullCards, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
+    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '18px 28px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 14, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement(ToggleSwitch, { on: showUnsecured, onChange: setShowUnsecured }), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: C.g700, fontFamily: FONT, whiteSpace: 'nowrap' } }, "Show unsecured")), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: C.g500, fontFamily: FONT } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), React.createElement("div", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', background: C.g100, borderRadius: 4, padding: 4, gap: 2, flexShrink: 0 } }, [{ m: 'list', label: 'List', icon: 'list' }, { m: 'full', label: 'Full', icon: 'layout-grid' }, { m: 'map', label: 'Map', icon: 'map-pin' }].map(o => React.createElement("button", { key: o.m, onClick: () => setViewMode(o.m), style: { display: 'inline-flex', alignItems: 'center', gap: 7, background: viewMode === o.m ? C.carmine : 'transparent', color: viewMode === o.m ? '#fff' : C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.04em', padding: '8px 14px', borderRadius: 2, border: 'none', cursor: 'pointer', transition: `all 240ms ${EASE}` } }, lucide(o.icon, 15, 'currentColor', 2), o.label))), isSenior && (React.createElement("button", { onClick: onNewProject, onMouseEnter: e => e.currentTarget.style.background = C.carmineDark, onMouseLeave: e => e.currentTarget.style.background = C.carmine, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 12 }) }, "+ New project")))), React.createElement("main", { style: { padding: '16px 28px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, padding: 48, textAlign: 'center', color: C.g500, fontFamily: FONT } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (viewMode === 'map'
+                    ? React.createElement(ProjectsMapView, { projects: filteredProjects, onOpenProjectDashboard: onOpenProjectDashboard })
+                    : React.createElement(viewMode === 'list' ? ProjectListTable : ProjectFullCards, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
 }
 // ============================================================
 // PROGRAMME TIMELINE — full lifecycle timeline (handoff "Programme").
@@ -2276,6 +2278,7 @@ function lucide(name, size, color, sw) {
     const S = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color || 'currentColor', strokeWidth: sw || 2, strokeLinecap: 'round', strokeLinejoin: 'round', style: { flexShrink: 0, display: 'block' } };
     const P = {
         'chevron-down': [['path', { d: 'm6 9 6 6 6-6' }]],
+        'map-pin': [['path', { d: 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z' }], ['circle', { cx: 12, cy: 10, r: 3 }]],
         'maximize-2': [['polyline', { points: '15 3 21 3 21 9' }], ['polyline', { points: '9 21 3 21 3 15' }], ['line', { x1: 21, y1: 3, x2: 14, y2: 10 }], ['line', { x1: 3, y1: 21, x2: 10, y2: 14 }]],
         'list': [['line', { x1: 8, y1: 6, x2: 21, y2: 6 }], ['line', { x1: 8, y1: 12, x2: 21, y2: 12 }], ['line', { x1: 8, y1: 18, x2: 21, y2: 18 }], ['line', { x1: 3, y1: 6, x2: 3.01, y2: 6 }], ['line', { x1: 3, y1: 12, x2: 3.01, y2: 12 }], ['line', { x1: 3, y1: 18, x2: 3.01, y2: 18 }]],
         'layout-grid': [['rect', { x: 3, y: 3, width: 7, height: 7, rx: 1 }], ['rect', { x: 14, y: 3, width: 7, height: 7, rx: 1 }], ['rect', { x: 14, y: 14, width: 7, height: 7, rx: 1 }], ['rect', { x: 3, y: 14, width: 7, height: 7, rx: 1 }]],
@@ -2322,6 +2325,248 @@ function openPageButton(project, onOpenProjectDashboard) {
 // ============================================================
 // PROJECT LIST TABLE — dense "List" mode (faithful to design).
 // ============================================================
+// ============================================================
+// PROJECTS — MAP VIEW (third mode on the projects home page)
+// From Tom's Claude Design handoff `design_handoff_projects_map_view`.
+//
+// Positions come from each project's existing `address`: a UK postcode is
+// pulled off the tail and resolved in one bulk call to postcodes.io. No lat/lng
+// columns — see the plan for why caching them is still worth doing later.
+//
+// Visibility needs no work here: this reads the same RLS-filtered `projects`
+// the List and Full views read, so a restricted project is simply absent.
+// ============================================================
+const MAP_POSTCODE_RE = /([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\s*$/i;
+const MAP_CENTRE = [51.5175, -0.1105];
+// Stage glyphs, drawn inside the pin head. Lucide paths on a 24 grid.
+const MAP_STAGE_GLYPH = {
+    'lead': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    'pitching': '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+    'tender': '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+    'won': '<path d="M20 6 9 17l-5-5"/>',
+    'contract': '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    'on-site': '<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>',
+    'lost': '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    'handed-over': '<path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5"/>',
+};
+function mapPinFill(status) {
+    if (status === 'handed-over') return C.success;
+    if (status === 'lost') return C.g500;
+    return C.carmine;
+}
+function mapPinSVG(status, selected) {
+    const fill = selected && mapPinFill(status) === C.carmine ? C.carmineDark : mapPinFill(status);
+    const onSite = status === 'on-site';
+    const hatch = onSite
+        ? '<defs><pattern id="arkeHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+          + '<rect width="5" height="5" fill="' + C.carmine + '"/><rect width="2.4" height="5" fill="' + C.carmineDark + '"/></pattern></defs>'
+        : '';
+    const body = onSite ? 'url(#arkeHatch)' : fill;
+    const scale = (selected ? 1.18 : (onSite ? 1.06 : 1));
+    return '<div class="arke-pin-inner" style="transform:scale(' + scale + ');transform-origin:50% 100%;'
+        + 'transition:transform 160ms cubic-bezier(.2,.6,.2,1);filter:drop-shadow(0 3px 6px rgba(24,59,79,.28));'
+        + (status === 'lost' && !selected ? 'opacity:.72;' : '') + '">'
+        + '<svg width="34" height="44" viewBox="0 0 26 34" fill="none" xmlns="http://www.w3.org/2000/svg">' + hatch
+        + '<path d="M13 1C6.9 1 2 5.9 2 12c0 8.2 11 21 11 21s11-12.8 11-21c0-6.1-4.9-11-11-11z" fill="' + body
+        + '" stroke="rgba(255,255,255,0.95)" stroke-width="' + (onSite ? 2.8 : 2) + '"/>'
+        + '<g transform="translate(6.1, 5.1) scale(0.575)" stroke="#FFFFFF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">'
+        + (MAP_STAGE_GLYPH[status] || '') + '</g></svg></div>';
+}
+function ProjectsMapView({ projects, onOpenProjectDashboard }) {
+    const [geo, setGeo] = React.useState({});
+    const [located, setLocated] = React.useState(0);
+    const [noPostcode, setNoPostcode] = React.useState(0);   // address has none to find
+    const [unresolved, setUnresolved] = React.useState(0);   // found one, the lookup did not know it
+    const [source, setSource] = React.useState('');
+    const [selected, setSelected] = React.useState(null);
+    const [hover, setHover] = React.useState(null);
+    const [hoverPt, setHoverPt] = React.useState(null);
+    const [cardPt, setCardPt] = React.useState(null);
+    const [cardMode, setCardMode] = React.useState('above');
+    const [mapErr, setMapErr] = React.useState('');
+    const frameRef = React.useRef(null);
+    const mapRef = React.useRef(null);
+    const markersRef = React.useRef({});
+    const cardRef = React.useRef(null);
+    const list = projects || [];
+    // ---- geocode ----------------------------------------------------------
+    React.useEffect(() => {
+        let on = true;
+        const wanted = {};
+        list.forEach(p => {
+            const m = (p.address || '').match(MAP_POSTCODE_RE);
+            if (m) wanted[p.id] = (m[1] + ' ' + m[2]).toUpperCase();
+        });
+        setNoPostcode(list.length - Object.keys(wanted).length);
+        const codes = [...new Set(Object.keys(wanted).map(k => wanted[k]))];
+        if (codes.length === 0) { setLocated(0); setUnresolved(0); return; }
+        (async () => {
+            try {
+                const res = await fetch('https://api.postcodes.io/postcodes', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ postcodes: codes }),
+                });
+                const json = await res.json();
+                if (!on) return;
+                const byCode = {};
+                ((json && json.result) || []).forEach(r => {
+                    if (r && r.result) byCode[String(r.query).toUpperCase()] = [r.result.latitude, r.result.longitude];
+                });
+                const out = {};
+                Object.keys(wanted).forEach(pid => { const c = byCode[wanted[pid]]; if (c) out[pid] = c; });
+                setGeo(out);
+                setLocated(Object.keys(out).length);
+                setUnresolved(Object.keys(wanted).length - Object.keys(out).length);
+                setSource('postcodes.io');
+            }
+            catch (e) {
+                if (on) { setSource(''); setMapErr('Could not reach the postcode lookup — pins are unavailable until it responds.'); }
+            }
+        })();
+        return () => { on = false; };
+    }, [list.map(p => p.id + ':' + (p.address || '')).join('|')]);
+    // ---- map ---------------------------------------------------------------
+    React.useEffect(() => {
+        if (typeof L === 'undefined') { setMapErr('The map library did not load. Everything else on this page still works.'); return; }
+        if (mapRef.current || !frameRef.current) return;
+        const map = L.map(frameRef.current, { zoomControl: true, scrollWheelZoom: true, attributionControl: true })
+            .setView(MAP_CENTRE, 13);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap &middot; &copy; CARTO',
+        }).addTo(map);
+        mapRef.current = map;
+        const reposition = () => {
+            setHoverPt(h => h);
+            setSelected(s => { if (s) placeCard(s); return s; });
+            setHover(h => { if (h) placeHover(h); return h; });
+        };
+        map.on('move zoom', reposition);
+        return () => { map.off('move zoom', reposition); map.remove(); mapRef.current = null; };
+    }, []);
+    const containerPoint = (id) => {
+        const map = mapRef.current, c = geo[id];
+        if (!map || !c) return null;
+        const pt = map.latLngToContainerPoint(L.latLng(c[0], c[1]));
+        return { x: pt.x, y: pt.y };
+    };
+    const placeHover = (id) => { const p = containerPoint(id); if (p) setHoverPt({ x: p.x, y: p.y - 48 }); };
+    const placeCard = (id) => {
+        const p = containerPoint(id);
+        if (!p || !frameRef.current) return;
+        const h = frameRef.current.clientHeight;
+        const cardH = (cardRef.current && cardRef.current.offsetHeight) || 300;
+        const fitsAbove = (p.y - 52 - cardH) >= 8;
+        const fitsBelow = (p.y + 8 + cardH) <= (h - 8);
+        const above = fitsAbove ? true : (fitsBelow ? false : (p.y > h / 2));
+        setCardMode(above ? 'above' : 'below');
+        setCardPt({ x: p.x, y: above ? p.y - 52 : p.y + 8 });
+    };
+    // ---- markers ------------------------------------------------------------
+    React.useEffect(() => {
+        const map = mapRef.current;
+        if (!map || typeof L === 'undefined') return;
+        Object.keys(markersRef.current).forEach(id => { map.removeLayer(markersRef.current[id]); });
+        markersRef.current = {};
+        list.forEach(p => {
+            const c = geo[p.id];
+            if (!c) return;
+            const mk = L.marker(L.latLng(c[0], c[1]), {
+                riseOnHover: true,
+                icon: L.divIcon({ className: 'arke-pin', html: mapPinSVG(p.status, selected === p.id), iconSize: [34, 44], iconAnchor: [17, 44] }),
+                zIndexOffset: selected === p.id ? 1000 : 0,
+            });
+            mk.on('mouseover', () => { mk.setZIndexOffset(2000); if (mk._icon) mk._icon.classList.add('arke-pin-hover'); setHover(p.id); placeHover(p.id); });
+            mk.on('mouseout', () => { mk.setZIndexOffset(selected === p.id ? 1000 : 0); if (mk._icon) mk._icon.classList.remove('arke-pin-hover'); setHover(h => h === p.id ? null : h); });
+            mk.on('click', () => { setSelected(p.id); setHover(null); setTimeout(() => placeCard(p.id), 0); });
+            mk.addTo(map);
+            markersRef.current[p.id] = mk;
+        });
+    }, [geo, list.length, selected, list.map(p => p.id + p.status).join('|')]);
+    const fitAll = () => {
+        const map = mapRef.current;
+        const pts = list.filter(p => geo[p.id]).map(p => L.latLng(geo[p.id][0], geo[p.id][1]));
+        if (map && pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [60, 60], maxZoom: 15 });
+    };
+    // ---- chrome --------------------------------------------------------------
+    const unmapped = list.filter(p => !geo[p.id]).length;
+    // Two different failures, and conflating them sends someone to fix the wrong
+    // thing: an address with no postcode in it needs editing, a postcode the
+    // lookup does not recognise does not.
+    const unmappedNote = (noPostcode > 0 && unresolved > 0)
+        ? (noPostcode + (noPostcode === 1 ? ' address has' : ' addresses have') + ' no recognisable postcode, and '
+            + unresolved + (unresolved === 1 ? ' postcode was' : ' postcodes were') + ' not found by the lookup.')
+        : (noPostcode > 0
+            ? (noPostcode + (noPostcode === 1 ? ' project could' : ' projects could') + ' not be placed — no recognisable postcode in the address field.')
+            : (unresolved + (unresolved === 1 ? ' project could' : ' projects could') + ' not be placed — the postcode was read from the address but the lookup did not recognise it.'));
+    const stagePill = (st, small) => React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: small ? 6 : 8, padding: small ? '4px 10px' : '6px 13px', borderRadius: 9999, background: st.ghost ? 'transparent' : st.bg, border: st.ghost ? `1px solid ${C.g300}` : 'none', color: st.fg } },
+        React.createElement("span", { style: { width: small ? 7 : 8, height: small ? 7 : 8, borderRadius: '50%', background: st.ghost ? C.g500 : st.fg, opacity: st.ghost ? 1 : 0.85 } }),
+        React.createElement("span", { style: { fontFamily: FONT, fontSize: small ? 11 : 13, fontWeight: 600 } }, st.label));
+    const hoverProject = hover ? list.find(p => p.id === hover) : null;
+    const selProject = selected ? list.find(p => p.id === selected) : null;
+    const iconBtn = (icon, size, onClick, title, danger) => React.createElement("span", { onClick: onClick, title: title, style: { cursor: 'pointer', width: 34, height: 34, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4, background: danger ? 'transparent' : C.white, border: danger ? '1px solid transparent' : `1px solid ${C.line}`, color: danger ? C.g300 : C.g500 } }, lucide(icon, size, 'currentColor', 2));
+    return React.createElement("div", null,
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12, flexWrap: 'wrap' } },
+            React.createElement("span", { style: { fontFamily: FONT, fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.g500 } }, "Central London · Sites"),
+            React.createElement("span", { style: { flex: 1, height: 1, background: C.line, minWidth: 20 } }),
+            React.createElement("span", { style: { fontFamily: FONT, fontSize: 11, fontWeight: 500, color: C.g500 } },
+                located, " of ", list.length, " addresses located", source ? ' · ' + source : ''),
+            React.createElement("span", { onClick: fitAll, style: { cursor: 'pointer', background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '8px 12px', fontFamily: FONT, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.g500 } }, "Fit all")),
+        React.createElement("div", { style: { position: 'relative', background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden', boxShadow: '0 4px 12px rgba(24,59,79,.08), 0 2px 4px rgba(24,59,79,.06)' } },
+            React.createElement("div", { ref: frameRef, style: { height: 660, width: '100%', background: '#F4F3F1' } }),
+            mapErr ? React.createElement("div", { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(244,243,241,0.94)', zIndex: 700, fontFamily: FONT, fontSize: 13, color: C.g500, textAlign: 'center', padding: 24 } }, mapErr) : null,
+            React.createElement("div", { style: { position: 'absolute', left: 18, bottom: 18, zIndex: 500, background: 'rgba(255,255,255,0.94)', border: `1px solid ${C.line}`, borderRadius: 4, padding: '12px 16px 13px', boxShadow: '0 4px 12px rgba(24,59,79,.08)' } },
+                React.createElement("div", { style: { fontFamily: FONT, fontSize: 9, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.g500, marginBottom: 9 } }, "Stage"),
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(2, auto)', gap: '7px 22px' } },
+                    STATUSES.map(st => React.createElement("div", { key: st.value, style: { display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' } },
+                        React.createElement("span", { style: { width: 20, height: 26, display: 'inline-block' }, dangerouslySetInnerHTML: { __html: mapPinSVG(st.value, false).replace('width="34" height="44"', 'width="20" height="26"') } }),
+                        React.createElement("span", { style: { fontFamily: FONT, fontSize: 11, fontWeight: 500, color: C.g700 } }, st.label))))),
+            (hoverProject && hoverPt && selected !== hover) ? (() => {
+                const st = STATUSES.find(x => x.value === hoverProject.status) || STATUSES[0];
+                return React.createElement("div", { style: { position: 'absolute', left: hoverPt.x, top: hoverPt.y, zIndex: 550, transform: 'translate(-50%, -100%)', pointerEvents: 'none' } },
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 9, background: C.white, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.carmine}`, borderRadius: 2, padding: '7px 11px', boxShadow: '0 4px 12px rgba(24,59,79,.08), 0 2px 4px rgba(24,59,79,.06)', whiteSpace: 'nowrap' } },
+                        React.createElement("span", { style: { fontFamily: FONT, fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: C.carmine } }, hoverProject.project_number || '—'),
+                        React.createElement("span", { style: { fontFamily: FONT, fontSize: 13, fontWeight: 600, color: C.ink0 } }, hoverProject.name),
+                        stagePill(st, true)),
+                    React.createElement("div", { style: { width: 9, height: 9, background: C.white, borderRight: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, transform: 'rotate(45deg)', margin: '-5px auto 0' } }));
+            })() : null,
+            (selProject && cardPt) ? (() => {
+                const st = STATUSES.find(x => x.value === selProject.status) || STATUSES[0];
+                const above = cardMode === 'above';
+                const pointer = React.createElement("div", { style: { width: 12, height: 12, background: above ? C.white : C.g50, borderRight: above ? `1px solid ${C.line}` : 'none', borderBottom: above ? `1px solid ${C.line}` : 'none', borderLeft: above ? 'none' : `1px solid ${C.line}`, borderTop: above ? 'none' : `1px solid ${C.line}`, transform: 'rotate(45deg)', margin: above ? '-6px auto 0' : '0 auto -6px' } });
+                const m2 = selProject.site_area_m2 != null ? Number(selProject.site_area_m2) : null;
+                const metric = (label, value, unit) => React.createElement("div", null,
+                    React.createElement("div", { style: { fontFamily: FONT, fontSize: 9, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 4 } }, label),
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 5 } },
+                        React.createElement("span", { style: { fontFamily: FONT, fontSize: 14, fontWeight: 700, color: value === '—' ? C.g300 : C.ink0 } }, value),
+                        unit ? React.createElement("span", { style: { fontFamily: FONT, fontSize: 10, color: C.g500 } }, unit) : null));
+                return React.createElement("div", { ref: cardRef, style: { position: 'absolute', left: cardPt.x, top: cardPt.y, zIndex: 600, width: 306, transform: above ? 'translate(-50%, -100%)' : 'translate(-50%, 0)', pointerEvents: 'auto' } },
+                    above ? null : pointer,
+                    React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderLeft: `4px solid ${C.carmine}`, borderRadius: 4, boxShadow: '0 18px 48px rgba(24,59,79,.14)', overflow: 'hidden' } },
+                        React.createElement("div", { style: { background: C.g50, borderBottom: `1px solid ${C.line}`, padding: '14px 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 12 } },
+                            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                                React.createElement("div", { style: { fontFamily: FONT, fontSize: 15, fontWeight: 700, letterSpacing: '0.02em', color: C.carmine, lineHeight: 1 } }, selProject.project_number || '—'),
+                                React.createElement("div", { style: { fontFamily: FONT, fontSize: 17, fontWeight: 700, color: C.ink0, marginTop: 4 } }, selProject.name)),
+                            iconBtn('maximize-2', 16, () => onOpenProjectDashboard(selProject.id), 'Open the project page'),
+                            iconBtn('x', 15, () => setSelected(null), 'Close', true)),
+                        React.createElement("div", { style: { padding: 14 } },
+                            React.createElement("div", { style: { fontFamily: FONT, fontSize: 13, color: C.g500, lineHeight: 1.4 } }, selProject.address || 'No address recorded'),
+                            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0 14px' } },
+                                stagePill(st, false),
+                                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
+                                    React.createElement("span", { style: { width: 10, height: 10, borderRadius: '50%', background: selProject.secured ? C.success : C.g500 } }),
+                                    React.createElement("span", { style: { fontFamily: FONT, fontSize: 13, fontWeight: 600, color: selProject.secured ? C.success : C.g500 } }, selProject.secured ? 'Secured' : 'Unsecured'))),
+                            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` } },
+                                metric('Site area', m2 != null ? (m2.toLocaleString() + ' / ' + Math.round(m2 * 10.7639).toLocaleString()) : '—', m2 != null ? 'm² / ft²' : null),
+                                metric('Floor', selProject.whole_building ? 'Whole building' : (selProject.floor_level || '—'), null)),
+                            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0' } },
+                                React.createElement("span", { style: { width: 22, height: 3, background: '#000' } }),
+                                React.createElement("span", { style: { flex: 1, height: 1, background: C.line } })),
+                            React.createElement("span", { onClick: () => onOpenProjectDashboard(selProject.id), style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, background: C.carmine, color: '#fff', borderRadius: 2, padding: '10px 14px', fontFamily: FONT, fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase' } },
+                                lucide('maximize-2', 14, 'currentColor', 2), "Expand project page"))),
+                    above ? pointer : null);
+            })() : null),
+        unmapped > 0 ? React.createElement("div", { style: { marginTop: 12, fontFamily: FONT, fontSize: 12, fontStyle: 'italic', color: C.g500 } }, unmappedNote) : null);
+}
 function ProjectListTable({ projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard, updateProjectField, saveStatus }) {
     const [expanded, setExpanded] = React.useState({});
     const anyOpen = Object.keys(expanded).some(k => expanded[k]);
