@@ -103,14 +103,22 @@ function sbSignUp() {
         });
     return _sbSignUpClient;
 }
-// Readable temporary password — no look-alike characters, so it survives being
-// read down a phone or copied off a screen.
+// ⚠ DEV PLACEHOLDER — deliberately predictable, at Tom's request, so fictional
+// people can be signed in as without a password round-trip. Before real people
+// are onboarded, swap this one constant for the random generator below it; the
+// rest of the flow (shown once, shared out of band, forced reset on first
+// sign-in) is already what it will be in production.
+const DEV_TEMP_PASSWORD = '123123';
 function makeTempPassword() {
-    const words = ['carmine', 'prussian', 'atrium', 'soffit', 'mullion', 'reveal', 'plenum', 'datum', 'lintel', 'facade'];
-    const buf = new Uint32Array(3);
-    window.crypto.getRandomValues(buf);
-    const w = words[buf[0] % words.length];
-    return w.charAt(0).toUpperCase() + w.slice(1) + '-' + (1000 + (buf[1] % 9000)) + '-' + (1000 + (buf[2] % 9000));
+    return DEV_TEMP_PASSWORD;
+    // Production version — restore by deleting the line above:
+    //   const words = ['carmine', 'prussian', 'atrium', 'soffit', 'mullion',
+    //                  'reveal', 'plenum', 'datum', 'lintel', 'facade'];
+    //   const buf = new Uint32Array(3);
+    //   window.crypto.getRandomValues(buf);
+    //   const w = words[buf[0] % words.length];
+    //   return w.charAt(0).toUpperCase() + w.slice(1) + '-' +
+    //          (1000 + (buf[1] % 9000)) + '-' + (1000 + (buf[2] % 9000));
 }
 // ============================================================
 // LIVE DATA BUS (RX) — the shared reactive invalidation layer
@@ -5141,10 +5149,6 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
     const [saving, setSaving] = React.useState(false);
     const [showAdd, setShowAdd] = React.useState(false);
     const [orgName, setOrgName] = React.useState('Organisation');
-    // RAISE composer — { id, kind: action|query|flag, project, text, dept, due, parent }
-    const [composer, setComposer] = React.useState(null);
-    const [openItems, setOpenItems] = React.useState([]); // open items on the chosen project, for a query's parent
-    const [raisedCount, setRaisedCount] = React.useState({});
     const canvasRef = React.useRef(null);
     const dragRef = React.useRef(null);
     const panRef = React.useRef(null);
@@ -5315,6 +5319,26 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
         setPeople(prev => prev.map(x => x.id === id ? Object.assign({}, x, { is_team_lead: on })
             : (on && x.department === p.department && x.is_team_lead ? Object.assign({}, x, { is_team_lead: false }) : x)));
     };
+    // Puts someone back on the known temporary password so they can be signed in
+    // as again — the forced first-sign-in reset otherwise leaves each new person
+    // with a password nobody recorded. The authorisation lives in the database
+    // function, not here: only an active senior in the same org gets through,
+    // the new value is fixed server-side so this can never set an arbitrary
+    // password, and every use writes an org_audit_log row.
+    const resetPassword = async (id) => {
+        const p = byId[id];
+        if (!p)
+            return;
+        if (!window.confirm('Put ' + p.display_name + '\u2019s password back to the temporary one?\n\nThey will be asked to choose a new one the next time they sign in.'))
+            return;
+        try {
+            const { error } = await sb.rpc('reset_password_to_temporary', { p_user: id });
+            if (error)
+                throw error;
+            flash(p.display_name + '\u2019s password is back to ' + DEV_TEMP_PASSWORD + ' \u2014 they set a new one on next sign-in.');
+        }
+        catch (e) { alert('Could not reset that password: ' + e.message); }
+    };
     const removePerson = async (id) => {
         const p = byId[id];
         if (!p || !window.confirm('Remove ' + p.display_name + ' from the organisation? They stay on historic records — this marks them inactive.')) return;
@@ -5327,79 +5351,6 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
             load();
         }
         catch (e) { alert('Could not remove: ' + e.message); }
-    };
-    // ---- RAISE: action / query / flag against a person ------------------------
-    // A query cannot stand alone — queries.parent_type is constrained to
-    // action|flag|date and there is one open query per parent, so a query
-    // raised here names the item on the project it is about rather than
-    // inventing a parentless one.
-    const loadOpenItems = React.useCallback(async (projectId) => {
-        if (!projectId) { setOpenItems([]); return; }
-        try {
-            const [aRes, fRes, dRes] = await Promise.all([
-                sb.from('actions').select('id, description').eq('project_id', projectId).eq('status', 'open'),
-                sb.from('meeting_handoffs').select('id, note').eq('project_id', projectId).neq('status', 'acknowledged'),
-                sb.from('project_key_dates').select('id, event_name').eq('project_id', projectId).eq('completed', false),
-            ]);
-            const out = [];
-            (aRes.data || []).forEach(r => out.push({ key: 'action:' + r.id, label: 'Action — ' + (r.description || '').slice(0, 60) }));
-            (fRes.data || []).forEach(r => out.push({ key: 'flag:' + r.id, label: 'Flag — ' + (r.note || '').slice(0, 60) }));
-            (dRes.data || []).forEach(r => out.push({ key: 'date:' + r.id, label: 'Key date — ' + (r.event_name || '').slice(0, 60) }));
-            setOpenItems(out);
-        }
-        catch (_) { setOpenItems([]); }
-    }, []);
-    const openComposer = (id, kind) => {
-        const person = byId[id];
-        setOpenItems([]);
-        setComposer({ id: id, kind: kind, project: '', text: '', due: '',
-            dept: (person && person.department) || (byId[parentMap[id]] && byId[parentMap[id]].department) || dept || 'pre-con', parent: '' });
-    };
-    const submitComposer = async () => {
-        const c = composer;
-        if (!c) return;
-        const person = byId[c.id];
-        const proj = (projects || []).find(p => p.id === c.project);
-        if (!c.project) { flash('Pick the project this relates to.'); return; }
-        if (!c.text.trim()) { flash('Add a line of detail first.'); return; }
-        if (c.kind === 'query' && !c.parent) { flash('Choose what on that project the question is about.'); return; }
-        const orgId = profile ? profile.org_id : null;
-        try {
-            if (c.kind === 'action') {
-                const { data, error } = await sb.from('actions').insert({
-                    org_id: orgId, project_id: c.project, description: c.text.trim(), owner_user_id: c.id,
-                    due_date: c.due || null, status: 'open', source_type: 'org-chart',
-                    source_ref: currentUser ? currentUser.id : null, created_by: currentUser ? currentUser.id : null,
-                }).select().single();
-                if (error) throw error;
-                await logItemEvent('action', data.id, 'create', { actorId: currentUser.id, orgId: orgId, subjectId: c.id, body: 'Raised from the organisation chart' });
-                flash('Action assigned to ' + person.display_name + ' on ' + (proj ? proj.name : 'the project') + (c.due ? ', due ' + c.due : '') + ' — it lands in their My Work.');
-            }
-            else if (c.kind === 'flag') {
-                const { data, error } = await sb.from('meeting_handoffs').insert({
-                    org_id: orgId, project_id: c.project, from_meeting_id: null, from_meeting_type: 'org-chart',
-                    to_department: c.dept, note: c.text.trim(), status: 'open',
-                    created_by: currentUser ? currentUser.id : null,
-                }).select().single();
-                if (error) throw error;
-                await logItemEvent('flag', data.id, 'create', { actorId: currentUser.id, orgId: orgId, body: 'Raised from the organisation chart' });
-                flash('Flagged to ' + orgDeptLabel(c.dept) + ' on ' + (proj ? proj.name : 'the project') + ' — picked up at their next meeting.');
-            }
-            else {
-                const parts = c.parent.split(':');
-                const { data, error } = await sb.from('queries').insert({
-                    org_id: orgId, parent_type: parts[0], parent_id: parts[1], project_id: c.project,
-                    raised_by: currentUser ? currentUser.id : null, target_user_id: c.id, status: 'open',
-                }).select().single();
-                if (error) throw error;
-                await sb.from('query_messages').insert({ org_id: orgId, query_id: data.id, author_id: currentUser.id, body: c.text.trim() });
-                await logItemEvent('query', data.id, 'raise', { actorId: currentUser.id, orgId: orgId, subjectId: c.id, body: 'Raised from the organisation chart' });
-                flash('Query raised with ' + person.display_name + ' on ' + (proj ? proj.name : 'the project') + ' — they hold the ball until they answer.');
-            }
-            setRaisedCount(r => Object.assign({}, r, { [c.id]: (r[c.id] || 0) + 1 }));
-            setComposer(null);
-        }
-        catch (e) { flash('Could not raise that: ' + e.message); }
     };
     // ---- save / discard ------------------------------------------------------
     const save = async () => {
@@ -5551,7 +5502,6 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
         if (n.role === 'senior' && !exec) chips.push(chip('Senior', C.carmineSoft, C.carmine, C.carmineMid));
         if (n.manager_id && byId[n.manager_id]) chips.push(chip('↳ ' + (byId[n.manager_id].initials || ''), C.white, C.carmine, C.carmineMid));
         if (traced && onRoute && n.id !== traced) chips.push(chip('Escalates here', C.carmineSoft, C.carmine, C.carmineMid));
-        if (raisedCount[n.id]) chips.push(chip(raisedCount[n.id] + ' raised', C.carmineSoft, C.carmine, C.carmineMid));
         return React.createElement("div", { key: n.id,
             onMouseEnter: () => { if (!dragRef.current) setHovered(n.id); },
             onMouseLeave: () => setHovered(h => h === n.id ? null : h),
@@ -5576,43 +5526,6 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
     // ---- inline editor ------------------------------------------------------
     const lbl = (t) => React.createElement("div", { style: { fontFamily: FONT, fontSize: 9, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 4 } }, t);
     const fld = { width: '100%', padding: '7px 9px', border: `1px solid ${C.line}`, borderRadius: 2, fontSize: 12.5, background: C.white, color: C.ink0, boxSizing: 'border-box', fontFamily: FONT, outline: 'none' };
-    const raiseBtn = (kind, label, active, onClick) => React.createElement("span", { key: kind, onClick: onClick, style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '7px 6px', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: active ? C.prussian : C.white, color: active ? '#fff' : C.g500, border: `1px solid ${active ? C.prussian : C.line}` } }, label);
-    const renderRaise = (n) => {
-        const isMe = currentUser && n.id === currentUser.id;
-        if (isMe)
-            return React.createElement("div", { style: { fontFamily: FONT, fontSize: 10.5, color: C.mist, lineHeight: 1.45 } },
-                "This is you — raise actions, queries and flags from someone else's card.");
-        const c = (composer && composer.id === n.id) ? composer : null;
-        const upd = (k, v) => setComposer(p => Object.assign({}, p, { [k]: v }));
-        const projSel = React.createElement("select", { value: c ? c.project : '', onChange: e => { upd('project', e.target.value); if (c && c.kind === 'query') loadOpenItems(e.target.value); }, style: Object.assign({}, fld, { border: `1px solid ${(c && !c.project) ? C.carmine40 : C.line}` }) },
-            React.createElement("option", { value: "" }, "Which project?"),
-            (projects || []).slice().sort((a, b) => (a.project_number || '').localeCompare(b.project_number || '')).map(p => React.createElement("option", { key: p.id, value: p.id }, (p.project_number ? p.project_number + ' ' : '') + p.name)));
-        return React.createElement(React.Fragment, null,
-            React.createElement("div", null,
-                React.createElement("div", { style: { fontFamily: FONT, fontSize: 9, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500, marginBottom: 4 } }, "Raise"),
-                React.createElement("div", { style: { display: 'flex', gap: 6 } },
-                    raiseBtn('action', 'Action', !!(c && c.kind === 'action'), () => (c && c.kind === 'action') ? setComposer(null) : openComposer(n.id, 'action')),
-                    raiseBtn('query', 'Query', !!(c && c.kind === 'query'), () => (c && c.kind === 'query') ? setComposer(null) : openComposer(n.id, 'query')),
-                    raiseBtn('flag', 'Flag', !!(c && c.kind === 'flag'), () => (c && c.kind === 'flag') ? setComposer(null) : openComposer(n.id, 'flag')))),
-            c ? React.createElement("div", { style: { border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.carmine}`, background: C.g50, borderRadius: 2, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 } },
-                React.createElement("div", { style: { fontFamily: FONT, fontSize: 10.5, fontWeight: 600, color: C.ink0 } },
-                    c.kind === 'action' ? ('New action for ' + n.display_name) : (c.kind === 'query' ? ('Ask ' + n.display_name + ' a question') : 'Raise a flag')),
-                projSel,
-                c.kind === 'query' ? React.createElement(React.Fragment, null,
-                    React.createElement("select", { value: c.parent, onChange: e => upd('parent', e.target.value), style: fld },
-                        React.createElement("option", { value: "" }, openItems.length ? 'What is it about?' : (c.project ? 'Nothing open on that project' : 'Pick a project first')),
-                        openItems.map(o => React.createElement("option", { key: o.key, value: o.key }, o.label))),
-                    (c.project && openItems.length === 0)
-                        ? React.createElement("div", { style: { fontFamily: FONT, fontSize: 10, color: C.mist, lineHeight: 1.4 } }, "A question hangs off an action, flag or key date. Nothing is open on that project — raise an action instead.")
-                        : null) : null,
-                React.createElement("textarea", { value: c.text, onChange: e => upd('text', e.target.value), rows: 2, placeholder: c.kind === 'action' ? 'What needs doing?' : (c.kind === 'query' ? 'What do you need to know?' : 'What needs picking up?'), style: Object.assign({}, fld, { resize: 'vertical', fontFamily: FONT }) }),
-                c.kind === 'flag' ? React.createElement("select", { value: c.dept, onChange: e => upd('dept', e.target.value), style: fld },
-                    DEPARTMENTS.map(o => React.createElement("option", { key: o.value, value: o.value }, 'Flag to ' + o.label))) : null,
-                c.kind === 'action' ? React.createElement("input", { type: "date", value: c.due, onChange: e => upd('due', e.target.value), style: fld }) : null,
-                React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 6 } },
-                    React.createElement("span", { onClick: () => setComposer(null), style: { cursor: 'pointer', padding: '7px 12px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', color: C.g500 } }, "Cancel"),
-                    React.createElement("span", { onClick: submitComposer, style: { cursor: 'pointer', padding: '7px 13px', background: C.carmine, color: '#fff', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' } }, c.kind === 'action' ? 'Assign' : (c.kind === 'query' ? 'Ask' : 'Flag')))) : null);
-    };
     const renderEditor = (n) => {
         if (!isSenior)
             return React.createElement("div", { style: { marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}`, fontFamily: FONT, fontSize: 10.5, color: C.g500, lineHeight: 1.45 } },
@@ -5638,10 +5551,12 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
                 React.createElement("span", { onClick: () => patch(n.id, { role: n.role === 'senior' ? 'contributor' : 'senior' }), style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '7px 8px', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', background: n.role === 'senior' ? C.prussian : C.white, color: n.role === 'senior' ? '#fff' : C.g500, border: `1px solid ${n.role === 'senior' ? C.prussian : C.line}` } }, "Senior"),
                 React.createElement("span", { onClick: () => setTeamLead(n.id, !n.is_team_lead), style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '7px 8px', borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', background: n.is_team_lead ? C.carmine : C.white, color: n.is_team_lead ? '#fff' : C.g500, border: `1px solid ${n.is_team_lead ? C.carmine : C.line}` } }, "Team lead")),
             React.createElement("div", { style: { fontFamily: FONT, fontSize: 10, color: C.mist, lineHeight: 1.4 } }, "Team lead and Senior are independent — leading a team does not grant senior permissions."),
-            renderRaise(n),
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 2 } },
-                React.createElement("span", { style: { fontFamily: FONT, fontSize: 10.5, color: C.g500 } }, parentNode ? ('Escalates to ' + (parentNode.display_name || orgDeptLabel(parentNode.department))) : 'Top of the tree'),
-                React.createElement("span", { onClick: () => removePerson(n.id), style: { cursor: 'pointer', padding: '6px 9px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', color: C.redStatus } }, "Remove")));
+            React.createElement("div", { style: { fontFamily: FONT, fontSize: 10.5, color: C.g500, paddingTop: 2 } }, parentNode ? ('Escalates to ' + (parentNode.display_name || orgDeptLabel(parentNode.department))) : 'Top of the tree'),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+                (currentUser && n.id === currentUser.id)
+                    ? null
+                    : React.createElement("span", { onClick: () => resetPassword(n.id), title: "Set their password back to the temporary one", style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '6px 9px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.prussian } }, "Reset password"),
+                React.createElement("span", { onClick: () => removePerson(n.id), style: { flex: 1, textAlign: 'center', cursor: 'pointer', padding: '6px 9px', background: C.white, border: `1px solid ${C.line}`, borderRadius: 2, fontFamily: FONT, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.redStatus } }, "Remove")));
     };
     // ---- header / toolbar / canvas -------------------------------------------
     const teamCount = DEPARTMENTS.filter(o => people.some(p => p.department === o.value)).length;
@@ -5753,8 +5668,7 @@ function OrgAddPersonModal({ onClose, currentUser, profile, onDone }) {
                     await new Promise(r => setTimeout(r, 400));
                 }
             }
-            setDone({ name: f.display_name.trim(), email: email, password: password,
-                needsConfirm: !!(au && !au.session && au.user && !au.user.email_confirmed_at) });
+            setDone({ name: f.display_name.trim(), email: email, password: password });
         }
         catch (e) { setErr(e.message || String(e)); }
         setBusy(false);
@@ -5768,11 +5682,7 @@ function OrgAddPersonModal({ onClose, currentUser, profile, onDone }) {
                 React.createElement("div", null, lbl('Email'), React.createElement("div", { style: { fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 13, color: C.ink0 } }, done.email)),
                 React.createElement("div", null, lbl('Temporary password'), React.createElement("div", { style: { fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 15, fontWeight: 700, color: C.carmine } }, done.password))),
             React.createElement("div", { style: { fontFamily: FONT, fontSize: 12, color: C.g500, lineHeight: 1.5 } },
-                "They are asked to set their own password the first time they sign in, and cannot use the app until they do."),
-            done.needsConfirm
-                ? React.createElement("div", { style: { background: C.amberLight, border: `1px solid ${C.amber}`, color: C.warn, borderRadius: 2, padding: '10px 12px', fontFamily: FONT, fontSize: 12, lineHeight: 1.5 } },
-                    "This Supabase project has email confirmation switched on, so they must click the link in their inbox before the password will work.")
-                : null)
+                "The account works straight away — no confirmation email. They are asked to set their own password the first time they sign in, and cannot use the app until they do."))
         : React.createElement("div", { style: { padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 12 } },
             React.createElement("div", null, lbl('Full name'), React.createElement("input", { value: f.display_name, onChange: set('display_name'), placeholder: "Full name", style: Object.assign({}, inputStyle(), { width: '100%' }) })),
             React.createElement("div", { style: { display: 'flex', gap: 10 } },
@@ -5787,7 +5697,7 @@ function OrgAddPersonModal({ onClose, currentUser, profile, onDone }) {
                     React.createElement("option", { value: "contributor" }, "Contributor"),
                     React.createElement("option", { value: "senior" }, "Senior")))),
             React.createElement("div", { style: { fontFamily: FONT, fontSize: 11.5, color: C.g500, lineHeight: 1.5 } },
-                "This creates their login straight away with a temporary password, which you pass on and they replace on first sign-in."),
+                "This creates their login straight away with a temporary password set in the app — no confirmation email. You pass it on separately, and they replace it the first time they sign in."),
             err ? React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: '8px 12px', borderRadius: 2, fontFamily: FONT, fontSize: 12 } }, err) : null);
     return React.createElement("div", { onClick: done ? undefined : onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
         React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 2, width: 480, maxWidth: '94vw', boxShadow: '0 12px 40px rgba(24,59,79,0.22)' } },
