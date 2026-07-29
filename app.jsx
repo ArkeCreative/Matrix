@@ -1396,11 +1396,24 @@ function Dashboard({ user, profile, onProfileUpdated }) {
                 // a bus-driven refetch landing mid-debounce would fight it.
                 // The entry stays in saveTimers until the write lands, which is
                 // what marks this project dirty for refreshProjects().
-                const { error } = await sbQuiet.from('projects')
+                const { data: rows, error } = await sbQuiet.from('projects')
                     .update({ [field]: value, last_updated_by: user.id })
-                    .eq('id', projectId);
+                    .eq('id', projectId)
+                    .select('id');
                 if (error)
                     throw error;
+                // P0-4a: projects are senior-owned. PostgREST reports a
+                // policy-filtered UPDATE as a success with zero rows, not as an
+                // error — so without this check a refused edit would look saved
+                // and quietly revert on the next reload. Drop the dirty marker
+                // first, or refreshProjects() would preserve the local value it
+                // is trying to undo.
+                if (!rows || rows.length === 0) {
+                    delete saveTimers.current[timerKey];
+                    setSaveStatus(s => (Object.assign(Object.assign({}, s), { [projectId]: { error: 'Not permitted — editing a project is senior-only' } })));
+                    refreshProjects();
+                    return;
+                }
                 setSaveStatus(s => (Object.assign(Object.assign({}, s), { [projectId]: { savedAt: Date.now() } })));
             }
             catch (e) {
@@ -1417,11 +1430,18 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     // together and the per-project debounce would otherwise drop all but the last.
     const updateProjectFields = useCallback(async (projectId, fields) => {
         setProjects(prev => prev.map(p => p.id === projectId ? Object.assign(Object.assign({}, p), fields) : p));
-        const { error } = await sb.from('projects')
+        const { data: rows, error } = await sb.from('projects')
             .update(Object.assign(Object.assign({}, fields), { last_updated_by: user.id }))
-            .eq('id', projectId);
+            .eq('id', projectId)
+            .select('id');
         if (error)
             throw error;
+        // See updateProjectField — a refusal comes back as zero rows, not an
+        // error. Undo the optimistic edit and tell the caller, which alerts.
+        if (!rows || rows.length === 0) {
+            refreshProjects();
+            throw new Error('Not permitted — editing a project is senior-only.');
+        }
     }, [user.id]);
     const createProject = async (data) => {
         try {
@@ -2288,22 +2308,22 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
     return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '300px 1fr', gap: 28, alignItems: 'stretch', opacity: dimmed ? 0.5 : 1, filter: dimmed ? 'saturate(0.35)' : 'none', transition: 'opacity 160ms ease-out' } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { position: 'relative', background: C.white, border: `1px solid ${C.line}`, borderLeft: `4px solid ${C.carmine}`, borderRadius: 2, padding: '22px 22px 20px', boxShadow: darkHover ? '0 4px 14px rgba(24,59,79,0.14)' : '0 1px 2px rgba(24,59,79,0.06)', transform: darkHover ? 'translateY(-1px)' : 'none', transition: 'all 200ms ease-out' } }, onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine; const p = e.currentTarget.querySelector('svg path'); if (p) p.setAttribute('stroke', C.carmine); }, onMouseLeave: e => { e.currentTarget.style.borderColor = C.g200; const p = e.currentTarget.querySelector('svg path'); if (p) p.setAttribute('stroke', C.g500); }, style: { position: 'absolute', top: 18, right: 18, width: 26, height: 26, background: 'transparent', border: `1px solid ${C.g200}`, borderRadius: 2, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontFamily: 'inherit', transition: 'all 160ms ease-out' } }, React.createElement("svg", { width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.g500, strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round" }))), React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
             if (e.target.value !== project.name)
                 updateField('name', e.target.value);
-        }, placeholder: "Project name", rows: 2, style: {
+        }, placeholder: "Project name", rows: 2, readOnly: !isSenior, title: isSenior ? undefined : "Senior only", style: {
             display: 'block', width: '100%', paddingRight: 30, background: 'transparent', border: 'none',
             fontSize: 21, fontWeight: 700, color: C.ink0, fontFamily: FONT, letterSpacing: '-0.02em',
             margin: 0, boxSizing: 'border-box', outline: 'none',
             resize: 'none', overflow: 'hidden', lineHeight: 1.15,
-        }, onFocus: e => { e.target.style.background = C.g50; e.target.style.borderRadius = '2px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 12px' } }, React.createElement("div", { style: { width: 22, height: 3, background: '#000' } }), React.createElement("div", { style: { flex: 1, height: 1, background: C.line } })), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', color: C.carmine, fontFamily: FONT } }, "Project #"), React.createElement("input", { defaultValue: project.project_number || '', onBlur: (e) => {
+        }, onFocus: e => { if (isSenior) { e.target.style.background = C.g50; e.target.style.borderRadius = '2px'; } }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 12px' } }, React.createElement("div", { style: { width: 22, height: 3, background: '#000' } }), React.createElement("div", { style: { flex: 1, height: 1, background: C.line } })), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.18em', color: C.carmine, fontFamily: FONT } }, "Project #"), React.createElement("input", { defaultValue: project.project_number || '', onBlur: (e) => {
             if (e.target.value !== project.project_number)
                 updateField('project_number', e.target.value);
-        }, placeholder: "0000", style: {
+        }, placeholder: "0000", readOnly: !isSenior, title: isSenior ? undefined : "Senior only", style: {
             background: 'transparent', border: 'none',
             fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.carmine, fontFamily: FONT,
             padding: 0, margin: 0, width: 72, outline: 'none',
         }, onFocus: e => { e.target.style.background = C.g50; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement(SaveIndicator, { status: saveStatus })), React.createElement("input", { defaultValue: project.address || '', onBlur: (e) => {
             if (e.target.value !== project.address)
                 updateField('address', e.target.value);
-        }, placeholder: "Address", style: {
+        }, placeholder: "Address", readOnly: !isSenior, title: isSenior ? undefined : "Senior only", style: {
             display: 'block', width: '100%', background: 'transparent', border: 'none',
             fontSize: 13, fontWeight: 300, color: C.g700, fontFamily: FONT,
             padding: 0, marginTop: 8, boxSizing: 'border-box', outline: 'none',
