@@ -698,7 +698,13 @@ The RAISE composers were built and then **removed** at Tom's request — not def
   `sortProjects()` helper. Full has no column headers to click, so it prints a banner —
   "Sorted by *last updated*, descending. Return to the list view to reorder." — with the link
   switching back.
-Verified in Chromium at 1400 / 1040 / 860px, plus 13 unit tests over `sortProjects()`.
+- **The project-number tie-break never reverses.** It is a stable secondary order, not part of what the
+  direction toggle flips. Reversing it too meant that filtering to one stage — or hiding unsecured
+  projects — left every visible row with the same sort value, so clicking that column silently flipped
+  the whole list by project number and looked like an arbitrary reshuffle. A column the active filters
+  have made inert (one distinct value across the visible set) now greys out and refuses the click, with
+  a tooltip saying why.
+Verified in Chromium at 1400 / 1040 / 860px, plus 24 unit tests over `sortProjects()`.
 
 **Still parked.** The open questions were: what is the page primarily for; should the List/Full/Map
 choice persist per person; and two specifics that survive the above —

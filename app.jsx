@@ -2599,21 +2599,37 @@ function sortProjects(projects, sort) {
     const arr = projects.slice();
     arr.sort((x, y) => {
         const a2 = sortVal(x), b2 = sortVal(y);
-        let c = a2 < b2 ? -1 : (a2 > b2 ? 1 : 0);
-        // Project number is the tie-break, so equal statuses or dates keep a
-        // stable, meaningful order rather than shuffling.
-        if (c === 0) {
-            const nx = parseInt(x.project_number, 10), ny = parseInt(y.project_number, 10);
-            c = (isNaN(nx) ? 0 : nx) - (isNaN(ny) ? 0 : ny);
-        }
-        return dir === 'asc' ? c : -c;
+        const c = a2 < b2 ? -1 : (a2 > b2 ? 1 : 0);
+        if (c !== 0) return dir === 'asc' ? c : -c;
+        // Project number is the tie-break, and it is ALWAYS ascending — it is a
+        // stable secondary order, not part of what the direction toggle
+        // reverses. Reversing it too meant that filtering to a single stage (or
+        // hiding unsecured projects) left every visible row with the same sort
+        // value, so clicking that column flipped the whole list by project
+        // number for no visible reason. Now an inert column simply does nothing.
+        const nx = parseInt(x.project_number, 10), ny = parseInt(y.project_number, 10);
+        return (isNaN(nx) ? 0 : nx) - (isNaN(ny) ? 0 : ny);
     });
     return arr;
 }
+// Does this key actually discriminate between the projects currently visible?
+// Used to grey out a column that the active filters have made inert.
+function projectSortKeyIsUseful(projects, key) {
+    if (!projects || projects.length < 2) return false;
+    const val = (pr) => key === 'secured' ? !!pr.secured
+        : (key === 'status' ? (pr.status || '') : (pr[key] || ''));
+    const first = val(projects[0]);
+    return projects.some(pr => val(pr) !== first);
+}
 // The banner the full-card view shows in place of clickable headers.
-function ProjectSortNote({ sort, onBackToList }) {
-    const label = PROJECT_SORT_LABELS[(sort && sort.key) || 'project_number'] || 'project number';
-    const dir = ((sort && sort.dir) || 'asc') === 'asc' ? 'ascending' : 'descending';
+function ProjectSortNote({ sort, projects, onBackToList }) {
+    const key = (sort && sort.key) || 'project_number';
+    // If the filters have left every visible project with the same value for
+    // the chosen key, the effective order is the project-number tie-break —
+    // so say that, rather than naming a key that is doing no work.
+    const inert = key !== 'project_number' && !projectSortKeyIsUseful(projects || [], key);
+    const label = PROJECT_SORT_LABELS[inert ? 'project_number' : key] || 'project number';
+    const dir = (inert || ((sort && sort.dir) || 'asc') === 'asc') ? 'ascending' : 'descending';
     return React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, background: C.g50, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.carmine}`, borderRadius: 2, fontFamily: FONT, fontSize: 12, color: C.g500 } },
         lucide('arrow-up-down', 13, C.carmine, 2),
         React.createElement("span", null,
@@ -2638,13 +2654,22 @@ function ProjectListTable({ projects, users, latestNotes, keyDates, projectActio
     const sortedProjects = React.useMemo(() => sortProjects(projects, sort), [projects, sort.key, sort.dir]);
     const th = (label, sortKey, opts) => {
         const active = sortKey && sort.key === sortKey;
+        // A column every visible project agrees on cannot order anything — the
+        // usual cause is a filter, e.g. Status once you have picked On-site.
+        // Grey it out and refuse the click, rather than letting it look broken.
+        const inert = sortKey && !projectSortKeyIsUseful(projects, sortKey);
+        const clickable = sortKey && !inert;
         return React.createElement("div", {
-            onClick: sortKey ? () => setSort(st => ({ key: sortKey, dir: (st.key === sortKey && st.dir === 'asc') ? 'desc' : 'asc' })) : undefined,
-            title: sortKey ? ('Sort by ' + label) : undefined,
-            style: Object.assign({ fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: active ? C.carmine : C.g500, fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: sortKey ? 'pointer' : 'default', userSelect: 'none', minWidth: 0 }, opts || {}),
+            onClick: clickable ? () => setSort(st => ({ key: sortKey, dir: (st.key === sortKey && st.dir === 'asc') ? 'desc' : 'asc' })) : undefined,
+            title: !sortKey ? undefined
+                : (inert ? (projects.length < 2
+                    ? 'Nothing to sort'
+                    : ('Every project in the current filter has the same ' + (PROJECT_SORT_LABELS[sortKey] || label).replace(' status', '')))
+                    : ('Sort by ' + label)),
+            style: Object.assign({ fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: (active && !inert) ? C.carmine : C.g500, opacity: inert ? 0.4 : 1, fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: clickable ? 'pointer' : 'default', userSelect: 'none', minWidth: 0 }, opts || {}),
         },
             React.createElement("span", { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, label),
-            sortKey ? React.createElement("span", { style: { display: 'inline-flex', flexShrink: 0, opacity: active ? 1 : 0.3, transform: (active && sort.dir === 'desc') ? 'rotate(180deg)' : 'none', transition: `transform 160ms ${EASE}` } }, lucide('chevron-down', 12, 'currentColor', 2.4)) : null);
+            (sortKey && !inert) ? React.createElement("span", { style: { display: 'inline-flex', flexShrink: 0, opacity: active ? 1 : 0.3, transform: (active && sort.dir === 'desc') ? 'rotate(180deg)' : 'none', transition: `transform 160ms ${EASE}` } }, lucide('chevron-down', 12, 'currentColor', 2.4)) : null);
     };
     const header = React.createElement("div", { style: { display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', padding: '14px 22px', background: C.g50, borderBottom: `1px solid ${C.line}` } },
         React.createElement("span", null),
@@ -2683,7 +2708,7 @@ function ProjectFullCards({ projects, users, latestNotes, keyDates, projectActio
     const ordered = React.useMemo(() => sortProjects(projects, sort), [projects, sort && sort.key, sort && sort.dir]);
     if (projects.length === 0) return React.createElement("div", { style: { padding: 40, textAlign: 'center', fontSize: 15, color: C.g500, background: '#fff', border: `1px solid ${C.line}`, borderRadius: 4, fontFamily: FONT } }, "No projects match the current filters.");
     return React.createElement("div", null,
-        React.createElement(ProjectSortNote, { sort: sort, onBackToList: onBackToList }),
+        React.createElement(ProjectSortNote, { sort: sort, projects: projects, onBackToList: onBackToList }),
         React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 32 } }, ordered.map(project => {
         const sec = securedBits(project);
         const stage = stagePillFor(project);
