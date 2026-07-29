@@ -693,7 +693,12 @@ The RAISE composers were built and then **removed** at Tom's request — not def
 - **sortable headers** on Project #, Project, Address, Updated, Secured, Status — click to sort, click
   again to reverse, chevron rotates and turns carmine; Status sorts by pipeline order, every sort ties
   on project number. This closes the "fixed sort" point below.
-Verified in Chromium at 1400 / 1040 / 860px.
+- **The sort persists across the List / Full / Map switch.** It is held in `Dashboard` beside
+  `projectViewMode`, not inside `ProjectListTable`, and both views order through the one shared
+  `sortProjects()` helper. Full has no column headers to click, so it prints a banner —
+  "Sorted by *last updated*, descending. Return to the list view to reorder." — with the link
+  switching back.
+Verified in Chromium at 1400 / 1040 / 860px, plus 13 unit tests over `sortProjects()`.
 
 **Still parked.** The open questions were: what is the page primarily for; should the List/Full/Map
 choice persist per person; and two specifics that survive the above —
