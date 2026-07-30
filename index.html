@@ -5358,7 +5358,8 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                 React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3 } }, kdOpen ? 'Collapse' : 'Expand key dates')),
             kdOpen && React.createElement("div", { style: { marginTop: 16 } }, myKeyDates.length === 0
                 ? React.createElement("div", { style: { border: `1px dashed ${C.line}`, borderRadius: 4, padding: '20px', textAlign: 'center', fontSize: 12.5, color: C.g500 } }, "No key dates recorded for this project yet.")
-                : ((isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } }))))));
+                : ((isSenior && currentUser) ? React.createElement(KeyDatesSection, { project: project, keyDates: myKeyDates, isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange }) : React.createElement(ContributorKeyDates, { keyDates: myKeyDates, project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: () => { } })))),
+        React.createElement(ProgrammeHistory, { project: project, keyDates: myKeyDates, users: users })));
     // ----- MODULES tab ---------------------------------------------------------
     const builtCount = MODULE_DEFS.filter(d => moduleTemplates.some(t => t.module_key === d.key)).length;
     const modulesCard = card(React.createElement(React.Fragment, null,
@@ -7300,6 +7301,157 @@ function DateChangeReasonModal({ projectId, subjectLabel, fromDate, toDate, meet
                 React.createElement("button", { onClick: commit, disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Saving…' : (reason.trim() ? 'Save with reason' : 'Save without a reason')))));
 }
 // ============================================================
+// PROGRAMME HISTORY — the delay record, made visible (Step 1)
+// ============================================================
+// Step 1 shipped the capture without any display, on the reasoning that the
+// views were Step 5. That was wrong: a record nobody can see is one nobody can
+// trust, or even confirm is working. This is the minimum that makes the
+// accruing record legible — the Step 5 work is the *export* and the portfolio
+// roll-up, not this.
+//
+// Two questions, deliberately answered separately:
+//   AGAINST BASELINE  where a date started and where it is now — the net
+//                     position, which is what an EOT argument turns on.
+//   EVERY CHANGE      the chronology, in order, with who and why — the
+//                     contemporaneous record itself.
+function ProgrammeHistory({ project, keyDates, users, defaultOpen }) {
+    const [open, setOpen] = React.useState(!!defaultOpen);
+    const [rows, setRows] = React.useState([]);
+    const [labels, setLabels] = React.useState({ meetings: {}, flags: {}, actions: {} });
+    const [loading, setLoading] = React.useState(true);
+    const load = React.useCallback(async () => {
+        try {
+            const { data } = await sb.from('programme_revisions')
+                .select('*').eq('project_id', project.id).order('changed_at', { ascending: false });
+            const list = data || [];
+            setRows(list);
+            // Resolve the cause references to something readable. Done here rather
+            // than with embedded selects so a deleted meeting or flag degrades to
+            // "no label" instead of dropping the revision from the record.
+            const mIds = list.map(r => r.meeting_id).filter(Boolean);
+            const fIds = list.map(r => r.cause_flag_id).filter(Boolean);
+            const aIds = list.map(r => r.cause_action_id).filter(Boolean);
+            const uniq = a => a.filter((v, i) => a.indexOf(v) === i);
+            const [mRes, fRes, aRes] = await Promise.all([
+                mIds.length ? sb.from('meetings').select('id, meeting_type, meeting_date').in('id', uniq(mIds)) : Promise.resolve({ data: [] }),
+                fIds.length ? sb.from('meeting_handoffs').select('id, note').in('id', uniq(fIds)) : Promise.resolve({ data: [] }),
+                aIds.length ? sb.from('actions').select('id, description').in('id', uniq(aIds)) : Promise.resolve({ data: [] }),
+            ]);
+            const idx = { meetings: {}, flags: {}, actions: {} };
+            ((mRes && mRes.data) || []).forEach(m => { const cfg = MEETING_TYPES[m.meeting_type] || {}; idx.meetings[m.id] = (cfg.short || m.meeting_type || 'Meeting') + (m.meeting_date ? ' · ' + formatMeetingDate(m.meeting_date) : ''); });
+            ((fRes && fRes.data) || []).forEach(f => { idx.flags[f.id] = f.note || 'Flag'; });
+            ((aRes && aRes.data) || []).forEach(a => { idx.actions[a.id] = a.description || 'Action'; });
+            setLabels(idx);
+        }
+        catch (e) { /* empty state covers it */ }
+        setLoading(false);
+    }, [project.id]);
+    useLiveData(['dates', 'projects'], load);
+    React.useEffect(() => { load(); }, [load]);
+    const nameOf = (id) => { const u = (users || []).find(x => x.id === id); return u ? u.display_name : 'Unknown'; };
+    const dayDiff = (from, to) => {
+        if (!from || !to)
+            return null;
+        return Math.round((new Date(String(to).slice(0, 10) + 'T00:00:00') - new Date(String(from).slice(0, 10) + 'T00:00:00')) / 86400000);
+    };
+    // Later than baseline is the bad direction; earlier is good. Neutral when a
+    // date is being set for the first time rather than moved.
+    const driftChip = (days) => {
+        if (days === null || days === 0)
+            return null;
+        const late = days > 0;
+        const n = Math.abs(days);
+        return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', fontFamily: FONT, fontWeight: 700, fontSize: 10, letterSpacing: '0.06em', padding: '2px 8px', borderRadius: 9999, color: late ? C.carmine : C.success, background: late ? C.carmineSoft : C.successBg } }, (late ? '+' : '\u2212') + n + (n === 1 ? ' day' : ' days') + (late ? ' later' : ' earlier'));
+    };
+    const arrowRow = (label, fromDate, toDate, days) => React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' } },
+        React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 13, color: C.ink0 } }, label),
+        React.createElement("span", { style: { fontSize: 12.5, color: C.g500, textDecoration: fromDate ? 'line-through' : 'none' } }, fromDate ? formatMeetingDate(fromDate) : 'Not set'),
+        React.createElement("span", { style: { display: 'inline-flex', color: C.carmine } }, lucide('arrow-right', 13, 'currentColor', 2)),
+        React.createElement("span", { style: { fontSize: 12.5, fontWeight: 700, color: C.ink0 } }, toDate ? formatMeetingDate(toDate) : 'Cleared'),
+        driftChip(days));
+    // ---- against baseline -------------------------------------------------
+    const baselined = !!project.programme_baselined_at;
+    const drifted = [];
+    let onBaseline = 0;
+    if (baselined) {
+        (keyDates || []).forEach(k => {
+            if (!k.baseline_date)
+                return;
+            const d = dayDiff(k.baseline_date, k.target_date);
+            if (d === null || d === 0)
+                onBaseline += 1;
+            else
+                drifted.push({ label: k.event_name || 'Key date', from: k.baseline_date, to: k.target_date, days: d });
+        });
+        [['site_start_date', 'site_start_baseline_date', 'Site start'],
+            ['projected_completion_date', 'projected_completion_baseline_date', 'Projected completion'],
+            ['contracted_completion_date', 'contracted_completion_baseline_date', 'Contracted completion (PC)']].forEach(([cur, base, label]) => {
+            if (!project[base])
+                return;
+            const d = dayDiff(project[base], project[cur]);
+            if (d === null || d === 0)
+                onBaseline += 1;
+            else
+                drifted.push({ label: label, from: project[base], to: project[cur], days: d });
+        });
+    }
+    const totalSlip = drifted.reduce((a, r) => a + r.days, 0);
+    const headline = !baselined
+        ? (rows.length + (rows.length === 1 ? ' change recorded' : ' changes recorded'))
+        : (drifted.length === 0
+            ? 'On baseline'
+            : (drifted.length + (drifted.length === 1 ? ' date' : ' dates') + ' moved from baseline'));
+    const body = React.createElement("div", { style: { marginTop: 16 } },
+        // ---- block A: against baseline ----
+        baselined && React.createElement("div", { style: { marginBottom: drifted.length || rows.length ? 22 : 0 } },
+            React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.14em', color: C.g700, marginBottom: 10 } }, "AGAINST BASELINE"),
+            drifted.length === 0
+                ? React.createElement("div", { style: { fontSize: 12.5, color: C.g500, fontStyle: 'italic' } }, "Every baselined date still sits on its baseline.")
+                : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, drifted.map((d, i) => React.createElement("div", { key: 'dr' + i, style: { padding: '9px 12px', border: `1px solid ${C.line}`, borderRadius: 2, background: C.white } }, arrowRow(d.label, d.from, d.to, d.days)))),
+            React.createElement("div", { style: { fontSize: 11, color: C.g500, marginTop: 9 } },
+                onBaseline > 0 ? (onBaseline + (onBaseline === 1 ? ' other baselined date is' : ' other baselined dates are') + ' unchanged. ') : '',
+                drifted.length > 1 ? ('Net movement across the moved dates: ' + (totalSlip > 0 ? '+' : '') + totalSlip + ' days.') : '')),
+        // ---- block B: the chronology ----
+        React.createElement("div", null,
+            React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.14em', color: C.g700, marginBottom: 10 } }, "EVERY CHANGE, MOST RECENT FIRST"),
+            loading
+                ? React.createElement("div", { style: { fontSize: 12.5, color: C.g500, fontStyle: 'italic' } }, "Loading\u2026")
+                : rows.length === 0
+                    ? React.createElement("div", { style: { border: `1px dashed ${C.line}`, borderRadius: 4, padding: '18px', textAlign: 'center', fontSize: 12.5, color: C.g500 } }, "No programme date has moved yet. Every future move is recorded here automatically.")
+                    : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, rows.map(r => {
+                        const days = dayDiff(r.previous_date, r.new_date);
+                        const when = new Date(r.changed_at);
+                        const ctx = [];
+                        if (r.meeting_id && labels.meetings[r.meeting_id])
+                            ctx.push('In ' + labels.meetings[r.meeting_id]);
+                        if (r.cause_flag_id && labels.flags[r.cause_flag_id])
+                            ctx.push('Caused by flag: ' + labels.flags[r.cause_flag_id]);
+                        if (r.cause_action_id && labels.actions[r.cause_action_id])
+                            ctx.push('Caused by action: ' + labels.actions[r.cause_action_id]);
+                        return React.createElement("div", { key: r.id, style: { padding: '11px 13px', border: `1px solid ${C.line}`, borderLeft: `3px solid ${r.change_kind === 'deleted' ? C.g300 : (days > 0 ? C.carmine : C.prussian)}`, borderRadius: 2, background: C.white } },
+                            arrowRow(r.subject_label, r.previous_date, r.new_date, days),
+                            React.createElement("div", { style: { fontSize: 11, color: C.g500, marginTop: 6 } },
+                                formatMeetingDate(String(r.changed_at).slice(0, 10)),
+                                ' at ' + String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0'),
+                                ' \u00b7 ', nameOf(r.changed_by),
+                                r.change_kind === 'deleted' ? ' \u00b7 key date deleted' : '',
+                                r.subject_kind === 'project_date' ? ' \u00b7 project date' : ''),
+                            r.reason
+                                ? React.createElement("div", { style: { fontSize: 12.5, color: C.ink0, marginTop: 7, paddingLeft: 10, borderLeft: `2px solid ${C.carmineMid}`, fontStyle: 'italic' } }, '\u201c' + r.reason + '\u201d')
+                                : React.createElement("div", { style: { fontSize: 11.5, color: C.mist, marginTop: 7, fontStyle: 'italic' } }, "No reason recorded"),
+                            ctx.length > 0 && React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 } }, ctx.map((t, i) => React.createElement("span", { key: 'c' + i, style: { fontSize: 10.5, color: C.prussian, background: C.prussian10, borderRadius: 2, padding: '3px 8px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, t))));
+                    }))));
+    return React.createElement("div", { style: { marginTop: 24, borderTop: `1px solid ${C.line}`, paddingTop: 20 } },
+        React.createElement("div", { onClick: () => setOpen(v => !v), style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+                React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', color: C.carmine, transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 240ms ${EASE}` } }, lucide('chevron-down', 16, 'currentColor', 2.4)),
+                React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "PROGRAMME HISTORY"),
+                React.createElement("span", { style: { fontSize: 12, color: drifted.length > 0 ? C.carmine : C.g500, fontWeight: drifted.length > 0 ? 600 : 400 } }, headline),
+                !project.programme_baselined_at && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', border: `1.5px solid ${C.g300}`, color: C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', padding: '2px 7px', borderRadius: 9999 } }, "NO BASELINE")),
+            React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3, whiteSpace: 'nowrap' } }, open ? 'Collapse' : 'Expand history')),
+        open && body);
+}
+// ============================================================
 // KEY DATES SECTION — in meeting capture pane
 // ============================================================
 function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meetingCfg, meetingId, onKeyDatesChange, compact }) {
@@ -7473,7 +7625,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
         const attribution = kdEditor && kd.updated_by !== kd.created_by
             ? `edited by ${kdEditor.display_name}`
             : (kdCreator ? `added by ${kdCreator.display_name}` : null);
-        return (React.createElement("div", { key: kd.id, style: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', borderRadius: 3, background: urg.bg, border: `1px solid ${urg.border}` } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, isSenior && (React.createElement("button", { onClick: () => setCompletingId(kd.id), title: "Mark complete", style: { width: 20, height: 20, borderRadius: '50%', border: `2px solid ${urg.dot}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' } })), React.createElement("span", { style: { width: 7, height: 7, borderRadius: '50%', background: urg.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: urg.fg, flex: 1 } }, kd.event_name), React.createElement("span", { style: { fontSize: 11, color: urg.fg } }, formatMeetingDate(kd.target_date)), urg.label && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: urg.dot, fontFamily: FONT } }, urg.label), isSenior && (React.createElement("div", { style: { display: 'flex', gap: 2 } }, React.createElement("button", { onClick: () => { setEditingId(kd.id); setEditData({ event_name: kd.event_name, target_date: kd.target_date }); }, style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, color: urg.fg, opacity: 0.5, padding: '0 2px' }, title: "Edit" }, "\u270E"), React.createElement("button", { onClick: () => handleDelete(kd.id), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, color: urg.fg, opacity: 0.5, padding: '0 2px' }, title: "Delete" }, "\u2715")))), attribution && React.createElement("div", { style: { fontSize: 9, color: urg.fg, opacity: 0.6, paddingLeft: isSenior ? 28 : 15, fontStyle: 'italic' } }, attribution)));
+        return (React.createElement("div", { key: kd.id, style: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', borderRadius: 3, background: urg.bg, border: `1px solid ${urg.border}` } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, isSenior && (React.createElement("button", { onClick: () => setCompletingId(kd.id), title: "Mark complete", style: { width: 20, height: 20, borderRadius: '50%', border: `2px solid ${urg.dot}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' } })), React.createElement("span", { style: { width: 7, height: 7, borderRadius: '50%', background: urg.dot, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: urg.fg, flex: 1 } }, kd.event_name), React.createElement("span", { style: { fontSize: 11, color: urg.fg } }, formatMeetingDate(kd.target_date)), (() => { if (!kd.baseline_date || !kd.target_date) return null; const dd = Math.round((new Date(String(kd.target_date).slice(0, 10) + 'T00:00:00') - new Date(String(kd.baseline_date).slice(0, 10) + 'T00:00:00')) / 86400000); if (!dd) return null; const late = dd > 0; return React.createElement("span", { title: 'Baseline ' + formatMeetingDate(kd.baseline_date), style: { fontFamily: FONT, fontWeight: 700, fontSize: 9, letterSpacing: '0.06em', padding: '1px 6px', borderRadius: 9999, whiteSpace: 'nowrap', color: late ? C.carmine : C.success, background: late ? C.carmineSoft : C.successBg } }, (late ? '+' : '\u2212') + Math.abs(dd) + 'd'); })(), urg.label && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: urg.dot, fontFamily: FONT } }, urg.label), isSenior && (React.createElement("div", { style: { display: 'flex', gap: 2 } }, React.createElement("button", { onClick: () => { setEditingId(kd.id); setEditData({ event_name: kd.event_name, target_date: kd.target_date }); }, style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, color: urg.fg, opacity: 0.5, padding: '0 2px' }, title: "Edit" }, "\u270E"), React.createElement("button", { onClick: () => handleDelete(kd.id), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, color: urg.fg, opacity: 0.5, padding: '0 2px' }, title: "Delete" }, "\u2715")))), attribution && React.createElement("div", { style: { fontSize: 9, color: urg.fg, opacity: 0.6, paddingLeft: isSenior ? 28 : 15, fontStyle: 'italic' } }, attribution)));
     }))), closedDates.length > 0 && (React.createElement("div", null, React.createElement("button", { onClick: () => setShowClosed(v => !v), style: {
             background: 'transparent', border: 'none', cursor: 'pointer',
             fontSize: 10, color: C.muted, padding: '4px 0',
