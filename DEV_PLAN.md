@@ -717,8 +717,8 @@ and flags. The "senior/team-lead only" rules the app showed were JavaScript, not
 > envisaged". This is not a bug list, it's a design pass on what the Register *is* — how flags/actions
 > are triaged from it, what the activity feed shows and reads from (`audit_log` via `record_activity`
 > vs the per-item `item_events` timeline — the two currently diverge by path), and whether per-row
-> inline actions come back. Lands in/around **Step 4** (executive view — accountability & registers),
-> but needs its own scoping conversation first. Do not treat Step 4 as covering it by default.
+> inline actions come back. **Now absorbed into the ⚑ WORKSHOP below (the accountability spine) — same
+> conversation, wider than the Register.** Do not treat Step 4 as covering it by default.
 
 ### ▶ Step 3 — Housekeeping batch  *(small · no dependencies · **NEXT**)*
 Several one-liners that have been carried for weeks. Worth one batch rather than one each.
@@ -732,7 +732,73 @@ Several one-liners that have been carried for weeks. Worth one batch rather than
 - **Checklist follow-ups:** audit trigger so saves/sign-offs emit into the hub; "attach evidence" row
   action; export (the PDF/XLSX buttons render but do nothing).
 
-### ▶ Step 4 — Executive view, part 1: accountability & registers  *(medium · no dependencies)*
+### ⚑ WORKSHOP (with Tom, BEFORE Step 4) — the accountability spine: process map & consolidation
+**Raised by Tom 2026-07-30. `⚑ REMIND TOM at the start of the session that reaches this point` — he
+wants to *workshop and visualise* the flows before more is built on top of them, and asked to be
+reminded. Do not silently roll past it into Step 4.** This supersedes and absorbs the deferred
+Register/activity-log rework noted under Step 2 — same conversation, wider than the Register.
+
+**Why now.** Actions, flags, queries and key dates have each grown their own raise paths, report
+surfaces and lifecycle rules, built at different times, and they have drifted. Every defect Tom hit
+this session — register stub buttons, meeting acknowledge not writing the timeline, acknowledged
+flags vanishing from the project tab — is the *same* root cause wearing different clothes: **the same
+operation is implemented more than once, on more than one surface, and the copies fall out of sync.**
+Building the exec view (Step 4), the register/log modules (Step 8) and the agenda modules (Step 9) on
+these primitives *as they are* just multiplies the number of places that can drift. Fix the spine
+first.
+
+**Concrete findings (verified against code + live DB, 2026-07-30) — the evidence, not vibes:**
+- **No single vocabulary for "done."** An action is closed as `status: 'completed'` on the
+  project/register "Mark complete" path (`app.jsx` ~1446) but `status: 'closed'` in the item modal and
+  ActionRow (~3360, ~7095). Live data is all `'closed'` today, so it *looks* fine — but the first
+  completion via the other path writes `'completed'`, and the many `status === 'closed'` filters won't
+  match it. A filter at ~7236 even tests `neq('status','complete')` — a third spelling that matches
+  nothing. This is a live bug generator.
+- **Four different lifecycle models.** actions → `status` text (open/closed, plus the stray
+  'completed'); flags (`meeting_handoffs`) → `status` text (open/acknowledged/converted); queries →
+  `status` text (open/resolved); key dates → **not a status column at all**, a `completed` boolean
+  plus the new `programme_revisions`. Four objects, three enums with different value sets, one boolean.
+  Nothing shares a notion of "state."
+- **Logic duplicated per surface, not centralised.** acknowledge / convert / complete / raise / query
+  each exist in two or three components (meeting pane, `ItemModal`, Register, project detail) with
+  subtly different behaviour. There is no single `acknowledgeFlag()` / `completeAction()` service that
+  every surface calls — so a fix or an audit-write added to one path silently misses the others (which
+  is exactly how the meeting acknowledge shipped without a timeline entry).
+- **Two audit trails that diverge by path.** `audit_log` (trigger-written, drives the activity feed)
+  and `item_events` (app-written, drives the modal timeline). Which one gets written depends on the
+  code path taken. They should be one spine, or one derived from the other.
+- **"Open vs resolved" is re-derived per view.** Shared arrays are open-only (`.eq('open')` /
+  `.neq('acknowledged')`); each detail view bolts on its own "done" loader with its own filter. The
+  Fitzrovia bug was precisely this. There is no single contract for "the resolved set."
+- **Conversion/provenance is implicit.** flag→action (`resulting_action_id`), date→action (recovery,
+  `source_type='date'`), query→parent (`parent_type`/`parent_id`) are FK links reconstructed
+  differently in every view. The causal chain — a flag became an action that was queried and moved a
+  key date — is not a first-class, followable object, which is a waste, because that chain is exactly
+  what makes the delay record (Steps 1/5) and the exec view valuable.
+
+**What's actually good, and should be kept:** the RX data bus (live, auto-emitting) is the right
+backbone; `item_events` as an append-only who/when/what spine is the right foundation; the polymorphic
+query model is sensible; `programme_revisions` (Step 1) is clean. **The primitives aren't the problem —
+the missing single service layer and consistent lifecycle contract on top of them are.**
+
+**Directions to put to Tom in the workshop (not decisions yet):**
+1. **One vocabulary + a state machine per type**, documented and enforced (DB `check` constraint).
+   Fix completed/closed first — it's a one-liner with a data backfill.
+2. **A single service layer** — one function per operation (raise / acknowledge / convert / complete /
+   query / resolve / reassign / move-date) that every surface calls. Highest-leverage change here; it
+   retires the whole class of "one surface drifted" bug.
+3. **One audit source of truth** — make `item_events` the spine and derive the activity feed from it
+   (or a view), retire the divergence.
+4. **One lifecycle-filter contract** so every list agrees on open vs resolved.
+5. **First-class provenance** — make the conversion chain a followable object; it feeds Steps 5 and 7.
+
+**Deliverable of the workshop:** a process/flow map — for each object type, where it is *raised*, what
+it can *transition* to, what it can *convert into*, who holds the ball at each state, where it is
+*reported*, and what is written to the audit trail. Claude can render this as a diagram
+(mermaid/artifact) interactively with Tom — that is the "visualise the processes" he asked for. The map
+then drives the consolidation build and everything reporting-heavy after it.
+
+### ▶ Step 4 — Executive view, part 1: accountability & registers  *(medium · needs the WORKSHOP above)*
 The half of the old Phase 7 that is buildable **today**, on data that already exists:
 - accountability register — open actions and flags by person, aged;
 - clickable project register;
@@ -872,6 +938,12 @@ should inform it: the **self-aborting SQL block** for anything touching the data
 deployed app is the third leg.
 
 ## Open decisions
+- **⚑ NEW — accountability spine (WORKSHOP before Step 4, Tom 2026-07-30):** actions / flags / queries /
+  key dates have drifted into four raise-report-convert models built at different times. Tom wants to
+  workshop and *visualise* the flows before building more on top. See the ⚑ WORKSHOP entry above the
+  roadmap's Step 4. Decisions to settle there: one status vocabulary + state machine per type; a single
+  service layer for raise/act operations; one audit source of truth (`item_events` vs `audit_log`); one
+  open/resolved filter contract; first-class provenance. **Remind Tom when the session reaches this.**
 - **Workflow:** one PR per batch, fresh branch off `main`, opened at the end.
 - New-project approval = a new project state (e.g. `pending`).
 - Default project-visibility rules per role (Phase 6).
