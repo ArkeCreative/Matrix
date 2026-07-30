@@ -700,6 +700,18 @@ and flags. The "senior/team-lead only" rules the app showed were JavaScript, not
 >   arise** — contributors can't create meetings. The real, testable change is that a contributor
 >   *lead* who isn't the chair can now act; that works.
 
+> **Follow-up 2 (2026-07-30), from Tom — acknowledged flags vanished from the project detail.** Priya
+> acknowledged a flag on Fitzrovia Yard with a note; it recorded perfectly in the DB, but on the
+> project **Flags & Actions** tab neither the closed state nor the note appeared — while closed
+> *actions* with notes did. **Root cause:** `refreshProjectFlags` is `.neq('acknowledged')` (it feeds
+> the app-wide Open-Flags KPI and indicators), so an acknowledged flag was filtered out of the data the
+> tab reads. Actions dodge this because the tab loads a *separate* `doneActions` query for the
+> Completed section; flags had no equivalent. **Fixed** by mirroring that: a `doneFlags` loader
+> (project-scoped, non-open, live on the `flags` topic) plus a **RESOLVED** section that shows each
+> acknowledged/converted flag with who/when and the `acknowledged_note` in full. Also corrected the
+> Open-Flags KPI and the tab badge to count genuinely-open flags only (they were counting converted
+> ones, a resolved state, as open). `./rebuild.sh` PASS/PASS, 0/0/0; checked in Chromium.
+>
 > **⚠ DEFERRED to a later session (Tom, 2026-07-30): the Register + activity log rework.** Beyond the
 > stub-button fix above, Tom's view is the Register and activity log "aren't quite operating how I
 > envisaged". This is not a bug list, it's a design pass on what the Register *is* — how flags/actions
