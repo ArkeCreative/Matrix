@@ -622,8 +622,23 @@ to reconstruct from either. The accrual is now running; the views are Step 5.
 > and "update", not evidence, and would block typo corrections. A date moved inside a meeting is
 > attributed to that meeting (`meetingId` threaded through `ProjectCapturePane`).
 >
-> **Deliberately NOT built:** any *display* of slip against baseline. That is Step 5, and it wants
-> real accrued history rather than a number computed off a baseline set five minutes ago.
+> **Follow-up, same session — the record is now visible.** The first cut shipped the capture with
+> *no display at all*, on the reasoning that all views were Step 5. That was wrong, and Tom caught it
+> immediately: he baselined a project, moved two key dates, gave reasons — and had nowhere to see any
+> of it. A record nobody can read is one nobody can trust, or even confirm is working. So a
+> **`ProgrammeHistory`** panel now sits at the foot of the project CONSTRUCTION card (shown to
+> everyone; RLS scopes which revisions each person can read), in two deliberately separate blocks:
+> - **AGAINST BASELINE** — for each baselined date, where it started vs where it is now, with a
+>   +later / −earlier day chip and a net-movement line. Only appears once a project is baselined.
+> - **EVERY CHANGE, MOST RECENT FIRST** — the full chronology from `programme_revisions`: from→to,
+>   who, when, the reason (or an explicit "No reason recorded"), and the meeting / flag / action it
+>   was linked to, resolved to readable labels. Subscribed to the RX bus (`dates`, `projects`), so it
+>   updates live when a date moves. Open key-date rows also carry an inline `+Nd` / `−Nd` baseline
+>   drift chip.
+>
+> **Still Step 5, genuinely deferred:** the per-project **PDF chronology export** (the EOT deliverable)
+> and the portfolio-level slip roll-up. This panel is the in-app record; Step 5 is the document you
+> hand a contractor and the cross-project view.
 
 ### ▶ Step 2 — Operational write scoping  *(small · security · no dependencies · **NEXT**)*
 The last piece of P0-4. Visibility is solved; *who may change what* is not.
