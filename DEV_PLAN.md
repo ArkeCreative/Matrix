@@ -545,7 +545,7 @@ Anything committed before 2026-07-29 uses the old scheme; this is how it maps.
 | Old | Now |
 |---|---|
 | P0-1 · P0-2 · P0-3 · P0-4a · P0-4b | ✅ all closed 2026-07-27 → 29 |
-| P0-4 leftover — operational write scoping | **Step 2** |
+| P0-4 leftover — operational write scoping | ✅ **Step 2**, done 2026-07-30 |
 | RX · RX-B · RX-C (reactivity, checklist atomicity, auto-save) | ✅ done |
 | Phase 4a / 4c — project detail, directory | ✅ done |
 | Phase 4b — audit trail per user | ✅ absorbed into the Register hub |
@@ -640,14 +640,49 @@ to reconstruct from either. The accrual is now running; the views are Step 5.
 > and the portfolio-level slip roll-up. This panel is the in-app record; Step 5 is the document you
 > hand a contractor and the cross-project view.
 
-### ▶ Step 2 — Operational write scoping  *(small · security · no dependencies · **NEXT**)*
-The last piece of P0-4. Visibility is solved; *who may change what* is not.
-- `actions` UPDATE/DELETE is org-wide — narrow to owner / creator / collaborator / senior.
-- `meeting_handoffs` is a single blanket `ALL` policy — split it, and key acknowledge/convert on
-  **`is_team_lead`, not `role = 'senior'`**. Four of the five current team leads are contributors, so
-  a senior-only predicate would break the flag ladder the My Actions rework built.
+### ▶ Step 2 — Operational write scoping  *(✅ **DONE 2026-07-30** — see box below)*
+The last piece of P0-4. Visibility was solved; *who may change what* was not — every operational write
+policy was org-wide, so any member who could **see** a project could edit or delete any of its actions
+and flags. The "senior/team-lead only" rules the app showed were JavaScript, not controls.
 
-### ▶ Step 3 — Housekeeping batch  *(small · no dependencies)*
+> **✅ APPLIED 2026-07-30** — `db/migrations/step2_operational_write_scoping.sql`, applied to
+> `tpxabhqsjngalilbznhz` and verified behaviourally under real JWTs (recorded at the bottom of the
+> migration). Landed on the same branch as the Step 1 follow-up (PR #62 was still open).
+>
+> **What narrowed:**
+> - **`actions`** — UPDATE → owner / creator / collaborator / senior. DELETE → **creator or senior
+>   only** (Tom's call: deleting is more destructive than editing; an assignee completes or declines an
+>   action, they don't delete it). SELECT/INSERT unchanged.
+> - **`meeting_handoffs`** — the blanket `ALL` split into four. Acknowledge/convert (UPDATE) is keyed to
+>   the **target department's lead, a senior, or the raiser**. Delete is raiser-or-senior.
+> - **`action_assignees`** — the blanket `ALL` split; managing collaborators now needs the same
+>   authority as editing the parent action, so nobody who can already edit is newly refused.
+>
+> **Two facts corrected against the live DB.** The plan said "4 of 5 team leads are contributors" — it
+> is **2 of 5** (Grace/furniture, Jen/pre-con); the principle held, a senior-only rule would still lock
+> those two out. And the app gated acknowledge/convert on the **meeting chair**, not `is_team_lead` —
+> but a policy cannot express "chair of the meeting I'm acting from" (a flag isn't bound to the acting
+> meeting). So the meeting-pane gate was **realigned** to the same `{senior · target-dept lead ·
+> raiser}` predicate as the DB, so UI and database agree and there's no silent zero-row revert. The
+> `ItemModal` flag surface already used dept-lead authority, so it was left as-is.
+>
+> **Helpers added:** `is_active_senior()`, `is_dept_lead(text)`, `is_action_collaborator(uuid)` — all
+> SECURITY DEFINER, PUBLIC grant revoked, granted to anon+authenticated (they're policy helpers, same
+> accepted class as `current_org_id`/`user_can_see_project`; each returns only a boolean about the
+> caller's own authority).
+>
+> **Defect found *during* verification:** the first `action_assignees` policies sub-queried
+> `action_assignees` for the collaborator check — a policy reading its own table re-enters RLS and
+> Postgres aborts with "infinite recursion detected". Fixed via `is_action_collaborator()` (definer),
+> which reads the table past RLS.
+>
+> **Verified behaviourally.** actions UPDATE: random 0 / owner 1 / creator 1 / senior 1; DELETE: owner
+> 0 / collaborator 0 / creator 1. handoffs ACT: random 0 / **contributor furniture-lead 1** (the
+> load-bearing case) / raiser 1 / senior 1; DELETE: non-raiser lead 0 / senior 1. assignee-insert:
+> unrelated blocked(42501) / creator 1. Nothing committed; `get_advisors` shows only the accepted
+> policy-helper class. **NOT sandbox-verifiable:** the browser acknowledge/convert path — Tom's check.
+
+### ▶ Step 3 — Housekeeping batch  *(small · no dependencies · **NEXT**)*
 Several one-liners that have been carried for weeks. Worth one batch rather than one each.
 - `org_statuses` still stores `label = 'Won'`; the app already renders **LTA** from the `STATUSES`
   const. Align the data or strike the item.
