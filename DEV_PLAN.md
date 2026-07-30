@@ -681,6 +681,32 @@ and flags. The "senior/team-lead only" rules the app showed were JavaScript, not
 > load-bearing case) / raiser 1 / senior 1; DELETE: non-raiser lead 0 / senior 1. assignee-insert:
 > unrelated blocked(42501) / creator 1. Nothing committed; `get_advisors` shows only the accepted
 > policy-helper class. **NOT sandbox-verifiable:** the browser acknowledge/convert path — Tom's check.
+>
+> **Follow-up (2026-07-30), from Tom testing on the live app — two gaps the permission work exposed
+> but did not itself cause:**
+> - **The Register's per-row buttons were dead stubs.** *Acknowledge / Convert / Chase / Reassign /
+>   Raise-a-query* all fired one "coming later" alert; only *Mark complete* / *Mark met* were wired.
+>   The row-click already opened the working item modal (where those actions live and are audited), so
+>   the buttons actively misled. **Removed** them — flags and not-yours actions now show a single
+>   honest **Open** (opens the modal); the wired one-click actions stay. The dead `deferredRegisterAction`
+>   stub is gone.
+> - **Acknowledging in a meeting recorded unevenly.** The DB trigger writes the activity-log line on
+>   any status→acknowledged (so it was never invisible), but the meeting-pane path skipped the flag's
+>   own `item_events` timeline and captured no note, while the modal wrote both. **Fixed:** meeting-pane
+>   acknowledge now takes an optional note and writes the `item_events` entry, and convert writes the
+>   `flag→convert` + `action→raised` events — matching the modal. Verified a contributor lead can insert
+>   its own `item_event` (=1) and a forged actor is blocked (42501).
+> - **Chair note (Tom):** the "non-lead contributor chairs a meeting" case my test list named **can't
+>   arise** — contributors can't create meetings. The real, testable change is that a contributor
+>   *lead* who isn't the chair can now act; that works.
+
+> **⚠ DEFERRED to a later session (Tom, 2026-07-30): the Register + activity log rework.** Beyond the
+> stub-button fix above, Tom's view is the Register and activity log "aren't quite operating how I
+> envisaged". This is not a bug list, it's a design pass on what the Register *is* — how flags/actions
+> are triaged from it, what the activity feed shows and reads from (`audit_log` via `record_activity`
+> vs the per-item `item_events` timeline — the two currently diverge by path), and whether per-row
+> inline actions come back. Lands in/around **Step 4** (executive view — accountability & registers),
+> but needs its own scoping conversation first. Do not treat Step 4 as covering it by default.
 
 ### ▶ Step 3 — Housekeeping batch  *(small · no dependencies · **NEXT**)*
 Several one-liners that have been carried for weeks. Worth one batch rather than one each.
@@ -700,6 +726,9 @@ The half of the old Phase 7 that is buildable **today**, on data that already ex
 - clickable project register;
 - meetings register;
 - the audit log surfaced properly (worth something now P0-1 is closed).
+- **Includes the Register / activity-log rework Tom flagged 2026-07-30** (see the note under Step 2) —
+  but scope it with him first; the two audit sources (`audit_log` vs `item_events`) need reconciling
+  and the Register's interaction model is a product decision, not a given.
 
 Deliberately **excludes** anything needing money or baselines — that is Step 7. Building this first
 gets seniors a usable view without waiting on the commercial spine.
