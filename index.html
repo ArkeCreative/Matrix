@@ -349,6 +349,98 @@ const PM_STATUSES = ['contract', 'on-site'];
 const ACTIVE_STATUSES = ['lead', 'pitching', 'tender', 'won', 'contract', 'on-site'];
 const HIDDEN_STATUSES = ['lost', 'handed-over'];
 // ============================================================
+// LIFECYCLE CONTRACT (Step 2.5) — one state model, one visual signal.
+// The single source every surface reads for "is this open?", its state chip,
+// its kind identity and its age clock, so the copies can't drift (the whole
+// point of the seam). Verbs (Move 2) and render helpers (Part B) both consume
+// STATE_META. Spec: docs/handoff/lifecycle-plan.md. Live C tokens win over the
+// handoff's literal hexes; literals appear only where no token exists.
+// ============================================================
+// Every kind is OPEN or SETTLED on one axis. Overdue / in-query are render-time
+// OVERLAYS, never stored statuses. Key dates use a boolean, not a status word.
+function isOpen(kind, item) {
+    if (!item)
+        return false;
+    if (kind === 'date')
+        return !item.completed;
+    return item.status === 'open';
+}
+function settledWord(kind) {
+    return kind === 'flag' ? 'Acknowledged'
+        : kind === 'action' ? 'Closed'
+            : kind === 'query' ? 'Resolved'
+                : kind === 'date' ? 'Met' : 'Done';
+}
+// B1 — kind identity (icon + accent), fixed forever.
+const KIND_META = {
+    flag: { icon: 'flag', accent: C.carmine, label: 'Flag' },
+    action: { icon: 'check-square', accent: C.prussian, label: 'Action' },
+    query: { icon: 'message-square', accent: C.amber, label: 'Query' },
+    date: { icon: 'calendar-check', accent: C.prussian80, label: 'Key date' },
+};
+// B2 — the state chip: one visual per chip-state (square corners, 1px border on
+// a tint, 9px SemiBold uppercase). Open states carry a dot; settled a ✓ glyph.
+const STATE_META = {
+    open: { fill: C.prussian10, border: C.prussian20, text: C.prussian, dot: C.prussian },
+    inquery: { fill: C.amberLight, border: '#EAD08A', text: C.warn, dot: C.amber },
+    overdue: { fill: C.carmine, border: C.carmine, text: C.white }, // the one loud chip
+    settled: { fill: C.successBg, border: '#CFE3D6', text: C.success, glyph: '✓' },
+    converted: { fill: C.carmineSoft, border: C.carmineMid, text: C.carmine },
+    archived: { fill: 'transparent', border: C.g300, text: C.g500, dashed: true },
+};
+// Whole days from an ISO date to today (positive = in the past).
+function daysSinceDate(iso) {
+    if (!iso)
+        return 0;
+    const a = String(iso).slice(0, 10).split('-').map(Number);
+    if (a.length < 3 || !a[0])
+        return 0;
+    const d = new Date(a[0], a[1] - 1, a[2]);
+    const n = new Date();
+    const t = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    return Math.round((t - d) / 86400000);
+}
+// Resolve the chip to show for an item — the single decision, read by StateChip
+// and (later) the modal ribbon so they cannot disagree. opts.inQuery is passed
+// by callers that know an open query is attached (cross-item state the row has).
+function resolveChip(kind, item, opts) {
+    opts = opts || {};
+    if (!isOpen(kind, item)) {
+        if (kind === 'flag' && (item.status === 'converted' || item.resulting_action_id))
+            return Object.assign({ key: 'converted', label: '→ Converted' }, STATE_META.converted);
+        return Object.assign({ key: 'settled', label: settledWord(kind) }, STATE_META.settled);
+    }
+    const dueIso = kind === 'action' ? item.due_date : (kind === 'date' ? item.target_date : null);
+    const overdue = dueIso ? daysSinceDate(dueIso) : 0;
+    if (overdue > 0)
+        return Object.assign({ key: 'overdue', label: 'Overdue · ' + overdue + 'd' }, STATE_META.overdue);
+    if (opts.inQuery)
+        return Object.assign({ key: 'inquery', label: 'In query' }, STATE_META.inquery);
+    return Object.assign({ key: 'open', label: 'Open' }, STATE_META.open);
+}
+// B3 — age clock: one scale, everywhere. 0–2d grey · 3–5d amber · 6d+ carmine.
+function ageMeta(sinceIso) {
+    const d = daysSinceDate(sinceIso);
+    const color = d <= 2 ? C.g500 : (d <= 5 ? C.warn : C.carmine);
+    const label = d <= 0 ? 'Today' : (d === 1 ? '1 day open' : d + ' days open');
+    return { days: d, color, label };
+}
+// ---- shared render helpers (Part B) — consumed by every surface ----
+function StateChip(props) {
+    const c = resolveChip(props.kind, props.item, props.opts);
+    return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: FONT, fontWeight: 600, fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '4px 9px', borderRadius: 0, background: c.fill, border: `1px ${c.dashed ? 'dashed' : 'solid'} ${c.border}`, color: c.text, whiteSpace: 'nowrap', lineHeight: 1 } },
+        c.dot && React.createElement("span", { style: { width: 6, height: 6, borderRadius: '50%', background: c.dot, flexShrink: 0 } }),
+        c.glyph && React.createElement("span", { style: { fontSize: 10, lineHeight: 1 } }, c.glyph),
+        c.label);
+}
+function AgeClock(props) {
+    const m = ageMeta(props.since);
+    return React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, color: m.color, whiteSpace: 'nowrap' } }, m.label);
+}
+// ProvenanceStrip (B4) lands with threadOf() in Step 5 — the chain resolver is
+// Move 5. Left out here deliberately so the strip renders the full thread, not a
+// stub that would need replacing.
+// ============================================================
 // MEETING TYPES — central config driving filter, grouping, notes
 // ============================================================
 const MEETING_TYPES = {
@@ -1690,7 +1782,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const refreshLatestNotes = useCallback(async () => {
         try {
             const { data, error } = await sb.from('meeting_entries')
-                .select('project_id, pre_con_note, design_note, technical_note, furniture_note, graphic_note, ops_note, snag_note, flag, updated_at, meetings!inner(meeting_date)')
+                .select('project_id, pre_con_note, design_note, technical_note, furniture_note, graphic_note, ops_note, snag_note, updated_at, meetings!inner(meeting_date)')
                 .order('updated_at', { ascending: false });
             if (error)
                 throw error;
