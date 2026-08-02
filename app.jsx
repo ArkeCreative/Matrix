@@ -254,6 +254,218 @@ const PM_STATUSES = ['contract', 'on-site'];
 const ACTIVE_STATUSES = ['lead', 'pitching', 'tender', 'won', 'contract', 'on-site'];
 const HIDDEN_STATUSES = ['lost', 'handed-over'];
 // ============================================================
+// LIFECYCLE CONTRACT (Step 2.5) — one state model, one visual signal.
+// The single source every surface reads for "is this open?", its state chip,
+// its kind identity and its age clock, so the copies can't drift (the whole
+// point of the seam). Verbs (Move 2) and render helpers (Part B) both consume
+// STATE_META. Spec: docs/handoff/lifecycle-plan.md. Live C tokens win over the
+// handoff's literal hexes; literals appear only where no token exists.
+// ============================================================
+// Every kind is OPEN or SETTLED on one axis. Overdue / in-query are render-time
+// OVERLAYS, never stored statuses. Key dates use a boolean, not a status word.
+function isOpen(kind, item) {
+    if (!item)
+        return false;
+    if (kind === 'date')
+        return !item.completed;
+    return item.status === 'open';
+}
+function settledWord(kind) {
+    return kind === 'flag' ? 'Acknowledged'
+        : kind === 'action' ? 'Closed'
+            : kind === 'query' ? 'Resolved'
+                : kind === 'date' ? 'Met' : 'Done';
+}
+// B1 — kind identity (icon + accent), fixed forever.
+const KIND_META = {
+    flag: { icon: 'flag', accent: C.carmine, label: 'Flag' },
+    action: { icon: 'check-square', accent: C.prussian, label: 'Action' },
+    query: { icon: 'message-square', accent: C.amber, label: 'Query' },
+    date: { icon: 'calendar-check', accent: C.prussian80, label: 'Key date' },
+};
+// B2 — the state chip: one visual per chip-state (square corners, 1px border on
+// a tint, 9px SemiBold uppercase). Open states carry a dot; settled a ✓ glyph.
+const STATE_META = {
+    open: { fill: C.prussian10, border: C.prussian20, text: C.prussian, dot: C.prussian },
+    inquery: { fill: C.amberLight, border: '#EAD08A', text: C.warn, dot: C.amber },
+    overdue: { fill: C.carmine, border: C.carmine, text: C.white }, // the one loud chip
+    settled: { fill: C.successBg, border: '#CFE3D6', text: C.success, glyph: '✓' },
+    converted: { fill: C.carmineSoft, border: C.carmineMid, text: C.carmine },
+    archived: { fill: 'transparent', border: C.g300, text: C.g500, dashed: true },
+};
+// Whole days from an ISO date to today (positive = in the past).
+function daysSinceDate(iso) {
+    if (!iso)
+        return 0;
+    const a = String(iso).slice(0, 10).split('-').map(Number);
+    if (a.length < 3 || !a[0])
+        return 0;
+    const d = new Date(a[0], a[1] - 1, a[2]);
+    const n = new Date();
+    const t = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    return Math.round((t - d) / 86400000);
+}
+// Resolve the chip to show for an item — the single decision, read by StateChip
+// and (later) the modal ribbon so they cannot disagree. opts.inQuery is passed
+// by callers that know an open query is attached (cross-item state the row has).
+function resolveChip(kind, item, opts) {
+    opts = opts || {};
+    if (!isOpen(kind, item)) {
+        if (kind === 'flag' && (item.status === 'converted' || item.resulting_action_id))
+            return Object.assign({ key: 'converted', label: '→ Converted' }, STATE_META.converted);
+        return Object.assign({ key: 'settled', label: settledWord(kind) }, STATE_META.settled);
+    }
+    const dueIso = kind === 'action' ? item.due_date : (kind === 'date' ? item.target_date : null);
+    const overdue = dueIso ? daysSinceDate(dueIso) : 0;
+    if (overdue > 0)
+        return Object.assign({ key: 'overdue', label: 'Overdue · ' + overdue + 'd' }, STATE_META.overdue);
+    if (opts.inQuery)
+        return Object.assign({ key: 'inquery', label: 'In query' }, STATE_META.inquery);
+    return Object.assign({ key: 'open', label: 'Open' }, STATE_META.open);
+}
+// B3 — age clock: one scale, everywhere. 0–2d grey · 3–5d amber · 6d+ carmine.
+function ageMeta(sinceIso) {
+    const d = daysSinceDate(sinceIso);
+    const color = d <= 2 ? C.g500 : (d <= 5 ? C.warn : C.carmine);
+    const label = d <= 0 ? 'Today' : (d === 1 ? '1 day open' : d + ' days open');
+    return { days: d, color, label };
+}
+// ---- shared render helpers (Part B) — consumed by every surface ----
+function StateChip(props) {
+    const c = resolveChip(props.kind, props.item, props.opts);
+    return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: FONT, fontWeight: 600, fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '4px 9px', borderRadius: 0, background: c.fill, border: `1px ${c.dashed ? 'dashed' : 'solid'} ${c.border}`, color: c.text, whiteSpace: 'nowrap', lineHeight: 1 } },
+        c.dot && React.createElement("span", { style: { width: 6, height: 6, borderRadius: '50%', background: c.dot, flexShrink: 0 } }),
+        c.glyph && React.createElement("span", { style: { fontSize: 10, lineHeight: 1 } }, c.glyph),
+        c.label);
+}
+function AgeClock(props) {
+    const m = ageMeta(props.since);
+    return React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, color: m.color, whiteSpace: 'nowrap' } }, m.label);
+}
+// ProvenanceStrip (B4) lands with threadOf() in Step 5 — the chain resolver is
+// Move 5. Left out here deliberately so the strip renders the full thread, not a
+// stub that would need replacing.
+// ============================================================
+// LIFECYCLE VERBS (Step 2.5, Move 2) — the service layer. --VERBS-BEGIN--
+// One exported verb per transition. EVERY surface calls these; no surface writes
+// a status column directly. Each verb owns, in one place: its canonical write
+// shape, its item_events entry (append-only spine — never skipped), and it rides
+// `sb` so the RX bus auto-emits. The audit_log trail is trigger-written, so
+// "emit both" is automatic until Move 4. Verbs THROW on error OR on a
+// policy-filtered write (which returns success with ZERO ROWS, not an error) —
+// call sites keep their try/catch + toast, and a refusal can never look saved.
+// ctx = { actorId, orgId, ...verb-specific }. Spec: docs/handoff/lifecycle-plan.md.
+async function completeAction(action, ctx) {
+    const note = (ctx.note || '').trim();
+    const { data: rows, error } = await sb.from('actions')
+        .update({ status: 'closed', completed_at: new Date().toISOString(), completed_by: ctx.actorId, completed_note: note || null })
+        .eq('id', action.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted — the owner, its raiser, a collaborator or a senior can complete this action.');
+    await logItemEvent('action', action.id, 'complete', { actorId: ctx.actorId, orgId: ctx.orgId, body: note ? 'Completed: ' + note : 'Marked complete' });
+}
+async function reopenAction(action, ctx) {
+    const { data: rows, error } = await sb.from('actions')
+        .update({ status: 'open', completed_at: null, completed_by: null, completed_note: null })
+        .eq('id', action.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted to reopen this action.');
+    await logItemEvent('action', action.id, 'reopen', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Reopened' });
+}
+async function acknowledgeFlag(flag, ctx) {
+    const note = (ctx.note || '').trim();
+    const { data: rows, error } = await sb.from('meeting_handoffs')
+        .update({ status: 'acknowledged', acknowledged_by: ctx.actorId, acknowledged_at: new Date().toISOString(), acknowledged_note: note || null })
+        .eq('id', flag.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Only the ' + (flag.to_department || 'target') + ' team lead, a senior, or whoever raised it can acknowledge this flag.');
+    await logItemEvent('flag', flag.id, 'acknowledge', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Acknowledged' + (note ? ': ' + note : (ctx.contextLabel ? ' in the ' + ctx.contextLabel : '')) });
+}
+async function convertFlag(flag, ctx) {
+    // Canonical: the flag settles as 'converted' (the meeting path used to write
+    // 'acknowledged' + resulting_action_id — a drift this collapses). Creates the
+    // action from ctx.action, OR links a pre-created one via ctx.resultingActionId
+    // (the meeting AddActionModal flow). Returns the action id.
+    let actionId = ctx.resultingActionId || null;
+    if (!actionId && ctx.action) {
+        const { data: a, error } = await sb.from('actions')
+            .insert(Object.assign({ org_id: ctx.orgId, project_id: flag.project_id, status: 'open', source_type: 'flag', source_ref: flag.id, created_by: ctx.actorId }, ctx.action))
+            .select().single();
+        if (error)
+            throw error;
+        actionId = a.id;
+        await logItemEvent('action', actionId, 'raised', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Converted from a flag (' + (flag.to_department || 'team') + ')' });
+    }
+    const { data: rows, error: e2 } = await sb.from('meeting_handoffs')
+        .update({ status: 'converted', resulting_action_id: actionId, acknowledged_by: ctx.actorId, acknowledged_at: new Date().toISOString() })
+        .eq('id', flag.id).select('id');
+    if (e2)
+        throw e2;
+    if (!rows || !rows.length)
+        throw new Error('Only the ' + (flag.to_department || 'target') + ' team lead, a senior, or whoever raised it can convert this flag.');
+    await logItemEvent('flag', flag.id, 'convert', { actorId: ctx.actorId, orgId: ctx.orgId, subjectId: ctx.ownerId || null, body: 'Converted to an action' + (ctx.ownerName ? ' owned by ' + ctx.ownerName : '') });
+    return actionId;
+}
+async function resolveQuery(query, ctx) {
+    const note = (ctx.note || '').trim();
+    const { error } = await sb.from('queries')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: ctx.actorId, resolution_note: note || null })
+        .eq('id', query.id);
+    if (error)
+        throw error;
+    await logItemEvent('query', query.id, 'resolve', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Query resolved' + (note ? ': ' + note : '') });
+    if (query.parent_type === 'action')
+        await logItemEvent('action', query.parent_id, 'resolve', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Query resolved, completion unblocked' });
+}
+async function answerQuery(query, ctx) {
+    const body = (ctx.body || '').trim();
+    await sb.from('query_messages').insert({ org_id: ctx.orgId, query_id: query.id, author_id: ctx.actorId, body: body });
+    await logItemEvent('query', query.id, ctx.isAnswer ? 'answer' : 'counter', { actorId: ctx.actorId, orgId: ctx.orgId, subjectId: ctx.returnTo || null, body: (ctx.isAnswer ? 'Answered' : 'Countered') + (ctx.returnToName ? ', returned to ' + ctx.returnToName : '') });
+}
+async function escalateQuery(query, ctx) {
+    const { error } = await sb.from('queries')
+        .update({ escalated_to: ctx.target, escalated_by: ctx.actorId, escalated_at: new Date().toISOString() })
+        .eq('id', query.id);
+    if (error)
+        throw error;
+    await logItemEvent('query', query.id, 'escalate', { actorId: ctx.actorId, orgId: ctx.orgId, subjectId: ctx.target, body: 'Escalated to ' + (ctx.targetName || 'the lead') + (ctx.ballName ? ' — unanswered by ' + ctx.ballName : '') });
+}
+async function markDateMet(keyDate, ctx) {
+    const note = (ctx.note || '').trim();
+    const { data: rows, error } = await sb.from('project_key_dates')
+        .update({ completed: true, completed_at: new Date().toISOString(), completed_by: ctx.actorId, completion_note: note || null })
+        .eq('id', keyDate.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted to update this key date.');
+    await logItemEvent('date', keyDate.id, 'met', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Marked met' + (note ? ': ' + note : '') });
+}
+async function moveDate(keyDate, ctx) {
+    // The change_* columns are transient: the DB trigger (Step 1) folds them into
+    // a programme_revisions row and blanks them. That revision IS the audit of a
+    // programme move, so there is deliberately no item_event here.
+    const { data: rows, error } = await sb.from('project_key_dates').update({
+        target_date: ctx.toDate,
+        updated_by: ctx.actorId,
+        change_reason: (ctx.reason || '').trim() || null,
+        change_meeting_id: ctx.meetingId || null,
+        change_cause_flag_id: ctx.causeFlagId || null,
+        change_cause_action_id: ctx.causeActionId || null,
+    }).eq('id', keyDate.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted to move this key date.');
+}
+// --VERBS-END--
+// ============================================================
 // MEETING TYPES — central config driving filter, grouping, notes
 // ============================================================
 const MEETING_TYPES = {
@@ -1127,23 +1339,6 @@ function regDaysUntil(dateStr) {
     const td = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     return Math.round((td - t0) / 86400000);
 }
-function regDueMeta(days) {
-    if (days === null)
-        return { label: 'No date set', pill: null, tone: 'upcoming', sub: 'No date set' };
-    if (days < 0)
-        return { label: 'Overdue', pill: 'OVERDUE', tone: 'overdue', sub: Math.abs(days) + ' day' + (Math.abs(days) === 1 ? '' : 's') + ' overdue' };
-    if (days === 0)
-        return { label: 'Due today', pill: 'DUE TODAY', tone: 'overdue', sub: 'Due today' };
-    if (days <= 7)
-        return { label: 'Due soon', pill: 'DUE SOON', tone: 'soon', sub: 'Due in ' + days + ' day' + (days === 1 ? '' : 's') };
-    const w = Math.round(days / 7);
-    return { label: 'Upcoming', pill: null, tone: 'upcoming', sub: 'Due in ' + w + ' week' + (w === 1 ? '' : 's') };
-}
-const REG_TONES = {
-    overdue: { bg: C.carmineSoft, fg: C.carmine },
-    soon: { bg: C.amberLight, fg: C.amber },
-    upcoming: { bg: C.g100, fg: C.g500 },
-};
 const REG_KIND_META = {
     action: { icon: 'check-square', label: 'Actions', bg: C.carmineSoft, fg: C.carmine },
     flag: { icon: 'flag', label: 'Flags', bg: C.carmineSoft, fg: C.carmine },
@@ -1226,8 +1421,6 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
         const km = REG_KIND_META[it.kind];
         const proj = pById[it.projectId];
         const owner = it.ownerId ? uById[it.ownerId] : null;
-        const due = it.kind === 'flag' ? { pill: null, tone: 'soon', sub: 'Raised ' + (it.age <= 0 ? 'today' : it.age + 'd ago') } : regDueMeta(it.days);
-        const tone = REG_TONES[due.tone] || REG_TONES.upcoming;
         const isMine = owner && currentUser && owner.id === currentUser.id;
         // right-hand action buttons per kind
         const btn = (label, primary, onClick) => React.createElement("button", { key: label, onClick: (e) => { e.stopPropagation(); onClick(); }, style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, borderRadius: 3, cursor: 'pointer', whiteSpace: 'nowrap', border: primary ? 'none' : `1px solid ${C.line}`, background: primary ? C.carmine : C.white, color: primary ? '#fff' : C.text } }, label);
@@ -1260,9 +1453,9 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
                 : React.createElement(React.Fragment, null,
                     React.createElement("span", { style: { width: 24, height: 24, borderRadius: '50%', background: owner ? C.carmineSoft : C.g100, color: owner ? C.carmine : C.g500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 } }, owner ? (owner.initials || initialsFromName(owner.display_name)) : 'SYS'),
                     React.createElement("span", { style: { fontSize: 12.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, owner ? owner.display_name : 'System'))),
-            React.createElement("div", { style: { textAlign: 'right' } },
-                due.pill ? React.createElement("span", { style: { display: 'inline-block', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 8px', borderRadius: 3, background: tone.bg, color: tone.fg } }, due.pill) : null,
-                React.createElement("div", { style: { fontSize: 11, color: due.tone === 'overdue' ? C.carmine : C.g500, marginTop: due.pill ? 4 : 0 } }, due.sub)),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 } },
+                React.createElement(StateChip, { kind: it.kind, item: it.raw }),
+                it.raw.created_at ? React.createElement(AgeClock, { since: it.raw.created_at }) : null),
             React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, buttons));
     };
     const scopeChip = (key, label) => React.createElement("button", { key: key, onClick: () => setScope(key), style: { padding: '7px 13px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: scope === key ? C.prussian : 'transparent', color: scope === key ? '#fff' : C.g500, borderRadius: 3 } }, label);
@@ -1325,8 +1518,8 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const [meetingEntrySummary, setMeetingEntrySummary] = useState({}); // { meetingId: Set(projectIds touched by a note or review) }
     const [latestNotes, setLatestNotes] = useState({}); // { projectId: { pre_con_note, design_note, ... } }
     const [keyDates, setKeyDates] = useState({}); // { projectId: [{ id, event_name, target_date, ... }] }
-    const [projectActions, setProjectActions] = useState([]); // all open actions across all projects
-    const [projectFlags, setProjectFlags] = useState([]); // all open (pending) flags across all projects
+    const [projectActions, setProjectActions] = useState([]); // FULL scope — every action, open AND settled (openness derived via isOpen)
+    const [projectFlags, setProjectFlags] = useState([]); // FULL scope — every flag, open/acknowledged/converted (openness derived via isOpen)
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showNewProject, setShowNewProject] = useState(false);
@@ -1443,13 +1636,14 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         if (!window.confirm('Mark this action complete?'))
             return;
         try {
-            // Move 1: actions settle as 'closed' — the one canonical word. This
-            // path wrote 'completed', which the many `status === 'closed'` filters
-            // silently missed. A CHECK constraint now rejects any other spelling.
-            const { error } = await sb.from('actions').update({ status: 'closed', completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', action.id);
-            if (error)
-                throw error;
-            setProjectActions(prev => prev.filter(a => a.id !== action.id));
+            // The verb owns the write shape, the audit event (this path used to
+            // skip it) and the refusal check.
+            await completeAction(action, { actorId: user.id });
+            // Full-scope array (Move 3): flip the status in place rather than drop
+            // the row, so the action stays in the catalogue as settled and the
+            // open-only consumers lose it via isOpen. The RX 'actions' refresh
+            // reloads the authoritative row behind this.
+            setProjectActions(prev => prev.map(a => a.id === action.id ? Object.assign(Object.assign({}, a), { status: 'closed', completed_at: new Date().toISOString(), completed_by: user.id }) : a));
         }
         catch (e) {
             alert('Failed to mark complete: ' + e.message);
@@ -1459,9 +1653,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         if (!window.confirm('Mark this key date as met?'))
             return;
         try {
-            const { error } = await sb.from('project_key_dates').update({ completed: true, completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', kd.id);
-            if (error)
-                throw error;
+            await markDateMet(kd, { actorId: user.id });
             refreshKeyDates();
         }
         catch (e) {
@@ -1595,7 +1787,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const refreshLatestNotes = useCallback(async () => {
         try {
             const { data, error } = await sb.from('meeting_entries')
-                .select('project_id, pre_con_note, design_note, technical_note, furniture_note, graphic_note, ops_note, snag_note, flag, updated_at, meetings!inner(meeting_date)')
+                .select('project_id, pre_con_note, design_note, technical_note, furniture_note, graphic_note, ops_note, snag_note, updated_at, meetings!inner(meeting_date)')
                 .order('updated_at', { ascending: false });
             if (error)
                 throw error;
@@ -1624,11 +1816,16 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         }
         catch (_) { /* non-fatal */ }
     }, [user.id, onProfileUpdated]);
+    // Full-scope loader (lifecycle Move 3): fetch every action in view, open AND
+    // settled — never a lifecycle slice. Openness is decided once, at render, by
+    // the shared isOpen() predicate (the App derives openProjectActions below and
+    // routes it to the open-only consumers; the project dashboard reads the full
+    // array to build its Completed catalogue). This is why the separate
+    // loadDoneActions loader could be deleted — no view fetches its own slice.
     const refreshProjectActions = useCallback(async () => {
         try {
             const { data } = await sb.from('actions')
-                .select('id, project_id, description, status, due_date, owner_user_id, meeting_id')
-                .eq('status', 'open');
+                .select('id, project_id, description, status, due_date, owner_user_id, meeting_id, completed_at, completed_by, completed_note');
             if (data)
                 setProjectActions(data);
         }
@@ -1641,8 +1838,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const refreshProjectFlags = useCallback(async () => {
         try {
             const { data: flagData } = await sb.from('meeting_handoffs')
-                .select('id, project_id, to_department, from_meeting_type, note, status, created_at, from_meeting_id')
-                .neq('status', 'acknowledged');
+                .select('id, project_id, to_department, from_meeting_type, note, status, created_at, from_meeting_id, acknowledged_by, acknowledged_at, acknowledged_note, resulting_action_id');
             if (!flagData)
                 return;
             if (flagData.length === 0) {
@@ -1937,12 +2133,20 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         list.sort((a, b) => (a.initials || '').localeCompare(b.initials || ''));
         return list;
     }, [projects, users]);
+    // Lifecycle Move 3 \u2014 the openness decision, made ONCE. The loaders now carry
+    // the full scope (open + settled); every open-only consumer (Projects tab,
+    // Meetings list, Register) reads these derived arrays so no view re-filters by
+    // status itself. The project dashboard is the one surface that needs both, so
+    // it keeps the full projectActions/projectFlags and derives its Completed /
+    // Resolved sections from them via isOpen.
+    const openProjectActions = projectActions.filter(a => isOpen('action', a));
+    const openProjectFlags = projectFlags.filter(f => isOpen('flag', f));
     if (loading)
         return React.createElement(SplashScreen, { message: "Loading projects\u2026" });
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { onClick: goHome, role: "button", tabIndex: 0, title: "Back to projects", onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } }, onMouseEnter: e => { e.currentTarget.style.opacity = '0.78'; }, onMouseLeave: e => { e.currentTarget.style.opacity = '1'; }, style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3, cursor: 'pointer', transition: 'opacity 160ms ease-out' } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Work", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Register", active: currentView === 'register', onClick: () => { setRegisterInitialTab('register'); setCurrentView('register'); } }), React.createElement(ViewTab, { label: "Organisation", active: currentView === 'organisation', onClick: () => setCurrentView('organisation') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setRegisterInitialTab('activity'); setCurrentView('register'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, sort: projectSort, setSort: setProjectSort, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: projectActions, projectFlags: projectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onBack: () => setCurrentView('tracker') })), currentView === 'organisation' && (React.createElement(OrganisationView, { key: currentView, currentUser: user, profile: profile, isSenior: isSenior, projects: projects })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { onClick: goHome, role: "button", tabIndex: 0, title: "Back to projects", onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } }, onMouseEnter: e => { e.currentTarget.style.opacity = '0.78'; }, onMouseLeave: e => { e.currentTarget.style.opacity = '1'; }, style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3, cursor: 'pointer', transition: 'opacity 160ms ease-out' } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Work", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Register", active: currentView === 'register', onClick: () => { setRegisterInitialTab('register'); setCurrentView('register'); } }), React.createElement(ViewTab, { label: "Organisation", active: currentView === 'organisation', onClick: () => setCurrentView('organisation') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setRegisterInitialTab('activity'); setCurrentView('register'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: openProjectActions, projectFlags: openProjectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, sort: projectSort, setSort: setProjectSort, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: openProjectActions, projectFlags: openProjectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: openProjectActions, projectFlags: openProjectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onBack: () => setCurrentView('tracker') })), currentView === 'organisation' && (React.createElement(OrganisationView, { key: currentView, currentUser: user, profile: profile, isSenior: isSenior, projects: projects })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
@@ -2185,17 +2389,7 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     // key-dates list, so it takes the same reason prompt. The write itself lives
     // in commitDateMove so both entry points share one shape.
     const commitDateMove = async (id, iso, ctx) => {
-        const { error } = await sb.from('project_key_dates').update(Object.assign({
-            target_date: iso,
-            updated_by: currentUser && currentUser.id,
-        }, ctx ? {
-            change_reason: ctx.reason,
-            change_meeting_id: ctx.meetingId,
-            change_cause_flag_id: ctx.causeFlagId,
-            change_cause_action_id: ctx.causeActionId,
-        } : {})).eq('id', id);
-        if (error)
-            throw error;
+        await moveDate({ id: id }, { actorId: currentUser && currentUser.id, toDate: iso, reason: ctx && ctx.reason, meetingId: ctx && ctx.meetingId, causeFlagId: ctx && ctx.causeFlagId, causeActionId: ctx && ctx.causeActionId });
         if (onKeyDatesChange)
             await onKeyDatesChange();
     };
@@ -2860,12 +3054,8 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
             if (!note || !note.trim())
                 return; // note is mandatory
             try {
-                await sb.from('actions').update({
-                    status: 'closed',
-                    completed_note: note.trim(),
-                    completed_at: new Date().toISOString(),
-                    completed_by: currentUser ? currentUser.id : null,
-                }).eq('id', actionId);
+                // orgId omitted — item_events has a set_org_id trigger that fills it.
+                await completeAction({ id: actionId }, { actorId: currentUser && currentUser.id, note: note.trim() });
                 if (onActionsChange)
                     await onActionsChange();
             }
@@ -3360,8 +3550,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!draftNote.trim() || blockedByQuery || busy) return;
         setBusy(true);
         try {
-            await sb.from('actions').update({ status: 'closed', completed_note: draftNote.trim(), completed_at: new Date().toISOString(), completed_by: currentUser.id }).eq('id', id);
-            await logItemEvent('action', id, 'complete', { actorId: currentUser.id, orgId: orgId, body: 'Completed with a close-out note' });
+            await completeAction(item, { actorId: currentUser.id, orgId: orgId, note: draftNote.trim() });
             setDraftNote('');
         }
         catch (e) { alert('Could not complete: ' + e.message); }
@@ -3390,8 +3579,8 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         const isAnswer = currentUser.id === aq.target_user_id && !aq.escalated_to || (aq.escalated_to === currentUser.id);
         const evType = isAnswer ? 'answer' : 'counter';
         try {
-            await sb.from('query_messages').insert({ org_id: orgId, query_id: aq.id, author_id: currentUser.id, body: draftReply.trim() });
-            await logItemEvent('query', aq.id, evType, { actorId: currentUser.id, orgId: orgId, subjectId: aq.raised_by, body: (evType === 'answer' ? 'Answered' : 'Countered') + ', returned to ' + nameOf(evType === 'answer' ? aq.raised_by : aq.target_user_id) });
+            const returnTo = isAnswer ? aq.raised_by : aq.target_user_id;
+            await answerQuery(aq, { actorId: currentUser.id, orgId: orgId, body: draftReply.trim(), isAnswer: isAnswer, returnTo: returnTo, returnToName: nameOf(returnTo) });
             setDraftReply('');
         }
         catch (e) { alert('Could not send: ' + e.message); }
@@ -3401,9 +3590,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!draftReply.trim() || !aq || busy) return;
         setBusy(true);
         try {
-            await sb.from('queries').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: currentUser.id, resolution_note: draftReply.trim() }).eq('id', aq.id);
-            await logItemEvent('query', aq.id, 'resolve', { actorId: currentUser.id, orgId: orgId, body: 'Query resolved: ' + draftReply.trim() });
-            if (aq.parent_type === 'action') await logItemEvent('action', aq.parent_id, 'resolve', { actorId: currentUser.id, orgId: orgId, body: 'Query resolved, completion unblocked' });
+            await resolveQuery(aq, { actorId: currentUser.id, orgId: orgId, note: draftReply.trim() });
             setDraftReply('');
         }
         catch (e) { alert('Could not resolve: ' + e.message); }
@@ -3415,8 +3602,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!target) { alert('No escalation target available (no department lead or PM set).'); return; }
         setBusy(true);
         try {
-            await sb.from('queries').update({ escalated_to: target, escalated_by: currentUser.id, escalated_at: new Date().toISOString() }).eq('id', aq.id);
-            await logItemEvent('query', aq.id, 'escalate', { actorId: currentUser.id, orgId: orgId, subjectId: target, body: 'Escalated to ' + nameOf(target) + ' — unanswered by ' + nameOf(ball) });
+            await escalateQuery(aq, { actorId: currentUser.id, orgId: orgId, target: target, targetName: nameOf(target), ballName: nameOf(ball) });
         }
         catch (e) { alert('Could not escalate: ' + e.message); }
         setBusy(false); reload();
@@ -3457,8 +3643,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!draftNote.trim() || busy) return;
         setBusy(true);
         try {
-            await sb.from('meeting_handoffs').update({ status: 'acknowledged', acknowledged_by: currentUser.id, acknowledged_at: new Date().toISOString(), acknowledged_note: draftNote.trim() }).eq('id', id);
-            await logItemEvent('flag', id, 'acknowledge', { actorId: currentUser.id, orgId: orgId, body: 'Acknowledged: ' + draftNote.trim() });
+            await acknowledgeFlag(item, { actorId: currentUser.id, orgId: orgId, note: draftNote.trim() });
             setDraftNote('');
         }
         catch (e) { alert('Could not acknowledge: ' + e.message); }
@@ -3468,11 +3653,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!convertOwner || busy) return;
         setBusy(true);
         try {
-            const { data: a, error } = await sb.from('actions').insert({ org_id: orgId, project_id: item.project_id, description: item.note, owner_user_id: convertOwner, status: 'open', due_date: dueDraft || null, source_type: 'flag', source_ref: id, created_by: currentUser.id }).select().single();
-            if (error) throw error;
-            await sb.from('meeting_handoffs').update({ status: 'converted', resulting_action_id: a.id, acknowledged_by: currentUser.id, acknowledged_at: new Date().toISOString() }).eq('id', id);
-            await logItemEvent('flag', id, 'convert', { actorId: currentUser.id, orgId: orgId, subjectId: convertOwner, body: 'Converted to an action owned by ' + nameOf(convertOwner) });
-            await logItemEvent('action', a.id, 'raised', { actorId: currentUser.id, orgId: orgId, body: 'Converted from a flag (' + (item.to_department || 'team') + ')' });
+            await convertFlag(item, { actorId: currentUser.id, orgId: orgId, action: { description: item.note, owner_user_id: convertOwner, due_date: dueDraft || null }, ownerId: convertOwner, ownerName: nameOf(convertOwner) });
             setConvertOwner(''); setDueDraft('');
         }
         catch (e) { alert('Could not convert: ' + e.message); }
@@ -3749,7 +3930,7 @@ function MAActionCard({ action, project, users, currentUser, ball, query, msgCou
             React.createElement(StateRibbon, { steps: ACTION_RIBBON, reachedIndex: reached, desaturated: closed }),
             React.createElement("span", { style: { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 } }, ball && React.createElement(Avatar, { user: users.find(u => u.id === ball), size: 20 }), React.createElement("span", { style: { fontSize: 9.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: ballCol } }, ballTxt))),
         React.createElement("div", { style: { padding: '15px 18px' } },
-            od && React.createElement("span", { style: { display: 'inline-block', background: MA.carmine, color: '#fff', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '4px 9px', marginBottom: 9 } }, "Overdue " + Math.abs(maDaysTo(action.due_date)) + " days"),
+            od && React.createElement("div", { style: { marginBottom: 9 } }, React.createElement(StateChip, { kind: 'action', item: action })),
             React.createElement("div", { style: { fontSize: 16, fontWeight: 600, lineHeight: 1.3, color: closed ? MA.grey : MA.ink, textDecoration: closed ? 'line-through' : 'none', fontFamily: FONT } }, action.description),
             React.createElement("div", { style: { display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 } },
                 project && React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: MA.carmine } }, project.name),
@@ -3788,21 +3969,17 @@ function MARailFlag({ flag, project, users }) {
     const bg = converted ? MA.page : (acked ? '#fff' : MA.carmineTint);
     const bd = converted ? MA.line : (acked ? MA.line : MA.carmineBorder);
     const accent = converted ? MA.disabled : (acked ? MA.greenMid : MA.carmine);
-    const ageDays = flag.created_at ? Math.round((new Date(todayISO()) - new Date(flag.created_at.slice(0, 10))) / 86400000) : 0;
-    const statusTxt = converted ? 'Converted to action' : (acked ? 'Acknowledged' : 'Open · ' + ageDays + ' day' + (ageDays === 1 ? '' : 's'));
-    const statusCol = converted ? MA.grey : (acked ? MA.green : (ageDays > 5 ? MA.carmine : MA.amberText));
     return React.createElement("div", { onClick: () => openItem('flag', flag.id), role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItem('flag', flag.id); } }, style: { background: bg, border: `1px solid ${bd}`, borderLeft: `4px solid ${accent}`, padding: '12px 13px', marginBottom: 11, cursor: 'pointer' } },
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
-            React.createElement("span", { style: { fontSize: 9, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: statusCol } }, statusTxt),
+            React.createElement(StateChip, { kind: 'flag', item: flag }),
+            !converted && !acked && React.createElement(AgeClock, { since: flag.created_at }),
             React.createElement("span", { style: { marginLeft: 'auto', fontSize: 9.5, color: MA.muted } }, (flag.from_meeting_type ? String(flag.from_meeting_type).replace('checklist:', '') + ' → ' : '') + (flag.to_department || ''))),
         React.createElement("div", { style: { fontSize: 12.5, lineHeight: 1.5, color: converted ? MA.faint : (acked ? MA.grey : MA.text), textDecoration: converted ? 'line-through' : 'none', textDecorationColor: MA.dashed } }, flag.note),
         React.createElement("div", { style: { fontSize: 10.5, color: MA.muted, marginTop: 6 } }, (project ? project.name + ' · ' : '') + 'raised by ' + ((users.find(u => u.id === flag.created_by) || {}).display_name || '—') + (flag.created_at ? ' · ' + formatMeetingDate(flag.created_at.slice(0, 10)) : '')));
 }
 // Rail date row — coloured by urgency. Opens the date modal.
 function MARailDate({ kd, project }) {
-    const od = kd.target_date && kd.target_date < todayISO();
-    const days = kd.target_date ? Math.round((new Date(kd.target_date + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / 86400000) : 0;
-    const col = od ? MA.carmine : (days <= 7 ? MA.amberText : MA.prussian);
+    const col = MA.prussian;
     const d = kd.target_date ? new Date(kd.target_date + 'T00:00:00') : null;
     return React.createElement("div", { onClick: () => openItem('date', kd.id), role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItem('date', kd.id); } }, style: { display: 'flex', gap: 12, padding: '12px 0', borderTop: `1px solid ${MA.line}`, cursor: 'pointer', alignItems: 'center' } },
         React.createElement("div", { style: { width: 44, textAlign: 'center', flexShrink: 0 } },
@@ -3810,7 +3987,7 @@ function MARailDate({ kd, project }) {
             React.createElement("div", { style: { fontSize: 8.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: col, marginTop: 2 } }, d ? d.toLocaleString('en-GB', { month: 'short' }) : '')),
         React.createElement("div", { style: { minWidth: 0 } },
             React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: MA.ink } }, kd.event_name),
-            React.createElement("div", { style: { fontSize: 11, color: MA.muted, marginTop: 1 } }, project ? project.name + ' · ' : '', React.createElement("span", { style: { color: od ? MA.carmine : MA.muted, fontWeight: od ? 600 : 400 } }, od ? Math.abs(days) + ' days overdue' : (days === 0 ? 'today' : 'in ' + days + ' days')))));
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 } }, project ? React.createElement("span", { style: { fontSize: 11, color: MA.muted } }, project.name) : null, React.createElement(StateChip, { kind: 'date', item: kd }))));
 }
 function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting }) {
     const [actions, setActions] = React.useState([]);
@@ -5054,52 +5231,25 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const [kdOpen, setKdOpen] = React.useState(false);
     const [importMsg, setImportMsg] = React.useState('');
     const [area, setArea] = React.useState(null);
-    const [doneActions, setDoneActions] = React.useState([]); // resolved actions — fetched so the catalogue is complete
-    const [doneFlags, setDoneFlags] = React.useState([]); // acknowledged/converted flags — the shared projectFlags array is open-only
     const [showDone, setShowDone] = React.useState(false);
     const [showDoneFlags, setShowDoneFlags] = React.useState(false);
     const [teamWarn, setTeamWarn] = React.useState(null); // {field, newUserId, outgoing, actions:[...]} pending team-change confirmation
-    const loadDoneActions = React.useCallback(async () => {
-        try {
-            const { data } = await sb.from('actions').select('id, description, status, due_date, owner_user_id, completed_at, completed_by').eq('project_id', projectId).neq('status', 'open').order('completed_at', { ascending: false });
-            if (data)
-                setDoneActions(data);
-        }
-        catch (_) { /* older schema / RLS */ }
-    }, [projectId]);
-    React.useEffect(() => { loadDoneActions(); }, [loadDoneActions]);
-    // Completing an action moves it out of the open list and into this one, so
-    // the Completed catalogue has to invalidate on the same topic.
-    useLiveData(['actions'], loadDoneActions);
-    // Same problem for flags: refreshProjectFlags is open-only (it feeds the
-    // Open Flags KPI and the front-page indicators), so an acknowledged or
-    // converted flag would simply vanish from this page instead of showing as
-    // resolved with its note. Load the resolved ones here, exactly as with
-    // actions, and invalidate on the 'flags' topic so it stays live.
-    const loadDoneFlags = React.useCallback(async () => {
-        try {
-            const { data } = await sb.from('meeting_handoffs')
-                .select('id, note, to_department, status, acknowledged_by, acknowledged_at, acknowledged_note, resulting_action_id, created_at')
-                .eq('project_id', projectId).neq('status', 'open')
-                .order('acknowledged_at', { ascending: false });
-            if (data)
-                setDoneFlags(data);
-        }
-        catch (_) { /* older schema / RLS */ }
-    }, [projectId]);
-    React.useEffect(() => { loadDoneFlags(); }, [loadDoneFlags]);
-    useLiveData(['flags'], loadDoneFlags);
+    // Move 3: this view used to run its own loadDoneActions/loadDoneFlags slices
+    // (with .neq('status','open')) because the shared arrays were open-only. They
+    // are now full-scope, so the Completed / Resolved catalogues derive straight
+    // from projectActions/projectFlags via isOpen below — one source, no slice.
     if (!project) {
         return React.createElement("div", { style: { padding: 40, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { marginBottom: 12 } }, "Project not found."), React.createElement("button", { onClick: onBack, style: btnSecondary() }, "← Back to projects"));
     }
     const status = statusLookup[project.status] || { label: project.status || '—', bg: '#EEE', fg: C.muted };
     const today = new Date().toISOString().slice(0, 10);
-    const myActions = (projectActions || []).filter(a => a.project_id === projectId);
-    const myFlags = (projectFlags || []).filter(f => f.project_id === projectId);
-    // projectFlags is `.neq('acknowledged')`, so it still carries converted flags
-    // (a resolved state). Count and list only genuinely-open ones here; resolved
-    // flags — acknowledged and converted — come from doneFlags below.
-    const openFlags = myFlags.filter(f => f.status === 'open');
+    // Full-scope arrays split into open vs settled by the one isOpen predicate.
+    const projActions = (projectActions || []).filter(a => a.project_id === projectId);
+    const myActions = projActions.filter(a => isOpen('action', a));
+    const doneActions = projActions.filter(a => !isOpen('action', a)).sort((a, b) => String(b.completed_at || '').localeCompare(String(a.completed_at || '')));
+    const projFlags = (projectFlags || []).filter(f => f.project_id === projectId);
+    const openFlags = projFlags.filter(f => isOpen('flag', f));
+    const doneFlags = projFlags.filter(f => !isOpen('flag', f)).sort((a, b) => String(b.acknowledged_at || '').localeCompare(String(a.acknowledged_at || '')));
     const myKeyDates = (keyDates && keyDates[projectId]) || [];
     const openKeyDates = myKeyDates.filter(kd => !isAutoComplete(kd));
     const overdueCount = myActions.filter(a => a.due_date && a.due_date < today).length;
@@ -5353,7 +5503,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             visDirty ? React.createElement("span", { style: { fontSize: 12, color: C.amber, fontFamily: FONT } }, "Unsaved changes") : null) : null));
     const actionsCard = card(React.createElement(React.Fragment, null,
         sectionHead('OPEN ACTIONS', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, myActions.length, " open")),
-        myActions.length === 0 ? React.createElement("div", { style: { fontSize: 14, fontStyle: 'italic', color: C.g500, padding: '6px 0' } }, "No open actions.") : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, myActions.slice().sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999')).map(a => { const ow = a.owner_user_id ? users.find(u => u.id === a.owner_user_id) : null; const overdue = a.due_date && a.due_date < today; return React.createElement("div", { key: a.id, onClick: () => openItem('action', a.id), title: "Open details, audit trail and queries", style: { display: 'flex', alignItems: 'center', gap: 16, border: `1px solid ${C.line}`, borderLeft: `3px solid ${overdue ? C.carmine : C.warn}`, borderRadius: 2, padding: '14px 16px', background: '#fff', cursor: 'pointer' } }, React.createElement("span", { style: { width: 22, height: 22, borderRadius: '50%', border: `2px solid ${C.g300}`, flex: '0 0 auto' } }), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: C.ink0 } }, a.description), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, ow ? ('by ' + ow.display_name) : 'Unassigned')), a.due_date && React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 14, color: overdue ? C.carmine : C.ink0 } }, formatMeetingDate(a.due_date)), overdue && React.createElement("span", { style: { fontWeight: 600, fontSize: 10, letterSpacing: '0.08em', color: '#fff', background: C.carmine, borderRadius: 9999, padding: '3px 9px' } }, "OVERDUE")); })), doneActions.length > 0 && React.createElement("div", { style: { marginTop: 18, borderTop: `1px solid ${C.line}`, paddingTop: 14 } }, React.createElement("div", { onClick: () => setShowDone(v => !v), style: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' } }, React.createElement("span", { style: { display: 'inline-flex', color: C.g500, transform: showDone ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 200ms ${EASE}` } }, lucide('chevron-down', 15, 'currentColor', 2)), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', color: C.g500 } }, "COMPLETED"), React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, doneActions.length)), showDone && React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 } }, doneActions.map(a => { const ow = a.owner_user_id ? users.find(u => u.id === a.owner_user_id) : null; return React.createElement("div", { key: a.id, style: { display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 14px', background: C.g50 } }, lucide('check', 15, C.success, 2.5), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.g700, textDecoration: 'line-through', textDecorationColor: C.g300 } }, a.description), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, ow ? ('by ' + ow.display_name) : 'Unassigned', a.completed_at ? (' · ' + formatMeetingDate(a.completed_at.slice(0, 10))) : '')), React.createElement("span", { style: { fontWeight: 600, fontSize: 10, letterSpacing: '0.06em', color: C.success } }, "DONE")); })))));
+        myActions.length === 0 ? React.createElement("div", { style: { fontSize: 14, fontStyle: 'italic', color: C.g500, padding: '6px 0' } }, "No open actions.") : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, myActions.slice().sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999')).map(a => { const ow = a.owner_user_id ? users.find(u => u.id === a.owner_user_id) : null; const overdue = a.due_date && a.due_date < today; return React.createElement("div", { key: a.id, onClick: () => openItem('action', a.id), title: "Open details, audit trail and queries", style: { display: 'flex', alignItems: 'center', gap: 16, border: `1px solid ${C.line}`, borderLeft: `3px solid ${overdue ? C.carmine : C.warn}`, borderRadius: 2, padding: '14px 16px', background: '#fff', cursor: 'pointer' } }, React.createElement("span", { style: { width: 22, height: 22, borderRadius: '50%', border: `2px solid ${C.g300}`, flex: '0 0 auto' } }), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: C.ink0 } }, a.description), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, ow ? ('by ' + ow.display_name) : 'Unassigned')), a.due_date && React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 14, color: overdue ? C.carmine : C.ink0 } }, formatMeetingDate(a.due_date)), React.createElement(StateChip, { kind: 'action', item: a })); })), doneActions.length > 0 && React.createElement("div", { style: { marginTop: 18, borderTop: `1px solid ${C.line}`, paddingTop: 14 } }, React.createElement("div", { onClick: () => setShowDone(v => !v), style: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' } }, React.createElement("span", { style: { display: 'inline-flex', color: C.g500, transform: showDone ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 200ms ${EASE}` } }, lucide('chevron-down', 15, 'currentColor', 2)), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', color: C.g500 } }, "COMPLETED"), React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, doneActions.length)), showDone && React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 } }, doneActions.map(a => { const ow = a.owner_user_id ? users.find(u => u.id === a.owner_user_id) : null; return React.createElement("div", { key: a.id, style: { display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 14px', background: C.g50 } }, lucide('check', 15, C.success, 2.5), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.g700, textDecoration: 'line-through', textDecorationColor: C.g300 } }, a.description), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 2 } }, ow ? ('by ' + ow.display_name) : 'Unassigned', a.completed_at ? (' · ' + formatMeetingDate(a.completed_at.slice(0, 10))) : '')), React.createElement(StateChip, { kind: 'action', item: a })); })))));
     const flagsCard = card(React.createElement(React.Fragment, null,
         sectionHead('FLAGS', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, openFlags.length, " open", doneFlags.length > 0 ? ` · ${doneFlags.length} resolved` : '')),
         (openFlags.length === 0 && doneFlags.length === 0)
@@ -5361,11 +5511,11 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             : React.createElement(React.Fragment, null,
                 openFlags.length === 0
                     ? React.createElement("div", { style: { fontSize: 14, fontStyle: 'italic', color: C.g500, padding: '2px 0' } }, "No open flags.")
-                    : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, openFlags.map(f => { const toCfg = (typeof MEETING_TYPES !== 'undefined' && MEETING_TYPES[f.to_department]) || { short: f.to_department }; return React.createElement("div", { key: f.id, onClick: () => openItem('flag', f.id), title: "Open flag details", style: { display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.warn}`, borderRadius: 2, padding: '14px 16px', background: '#fff', cursor: 'pointer' } }, lucide('flag', 16, C.warn, 2), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500, marginBottom: 3 } }, "→ ", (toCfg.short || f.to_department), " team"), React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.ink0 } }, f.note)), React.createElement("span", { style: { fontWeight: 600, fontSize: 11, letterSpacing: '0.06em', color: C.warn, border: `1px solid ${C.warn}`, borderRadius: 9999, padding: '4px 10px', whiteSpace: 'nowrap' } }, "Pending")); })),
+                    : React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, openFlags.map(f => { const toCfg = (typeof MEETING_TYPES !== 'undefined' && MEETING_TYPES[f.to_department]) || { short: f.to_department }; return React.createElement("div", { key: f.id, onClick: () => openItem('flag', f.id), title: "Open flag details", style: { display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.warn}`, borderRadius: 2, padding: '14px 16px', background: '#fff', cursor: 'pointer' } }, lucide('flag', 16, C.warn, 2), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500, marginBottom: 3 } }, "→ ", (toCfg.short || f.to_department), " team"), React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.ink0 } }, f.note)), React.createElement(StateChip, { kind: 'flag', item: f })); })),
                 doneFlags.length > 0 && React.createElement("div", { style: { marginTop: openFlags.length > 0 ? 18 : 8, borderTop: openFlags.length > 0 ? `1px solid ${C.line}` : 'none', paddingTop: openFlags.length > 0 ? 14 : 0 } },
                     React.createElement("div", { onClick: () => setShowDoneFlags(v => !v), style: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' } }, React.createElement("span", { style: { display: 'inline-flex', color: C.g500, transform: showDoneFlags ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 200ms ${EASE}` } }, lucide('chevron-down', 15, 'currentColor', 2)), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', color: C.g500 } }, "RESOLVED"), React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, doneFlags.length)),
                     showDoneFlags && React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 } }, doneFlags.map(f => { const toCfg = (typeof MEETING_TYPES !== 'undefined' && MEETING_TYPES[f.to_department]) || { short: f.to_department }; const isConv = f.status === 'converted' || !!f.resulting_action_id; const ackBy = f.acknowledged_by ? users.find(u => u.id === f.acknowledged_by) : null; return React.createElement("div", { key: f.id, onClick: () => openItem('flag', f.id), title: "Open flag details", style: { border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.success}`, borderRadius: 2, padding: '11px 14px', background: C.g50, cursor: 'pointer' } },
-                        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, lucide(isConv ? 'arrow-right' : 'check', 15, C.success, 2.5), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500, marginBottom: 3 } }, "→ ", (toCfg.short || f.to_department), " team"), React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.g700 } }, f.note)), React.createElement("span", { style: { fontWeight: 600, fontSize: 10, letterSpacing: '0.06em', color: C.success, whiteSpace: 'nowrap' } }, isConv ? 'CONVERTED' : 'ACKNOWLEDGED')),
+                        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, lucide(isConv ? 'arrow-right' : 'check', 15, C.success, 2.5), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500, marginBottom: 3 } }, "→ ", (toCfg.short || f.to_department), " team"), React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 14, color: C.g700 } }, f.note)), React.createElement(StateChip, { kind: 'flag', item: f })),
                         React.createElement("div", { style: { fontSize: 11, color: C.g500, marginTop: 6 } }, (isConv ? 'Converted' : 'Acknowledged') + (ackBy ? ' by ' + ackBy.display_name : '') + (f.acknowledged_at ? ' · ' + formatMeetingDate(String(f.acknowledged_at).slice(0, 10)) : '')),
                         f.acknowledged_note && React.createElement("div", { style: { fontSize: 12.5, color: C.green, fontStyle: 'italic', marginTop: 5, paddingLeft: 10, borderLeft: `2px solid ${C.success}` } }, '“' + f.acknowledged_note + '”')); }))))),
         { marginTop: 20 });
@@ -6672,11 +6822,10 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     // Records the answer as a thread message and resolves the query.
     const answerQueryOnAction = async (query, answerText) => {
         try {
+            // The answer is stored as a thread message (a creation); the verb
+            // owns the resolve status write + its item_events entry.
             await sb.from('query_messages').insert({ org_id: profile.org_id, query_id: query.id, author_id: currentUser.id, body: answerText });
-            const { error } = await sb.from('queries').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: currentUser.id, resolution_note: answerText }).eq('id', query.id);
-            if (error)
-                throw error;
-            try { await logItemEvent('query', query.id, 'resolve', { actorId: currentUser.id, orgId: profile.org_id, body: 'Answered and resolved' }); } catch (_) { /* */ }
+            await resolveQuery(query, { actorId: currentUser.id, orgId: profile.org_id, note: answerText });
             setActionQueries(prev => (prev || []).filter(q => q.id !== query.id));
         }
         catch (e) {
@@ -6821,23 +6970,11 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
         }
         const trimmed = (note || '').trim();
         try {
-            const { data, error } = await sb.from('meeting_handoffs').update({
-                status: 'acknowledged',
-                acknowledged_by: currentUser ? currentUser.id : null,
-                acknowledged_at: new Date().toISOString(),
-                acknowledged_note: trimmed || null,
-            }).eq('id', handoff.id).select().single();
-            if (error)
-                throw error;
-            setHandoffs(prev => prev.map(h => h.id === handoff.id ? data : h));
-            // Record on the flag's own timeline too — the DB trigger only writes
-            // the activity-log line; this is what the item modal's history reads,
-            // so acknowledging in a meeting now leaves the same trace as the modal.
-            await logItemEvent('flag', handoff.id, 'acknowledge', {
-                actorId: currentUser ? currentUser.id : null,
-                orgId: profile ? profile.org_id : null,
-                body: 'Acknowledged' + (trimmed ? ': ' + trimmed : ' in the ' + ((MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short || 'meeting')),
-            });
+            // The verb owns the write, the item_events entry and the refusal
+            // check; the pane keeps its optimistic local update since its handoff
+            // loader isn't on the RX bus yet.
+            await acknowledgeFlag(handoff, { actorId: currentUser && currentUser.id, orgId: profile && profile.org_id, note: trimmed, contextLabel: (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short || 'meeting' });
+            setHandoffs(prev => prev.map(h => h.id === handoff.id ? Object.assign({}, h, { status: 'acknowledged', acknowledged_by: currentUser ? currentUser.id : null, acknowledged_at: new Date().toISOString(), acknowledged_note: trimmed || null }) : h));
         }
         catch (e) {
             alert('Failed to acknowledge: ' + e.message);
@@ -6988,30 +7125,26 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             // (owner, optional deadline) exists.
             if (convertingHandoff) {
                 try {
-                    const { data: h, error: hErr } = await sb.from('meeting_handoffs').update({
-                        status: 'acknowledged',
-                        acknowledged_by: currentUser ? currentUser.id : null,
-                        acknowledged_at: new Date().toISOString(),
-                        resulting_action_id: data.id,
-                    }).eq('id', convertingHandoff.id).select().single();
-                    if (!hErr && h) {
-                        setHandoffs(prev => prev.map(x => x.id === h.id ? h : x));
-                        // Make the provenance immediately available without a reload
-                        setResultingActions(prev => Object.assign(Object.assign({}, prev), { [data.id]: Object.assign(Object.assign({}, data), { _meeting: { id: meetingId, meeting_type: meeting.meeting_type, meeting_date: meeting.meeting_date } }) }));
-                        // Record on both timelines — the flag became an action, and
-                        // the action was raised from a flag — matching the item modal.
-                        await logItemEvent('flag', convertingHandoff.id, 'convert', {
-                            actorId: currentUser ? currentUser.id : null,
-                            orgId: profile ? profile.org_id : null,
-                            subjectId: data.owner_user_id || null,
-                            body: 'Converted to an action' + (data.owner_user_id ? ' owned by ' + (((users || []).find(u => u.id === data.owner_user_id) || {}).display_name || 'someone') : ''),
-                        });
-                        await logItemEvent('action', data.id, 'raised', {
-                            actorId: currentUser ? currentUser.id : null,
-                            orgId: profile ? profile.org_id : null,
-                            body: 'Converted from a flag (' + (convertingHandoff.to_department || 'team') + ')',
-                        });
-                    }
+                    // Link the just-created action to the flag via the verb — it
+                    // settles the flag 'converted' (the canonical word; this path
+                    // used to write the 'acknowledged' + resulting_action_id shadow
+                    // status) and logs the flag 'convert' event. The action already
+                    // exists (addAction created it above), so link-mode doesn't log
+                    // its 'raised' event — the pane keeps that one line.
+                    await convertFlag(convertingHandoff, {
+                        actorId: currentUser && currentUser.id,
+                        orgId: profile && profile.org_id,
+                        resultingActionId: data.id,
+                        ownerId: data.owner_user_id || null,
+                        ownerName: data.owner_user_id ? (((users || []).find(u => u.id === data.owner_user_id) || {}).display_name || 'someone') : null,
+                    });
+                    await logItemEvent('action', data.id, 'raised', {
+                        actorId: currentUser && currentUser.id,
+                        orgId: profile && profile.org_id,
+                        body: 'Converted from a flag (' + (convertingHandoff.to_department || 'team') + ')',
+                    });
+                    setHandoffs(prev => prev.map(x => x.id === convertingHandoff.id ? Object.assign(Object.assign({}, x), { status: 'converted', resulting_action_id: data.id, acknowledged_by: currentUser ? currentUser.id : null, acknowledged_at: new Date().toISOString() }) : x));
+                    setResultingActions(prev => Object.assign(Object.assign({}, prev), { [data.id]: Object.assign(Object.assign({}, data), { _meeting: { id: meetingId, meeting_type: meeting.meeting_type, meeting_date: meeting.meeting_date } }) }));
                 }
                 catch (he) {
                     console.error('Failed to link handoff to action', he);
@@ -7026,24 +7159,25 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     };
     const updateAction = async (actionId, updates) => {
         try {
-            // Handle collaborators separately — they live in action_assignees,
-            // not on the actions row itself.
+            // Collaborators live in action_assignees, not on the row.
             const collabUpdate = Array.isArray(updates.collaborator_user_ids) ? updates.collaborator_user_ids : null;
-            const actionFieldUpdates = Object.assign({}, updates);
-            delete actionFieldUpdates.collaborator_user_ids;
-            // Centrally stamp completion attribution so every close path
-            // (ActionRow list, per-project list, etc.) records who did it.
-            const finalUpdates = actionFieldUpdates;
-            if (updates.status === 'closed') {
-                if (finalUpdates.completed_at === undefined)
-                    finalUpdates.completed_at = new Date().toISOString();
-                finalUpdates.completed_by = currentUser ? currentUser.id : null;
+            const finalUpdates = Object.assign({}, updates);
+            delete finalUpdates.collaborator_user_ids;
+            // A status transition is a lifecycle move — route it through the verb
+            // (which owns the write shape, the audit event and the refusal check),
+            // then strip the status fields so the generic edit below doesn't redo
+            // them. The pane keeps its own optimistic local update (not on the bus).
+            if (finalUpdates.status === 'closed') {
+                await completeAction({ id: actionId }, { actorId: currentUser && currentUser.id, note: finalUpdates.completed_note });
+                setActions(prev => prev.map(a => a.id === actionId ? Object.assign(Object.assign({}, a), { status: 'closed', completed_note: (finalUpdates.completed_note || '').trim() || null, completed_at: finalUpdates.completed_at || new Date().toISOString(), completed_by: currentUser ? currentUser.id : null }) : a));
+                delete finalUpdates.status; delete finalUpdates.completed_note; delete finalUpdates.completed_at; delete finalUpdates.completed_by;
             }
-            else if (updates.status === 'open') {
-                finalUpdates.completed_by = null;
+            else if (finalUpdates.status === 'open') {
+                await reopenAction({ id: actionId }, { actorId: currentUser && currentUser.id });
+                setActions(prev => prev.map(a => a.id === actionId ? Object.assign(Object.assign({}, a), { status: 'open', completed_note: null, completed_at: null, completed_by: null }) : a));
+                delete finalUpdates.status; delete finalUpdates.completed_note; delete finalUpdates.completed_at; delete finalUpdates.completed_by;
             }
-            // Only call .update() if there are actual action-field changes
-            // (collaborator-only edits don't need to touch the actions row).
+            // Any remaining non-status field edits (owner, due, priority, …).
             if (Object.keys(finalUpdates).length > 0) {
                 const { data, error } = await sb.from('actions')
                     .update(finalUpdates)
@@ -7478,19 +7612,21 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     // prompt. A rename on its own does not — that is not a programme event, and
     // interrupting it would train people to dismiss the prompt.
     const writeEdit = async (id, ctx) => {
-        const { error } = await sb.from('project_key_dates').update(Object.assign({
-            event_name: editData.event_name.trim(),
-            target_date: editData.target_date,
-            updated_by: currentUser.id,
-            updated_at: new Date().toISOString(),
-        }, ctx ? {
-            change_reason: ctx.reason,
-            change_meeting_id: ctx.meetingId,
-            change_cause_flag_id: ctx.causeFlagId,
-            change_cause_action_id: ctx.causeActionId,
-        } : {})).eq('id', id);
-        if (error)
-            throw error;
+        // The edit form can rename and/or move the date. A date move is a
+        // programme event, so it goes through the moveDate verb (which writes the
+        // change_* context the Step-1 trigger folds into programme_revisions); a
+        // rename is a plain field edit, not a programme event.
+        const orig = (keyDates || []).find(k => k.id === id) || {};
+        const nameChanged = (editData.event_name || '').trim() !== (orig.event_name || '');
+        const dateChanged = String(editData.target_date || '').slice(0, 10) !== String(orig.target_date || '').slice(0, 10);
+        if (dateChanged) {
+            await moveDate({ id: id }, { actorId: currentUser.id, toDate: editData.target_date, reason: ctx && ctx.reason, meetingId: ctx && ctx.meetingId, causeFlagId: ctx && ctx.causeFlagId, causeActionId: ctx && ctx.causeActionId });
+        }
+        if (nameChanged || !dateChanged) {
+            const { error } = await sb.from('project_key_dates').update({ event_name: editData.event_name.trim(), updated_by: currentUser.id, updated_at: new Date().toISOString() }).eq('id', id);
+            if (error)
+                throw error;
+        }
         setEditingId(null);
         setPendingMove(null);
         if (onKeyDatesChange)
@@ -7520,16 +7656,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     const handleComplete = async (id) => {
         setSaving(true);
         try {
-            const { error } = await sb.from('project_key_dates').update({
-                completed: true,
-                completed_by: currentUser.id,
-                completed_at: new Date().toISOString(),
-                completion_note: completionNote.trim() || null,
-                updated_by: currentUser.id,
-                updated_at: new Date().toISOString(),
-            }).eq('id', id);
-            if (error)
-                throw error;
+            await markDateMet({ id: id }, { actorId: currentUser.id, note: completionNote.trim() });
             setCompletingId(null);
             setCompletionNote('');
             if (onKeyDatesChange)
