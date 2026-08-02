@@ -1763,9 +1763,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         if (!window.confirm('Mark this key date as met?'))
             return;
         try {
-            const { error } = await sb.from('project_key_dates').update({ completed: true, completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', kd.id);
-            if (error)
-                throw error;
+            await markDateMet(kd, { actorId: user.id });
             refreshKeyDates();
         }
         catch (e) {
@@ -2489,17 +2487,7 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
     // key-dates list, so it takes the same reason prompt. The write itself lives
     // in commitDateMove so both entry points share one shape.
     const commitDateMove = async (id, iso, ctx) => {
-        const { error } = await sb.from('project_key_dates').update(Object.assign({
-            target_date: iso,
-            updated_by: currentUser && currentUser.id,
-        }, ctx ? {
-            change_reason: ctx.reason,
-            change_meeting_id: ctx.meetingId,
-            change_cause_flag_id: ctx.causeFlagId,
-            change_cause_action_id: ctx.causeActionId,
-        } : {})).eq('id', id);
-        if (error)
-            throw error;
+        await moveDate({ id: id }, { actorId: currentUser && currentUser.id, toDate: iso, reason: ctx && ctx.reason, meetingId: ctx && ctx.meetingId, causeFlagId: ctx && ctx.causeFlagId, causeActionId: ctx && ctx.causeActionId });
         if (onKeyDatesChange)
             await onKeyDatesChange();
     };
@@ -7300,24 +7288,25 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     };
     const updateAction = async (actionId, updates) => {
         try {
-            // Handle collaborators separately — they live in action_assignees,
-            // not on the actions row itself.
+            // Collaborators live in action_assignees, not on the row.
             const collabUpdate = Array.isArray(updates.collaborator_user_ids) ? updates.collaborator_user_ids : null;
-            const actionFieldUpdates = Object.assign({}, updates);
-            delete actionFieldUpdates.collaborator_user_ids;
-            // Centrally stamp completion attribution so every close path
-            // (ActionRow list, per-project list, etc.) records who did it.
-            const finalUpdates = actionFieldUpdates;
-            if (updates.status === 'closed') {
-                if (finalUpdates.completed_at === undefined)
-                    finalUpdates.completed_at = new Date().toISOString();
-                finalUpdates.completed_by = currentUser ? currentUser.id : null;
+            const finalUpdates = Object.assign({}, updates);
+            delete finalUpdates.collaborator_user_ids;
+            // A status transition is a lifecycle move — route it through the verb
+            // (which owns the write shape, the audit event and the refusal check),
+            // then strip the status fields so the generic edit below doesn't redo
+            // them. The pane keeps its own optimistic local update (not on the bus).
+            if (finalUpdates.status === 'closed') {
+                await completeAction({ id: actionId }, { actorId: currentUser && currentUser.id, note: finalUpdates.completed_note });
+                setActions(prev => prev.map(a => a.id === actionId ? Object.assign(Object.assign({}, a), { status: 'closed', completed_note: (finalUpdates.completed_note || '').trim() || null, completed_at: finalUpdates.completed_at || new Date().toISOString(), completed_by: currentUser ? currentUser.id : null }) : a));
+                delete finalUpdates.status; delete finalUpdates.completed_note; delete finalUpdates.completed_at; delete finalUpdates.completed_by;
             }
-            else if (updates.status === 'open') {
-                finalUpdates.completed_by = null;
+            else if (finalUpdates.status === 'open') {
+                await reopenAction({ id: actionId }, { actorId: currentUser && currentUser.id });
+                setActions(prev => prev.map(a => a.id === actionId ? Object.assign(Object.assign({}, a), { status: 'open', completed_note: null, completed_at: null, completed_by: null }) : a));
+                delete finalUpdates.status; delete finalUpdates.completed_note; delete finalUpdates.completed_at; delete finalUpdates.completed_by;
             }
-            // Only call .update() if there are actual action-field changes
-            // (collaborator-only edits don't need to touch the actions row).
+            // Any remaining non-status field edits (owner, due, priority, …).
             if (Object.keys(finalUpdates).length > 0) {
                 const { data, error } = await sb.from('actions')
                     .update(finalUpdates)
@@ -7752,19 +7741,21 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     // prompt. A rename on its own does not — that is not a programme event, and
     // interrupting it would train people to dismiss the prompt.
     const writeEdit = async (id, ctx) => {
-        const { error } = await sb.from('project_key_dates').update(Object.assign({
-            event_name: editData.event_name.trim(),
-            target_date: editData.target_date,
-            updated_by: currentUser.id,
-            updated_at: new Date().toISOString(),
-        }, ctx ? {
-            change_reason: ctx.reason,
-            change_meeting_id: ctx.meetingId,
-            change_cause_flag_id: ctx.causeFlagId,
-            change_cause_action_id: ctx.causeActionId,
-        } : {})).eq('id', id);
-        if (error)
-            throw error;
+        // The edit form can rename and/or move the date. A date move is a
+        // programme event, so it goes through the moveDate verb (which writes the
+        // change_* context the Step-1 trigger folds into programme_revisions); a
+        // rename is a plain field edit, not a programme event.
+        const orig = (keyDates || []).find(k => k.id === id) || {};
+        const nameChanged = (editData.event_name || '').trim() !== (orig.event_name || '');
+        const dateChanged = String(editData.target_date || '').slice(0, 10) !== String(orig.target_date || '').slice(0, 10);
+        if (dateChanged) {
+            await moveDate({ id: id }, { actorId: currentUser.id, toDate: editData.target_date, reason: ctx && ctx.reason, meetingId: ctx && ctx.meetingId, causeFlagId: ctx && ctx.causeFlagId, causeActionId: ctx && ctx.causeActionId });
+        }
+        if (nameChanged || !dateChanged) {
+            const { error } = await sb.from('project_key_dates').update({ event_name: editData.event_name.trim(), updated_by: currentUser.id, updated_at: new Date().toISOString() }).eq('id', id);
+            if (error)
+                throw error;
+        }
         setEditingId(null);
         setPendingMove(null);
         if (onKeyDatesChange)
@@ -7794,16 +7785,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
     const handleComplete = async (id) => {
         setSaving(true);
         try {
-            const { error } = await sb.from('project_key_dates').update({
-                completed: true,
-                completed_by: currentUser.id,
-                completed_at: new Date().toISOString(),
-                completion_note: completionNote.trim() || null,
-                updated_by: currentUser.id,
-                updated_at: new Date().toISOString(),
-            }).eq('id', id);
-            if (error)
-                throw error;
+            await markDateMet({ id: id }, { actorId: currentUser.id, note: completionNote.trim() });
             setCompletingId(null);
             setCompletionNote('');
             if (onKeyDatesChange)
