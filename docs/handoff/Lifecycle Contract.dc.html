@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/arke-creative-design-system-0c174bd8-4e1b-4d63-a815-196f90bb6da6/fonts/fonts.css">
+  <style>
+    body { margin: 0; background: #F6F6F4; font-family: 'Gilroy','Century Gothic',Futura,system-ui,sans-serif; color: #2A2E2C; -webkit-font-smoothing: antialiased; }
+    a { color: #8C002A; text-decoration: none; }
+    a:hover { color: #6E0021; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="max-width: 1180px; margin: 0 auto; padding: 0 40px 80px;">
+
+  <!-- ============ HEADER ============ -->
+  <div style="background: #8C002A; margin: 0 -40px; padding: 44px 40px 40px;">
+    <div style="max-width: 1100px; margin: 0 auto;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+        <div style="font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: #FFFFFF;">arke [matrix]</div>
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.72);">Engineering &amp; design contract · 31 Jul 2026</div>
+      </div>
+      <div style="font-size: 34px; font-weight: 700; letter-spacing: -0.02em; color: #FFFFFF; margin-top: 26px; line-height: 1.15;">One lifecycle, one look</div>
+      <div style="font-size: 14px; font-weight: 300; color: rgba(255,255,255,0.72); margin-top: 10px; max-width: 62ch; line-height: 1.6;">A service layer and a visual contract for the four item kinds — flags, actions, queries and key dates — so the same operation is written once, recorded once, and rendered the same way on every surface.</div>
+    </div>
+  </div>
+
+  <!-- ============ 1 · DIAGNOSIS ============ -->
+  <div style="margin-top: 52px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="width: 34px; height: 3px; background: #0A0A0A;"></span>
+      <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8C002A;">1 · The drift, verified in source</span>
+      <span style="flex: 1; height: 1px; background: #E2E2DF;"></span>
+    </div>
+    <div style="font-size: 13px; font-weight: 300; color: #6B7270; margin-top: 12px; max-width: 70ch; line-height: 1.6;">Every finding below was re-checked against <span style="font-weight: 600; color: #2A2E2C;">app.jsx on main</span> today. The feedback is not vague — it is line-numbered.</div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E2DF; margin-top: 20px;">
+      <div style="display: grid; grid-template-columns: 220px 1fr 300px; gap: 0 20px; padding: 12px 20px; border-bottom: 1px solid #E2E2DF; font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #767676;">
+        <span>Operation</span><span>Copies found</span><span>Consequence</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 220px 1fr 300px; gap: 0 20px; padding: 14px 20px; border-bottom: 1px solid #F0EFEC; font-size: 12.5px; line-height: 1.55;">
+        <span style="font-weight: 600;">Complete an action</span>
+        <span style="color: #6B7270;"><span style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8C002A;">status:'completed'</span> at 1446 · <span style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #183B4F;">'closed'</span> at 2861, 3360, 7034, 7880 · a filter checks a third spelling, <span style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #A5741C;">.neq('complete')</span> at 7236</span>
+        <span style="color: #6B7270;">An armed bug — data is all <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">'closed'</span> today, so nothing is visibly broken until someone completes from the wrong button.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 220px 1fr 300px; gap: 0 20px; padding: 14px 20px; border-bottom: 1px solid #F0EFEC; font-size: 12.5px; line-height: 1.55;">
+        <span style="font-weight: 600;">Acknowledge a flag</span>
+        <span style="color: #6B7270;">Three implementations — modal (3457), meeting pane (6822), meeting bulk path (6989). The pane copies skipped <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">item_events</span> until the 30 Jul patch.</span>
+        <span style="color: #6B7270;">The meeting-acknowledge-not-recording bug, and the next one like it.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 220px 1fr 300px; gap: 0 20px; padding: 14px 20px; border-bottom: 1px solid #F0EFEC; font-size: 12.5px; line-height: 1.55;">
+        <span style="font-weight: 600;">"Is it open?"</span>
+        <span style="color: #6B7270;">Five predicates: <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">.neq('acknowledged')</span> 1642 / 7166 / 7235 · <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">.neq('converted')</span> 3283 · <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">status!=='converted'</span> 3957 · <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">acked||converted||resulting_action_id</span> 3345</span>
+        <span style="color: #6B7270;">The Fitzrovia class: a resolved flag exists in the DB and vanishes from a view whose filter disagrees.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 220px 1fr 300px; gap: 0 20px; padding: 14px 20px; border-bottom: 1px solid #F0EFEC; font-size: 12.5px; line-height: 1.55;">
+        <span style="font-weight: 600;">Record what happened</span>
+        <span style="color: #6B7270;">Two trails: client <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">logItemEvent → item_events</span> (best-effort) vs DB trigger <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">record_activity → audit_log</span>.</span>
+        <span style="color: #6B7270;">Feed and timeline diverge by which path the write took.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 220px 1fr 300px; gap: 0 20px; padding: 14px 20px; font-size: 12.5px; line-height: 1.55;">
+        <span style="font-weight: 600;">"What state is it in?"</span>
+        <span style="color: #6B7270;">Four models: actions text enum · flags text enum + a shadow field (<span style="font-family: ui-monospace, monospace; font-size: 11.5px;">resulting_action_id</span>) · queries text enum + <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">escalated_to</span> overlay · key dates a boolean <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">completed</span>.</span>
+        <span style="color: #6B7270;">No shared notion of state → no shared chip, filter or count can exist.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 2 · THE PLAN ============ -->
+  <div style="margin-top: 56px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="width: 34px; height: 3px; background: #0A0A0A;"></span>
+      <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8C002A;">2 · Five moves, against the dev plan</span>
+      <span style="flex: 1; height: 1px; background: #E2E2DF;"></span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-top: 3px solid #8C002A; padding: 20px 22px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <div style="font-size: 15px; font-weight: 700; color: #0A0A0A;">1 · Canonical vocabulary + CHECK constraints</div>
+          <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #183B4F; background: #E8ECEE; border: 1px solid #D1D8DC; padding: 3px 8px; white-space: nowrap;">→ fold into Step 3</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 300; color: #2A2E2C; line-height: 1.65; margin-top: 10px;">One settled word per table: actions settle as <b>closed</b>, nothing else. Fix the one <span style="font-family: ui-monospace, monospace; font-size: 11px;">'completed'</span> writer (1446) and the <span style="font-family: ui-monospace, monospace; font-size: 11px;">'complete'</span> filter (7236), then add a DB <span style="font-family: ui-monospace, monospace; font-size: 11px;">CHECK</span> constraint per status column so a wrong spelling fails loudly instead of arming quietly. Data migration cost today: zero rows.</div>
+        <div style="font-size: 11.5px; color: #6B7270; margin-top: 10px; padding-top: 10px; border-top: 1px solid #F0EFEC;">DEV_PLAN fit: Step 3 is already the housekeeping batch of carried one-liners (won→LTA, dead columns, flag severity). This belongs beside them — same size, same PR.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-top: 3px solid #8C002A; padding: 20px 22px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <div style="font-size: 15px; font-weight: 700; color: #0A0A0A;">2 · One service layer — the highest-leverage fix</div>
+          <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #FFFFFF; background: #183B4F; padding: 3px 8px; white-space: nowrap;">new Step 2.5 · before Step 4</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 300; color: #2A2E2C; line-height: 1.65; margin-top: 10px;">One module, one exported verb per transition: <span style="font-family: ui-monospace, monospace; font-size: 11px;">completeAction · reopenAction · acknowledgeFlag · convertFlag · resolveQuery · answerQuery · escalateQuery · markDateMet · moveDate</span>. Each verb owns its write shape, writes its <span style="font-family: ui-monospace, monospace; font-size: 11px;">item_events</span> entries, and rides <span style="font-family: ui-monospace, monospace; font-size: 11px;">sb</span> so the RX bus auto-emits. Every surface — modal, meeting pane, My Work, Register, project tab, checklist routing — calls the same function.</div>
+        <div style="font-size: 11.5px; color: #6B7270; margin-top: 10px; padding-top: 10px; border-top: 1px solid #F0EFEC;">DEV_PLAN fit: this is RX-B's <span style="font-family: ui-monospace, monospace; font-size: 11px;">rowPayload()</span> doctrine ("so the two write paths can't drift") applied app-wide. It must land <b>before</b> Step 4's Register rework and Steps 8–9's new modules, which would otherwise multiply the copy count.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-top: 3px solid #8C002A; padding: 20px 22px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <div style="font-size: 15px; font-weight: 700; color: #0A0A0A;">3 · One openness predicate, dumb loaders</div>
+          <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #FFFFFF; background: #183B4F; padding: 3px 8px; white-space: nowrap;">same batch as move 2</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 300; color: #2A2E2C; line-height: 1.65; margin-top: 10px;">Loaders fetch a <b>scope</b> (this project, my department), never a lifecycle slice — the <span style="font-family: ui-monospace, monospace; font-size: 11px;">.neq('acknowledged')</span> family goes. One shared <span style="font-family: ui-monospace, monospace; font-size: 11px;">isOpen(kind, item)</span> derives open vs settled everywhere; <span style="font-family: ui-monospace, monospace; font-size: 11px;">doneFlags</span> / <span style="font-family: ui-monospace, monospace; font-size: 11px;">doneActions</span> collapse into selectors over the one dataset. Fetch cost is a non-issue: the plan's own count is ~460 rows across every aggregate.</div>
+        <div style="font-size: 11.5px; color: #6B7270; margin-top: 10px; padding-top: 10px; border-top: 1px solid #F0EFEC;">DEV_PLAN fit: generalises the Fitzrovia fix (Step 2 follow-up 2) so it can't recur per-view.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-top: 3px solid #8C002A; padding: 20px 22px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <div style="font-size: 15px; font-weight: 700; color: #0A0A0A;">4 · One audit spine</div>
+          <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #183B4F; background: #E8ECEE; border: 1px solid #D1D8DC; padding: 3px 8px; white-space: nowrap;">→ Step 4 · scope with Tom first</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 300; color: #2A2E2C; line-height: 1.65; margin-top: 10px;"><span style="font-family: ui-monospace, monospace; font-size: 11px;">item_events</span> is the record; <span style="font-family: ui-monospace, monospace; font-size: 11px;">audit_log</span> / <span style="font-family: ui-monospace, monospace; font-size: 11px;">record_activity</span> narrows to notification fan-out (or the feed becomes a view over item_events). Interim rule, enforced by move 2: every verb emits both, so nothing diverges by path while the decision is pending.</div>
+        <div style="font-size: 11.5px; color: #6B7270; margin-top: 10px; padding-top: 10px; border-top: 1px solid #F0EFEC;">DEV_PLAN fit: the plan explicitly defers the Register/activity-log rework to a scoping conversation — respect that; this move is its prerequisite, not its replacement.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-top: 3px solid #183B4F; padding: 20px 22px; grid-column: 1 / -1;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <div style="font-size: 15px; font-weight: 700; color: #0A0A0A;">5 · Provenance as a followable object</div>
+          <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #183B4F; background: #E8ECEE; border: 1px solid #D1D8DC; padding: 3px 8px; white-space: nowrap;">→ feeds Step 5 directly</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 300; color: #2A2E2C; line-height: 1.65; margin-top: 10px; max-width: 100ch;">The links already exist in the schema (<span style="font-family: ui-monospace, monospace; font-size: 11px;">resulting_action_id · parent_type/parent_id · cause_flag_id/cause_action_id · meeting_id</span>) — what's missing is one <span style="font-family: ui-monospace, monospace; font-size: 11px;">threadOf(item)</span> resolver in the service layer that walks flag → action → query → date change, plus one <b>provenance strip</b> rendered on every card and modal (spec below). This chain is what makes the delay record worth money; today it is reconstructed ad hoc per surface. Built once, the Step 5 chronology export is a print of the same object.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 3 · THE CONTRACT ============ -->
+  <div style="margin-top: 56px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="width: 34px; height: 3px; background: #0A0A0A;"></span>
+      <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8C002A;">3 · The lifecycle contract</span>
+      <span style="flex: 1; height: 1px; background: #E2E2DF;"></span>
+    </div>
+    <div style="font-size: 13px; font-weight: 300; color: #6B7270; margin-top: 12px; max-width: 74ch; line-height: 1.6;">Every kind is either <b style="color: #183B4F;">OPEN</b> or <b style="color: #1E6B45;">SETTLED</b> — one shared axis — with kind-specific settled states. Overdue and in-query are <i>overlays derived at render</i>, never stored statuses. One <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">STATE_META</span> map drives chip, ribbon and filter alike, so they cannot disagree.</div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E2DF; margin-top: 20px;">
+      <!-- flag row -->
+      <div style="display: grid; grid-template-columns: 190px 1fr; gap: 20px; align-items: center; padding: 18px 22px; border-bottom: 1px solid #F0EFEC;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8C002A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+          <span style="font-size: 13px; font-weight: 700;">Flag</span>
+          <span style="font-size: 10px; color: #767676; font-family: ui-monospace, monospace;">meeting_handoffs</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E8ECEE; border: 1px solid #D1D8DC; color: #183B4F;"><span style="width: 6px; height: 6px; background: #183B4F; border-radius: 50%;"></span>Open</span>
+          <span style="color: #B5B5B5; font-size: 12px;">→</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E7F0EA; border: 1px solid #CFE3D6; color: #1E6B45;">✓ Acknowledged</span>
+          <span style="color: #B5B5B5; font-size: 12px;">or</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #F4E6EA; border: 1px solid #E8CCD4; color: #8C002A;">→ Converted</span>
+          <span style="font-size: 11px; color: #767676;">converted always writes <span style="font-family: ui-monospace, monospace; font-size: 10.5px;">resulting_action_id</span>; nothing reads that field as a shadow status any more</span>
+        </div>
+      </div>
+      <!-- action row -->
+      <div style="display: grid; grid-template-columns: 190px 1fr; gap: 20px; align-items: center; padding: 18px 22px; border-bottom: 1px solid #F0EFEC;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#183B4F" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          <span style="font-size: 13px; font-weight: 700;">Action</span>
+          <span style="font-size: 10px; color: #767676; font-family: ui-monospace, monospace;">actions</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E8ECEE; border: 1px solid #D1D8DC; color: #183B4F;"><span style="width: 6px; height: 6px; background: #183B4F; border-radius: 50%;"></span>Open</span>
+          <span style="color: #B5B5B5; font-size: 12px;">⇄</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E7F0EA; border: 1px solid #CFE3D6; color: #1E6B45;">✓ Closed</span>
+          <span style="font-size: 11px; color: #767676;">the only settled word — <span style="font-family: ui-monospace, monospace; font-size: 10.5px;">'completed'</span> and <span style="font-family: ui-monospace, monospace; font-size: 10.5px;">'complete'</span> are retired and rejected by the CHECK constraint. Overlays: <b style="color:#8C002A;">overdue</b> (due &lt; today), <b style="color:#A5741C;">in query</b> (open query attached)</span>
+        </div>
+      </div>
+      <!-- query row -->
+      <div style="display: grid; grid-template-columns: 190px 1fr; gap: 20px; align-items: center; padding: 18px 22px; border-bottom: 1px solid #F0EFEC;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#A5741C" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span style="font-size: 13px; font-weight: 700;">Query</span>
+          <span style="font-size: 10px; color: #767676; font-family: ui-monospace, monospace;">queries</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #FEF3C7; border: 1px solid #EAD08A; color: #A5741C;"><span style="width: 6px; height: 6px; background: #C47D11; border-radius: 50%;"></span>Open</span>
+          <span style="color: #B5B5B5; font-size: 12px;">→</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E7F0EA; border: 1px solid #CFE3D6; color: #1E6B45;">✓ Resolved</span>
+          <span style="font-size: 11px; color: #767676;">escalation stays an overlay (<span style="font-family: ui-monospace, monospace; font-size: 10.5px;">escalated_to</span>); ball-in-court stays derived from the thread, never cached</span>
+        </div>
+      </div>
+      <!-- key date row -->
+      <div style="display: grid; grid-template-columns: 190px 1fr; gap: 20px; align-items: center; padding: 18px 22px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#466272" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path><path d="m9 16 2 2 4-4"></path></svg>
+          <span style="font-size: 13px; font-weight: 700;">Key date</span>
+          <span style="font-size: 10px; color: #767676; font-family: ui-monospace, monospace;">project_key_dates</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E8ECEE; border: 1px solid #D1D8DC; color: #183B4F;"><span style="width: 6px; height: 6px; background: #183B4F; border-radius: 50%;"></span>Open</span>
+          <span style="color: #B5B5B5; font-size: 12px;">→</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E7F0EA; border: 1px solid #CFE3D6; color: #1E6B45;">✓ Met</span>
+          <span style="font-size: 11px; color: #767676;">keeps the boolean in the DB (cheap), but only <span style="font-family: ui-monospace, monospace; font-size: 10.5px;">markDateMet()</span> touches it, and the UI speaks the shared vocabulary. A <i>move</i> is an event in <span style="font-family: ui-monospace, monospace; font-size: 10.5px;">programme_revisions</span>, never a state. Overlay: <b style="color:#8C002A;">slipped +Nd</b> against baseline</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4 · VISUAL SYSTEM ============ -->
+  <div style="margin-top: 56px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="width: 34px; height: 3px; background: #0A0A0A;"></span>
+      <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8C002A;">4 · Visual fidelity, cross-app</span>
+      <span style="flex: 1; height: 1px; background: #E2E2DF;"></span>
+    </div>
+    <div style="font-size: 13px; font-weight: 300; color: #6B7270; margin-top: 12px; max-width: 74ch; line-height: 1.6;">Everything below already exists somewhere in the app — the ribbons, the age clock, the resolved block. The fix is not new design; it is <b>promoting the best existing treatment to the only treatment</b>, driven off the same STATE_META the service layer uses. All hexes are the app's own <span style="font-family: ui-monospace, monospace; font-size: 11.5px;">MA</span>/<span style="font-family: ui-monospace, monospace; font-size: 11.5px;">C</span> tokens.</div>
+
+    <!-- 4a kind identity -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 22px;">
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-left: 3px solid #8C002A; padding: 16px 18px;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8C002A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+          <span style="font-size: 13px; font-weight: 700;">Flag</span>
+        </div>
+        <div style="font-size: 10px; font-family: ui-monospace, monospace; color: #8C002A; margin-top: 8px;">carmine #8C002A · icon: flag</div>
+        <div style="font-size: 11px; color: #767676; line-height: 1.55; margin-top: 6px;">Attention-seeking while open; the only kind allowed a carmine-tinted open card.</div>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-left: 3px solid #183B4F; padding: 16px 18px;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#183B4F" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          <span style="font-size: 13px; font-weight: 700;">Action</span>
+        </div>
+        <div style="font-size: 10px; font-family: ui-monospace, monospace; color: #183B4F; margin-top: 8px;">prussian #183B4F · icon: check-square</div>
+        <div style="font-size: 11px; color: #767676; line-height: 1.55; margin-top: 6px;">Calm workhorse. Carmine appears only as the overdue overlay, never as identity.</div>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-left: 3px solid #C47D11; padding: 16px 18px;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A5741C" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span style="font-size: 13px; font-weight: 700;">Query</span>
+        </div>
+        <div style="font-size: 10px; font-family: ui-monospace, monospace; color: #A5741C; margin-top: 8px;">amber #C47D11 · icon: message-square</div>
+        <div style="font-size: 11px; color: #767676; line-height: 1.55; margin-top: 6px;">Amber = waiting-on-someone, matching the existing ribbon and ball-in-court colours.</div>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; border-left: 3px solid #466272; padding: 16px 18px;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#466272" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path><path d="m9 16 2 2 4-4"></path></svg>
+          <span style="font-size: 13px; font-weight: 700;">Key date</span>
+        </div>
+        <div style="font-size: 10px; font-family: ui-monospace, monospace; color: #466272; margin-top: 8px;">prussian-80 #466272 · icon: calendar-check</div>
+        <div style="font-size: 11px; color: #767676; line-height: 1.55; margin-top: 6px;">Programme family — shares the prussian ramp with the pipeline and timeline.</div>
+      </div>
+    </div>
+    <div style="font-size: 11.5px; color: #767676; margin-top: 12px;">Rule: <b>kind icon + accent appear identically on every surface</b> — My Work cards, the department rail, the project Flags &amp; Actions tab, Register rows, the meeting pane, the item modal header, ProgrammeHistory. No surface invents its own signal for kind. Icons are the existing inline <span style="font-family: ui-monospace, monospace; font-size: 10.5px;">lucide()</span> map at 1.75px stroke.</div>
+
+    <!-- 4b state chips -->
+    <div style="background: #FFFFFF; border: 1px solid #E2E2DF; margin-top: 24px; padding: 20px 22px;">
+      <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #0A0A0A;">The state chip — one component, six states</div>
+      <div style="font-size: 11.5px; color: #767676; margin-top: 6px; max-width: 80ch; line-height: 1.55;">9px Gilroy SemiBold, 0.12em tracking, uppercase, square corners, 1px border on a tint fill. Compact form of the same state machine the ribbon renders — both read STATE_META, so they cannot diverge.</div>
+      <div style="display: flex; gap: 22px; margin-top: 16px; flex-wrap: wrap; align-items: flex-start;">
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E8ECEE; border: 1px solid #D1D8DC; color: #183B4F;"><span style="width: 6px; height: 6px; background: #183B4F; border-radius: 50%;"></span>Open</span>
+          <span style="font-size: 9.5px; font-family: ui-monospace, monospace; color: #B5B5B5;">prussianTint / prussian</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #FEF3C7; border: 1px solid #EAD08A; color: #A5741C;"><span style="width: 6px; height: 6px; background: #C47D11; border-radius: 50%;"></span>In query</span>
+          <span style="font-size: 9.5px; font-family: ui-monospace, monospace; color: #B5B5B5;">amberFill / amberText</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #8C002A; border: 1px solid #8C002A; color: #FFFFFF;">Overdue · 6d</span>
+          <span style="font-size: 9.5px; font-family: ui-monospace, monospace; color: #B5B5B5;">solid carmine — the one loud chip</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E7F0EA; border: 1px solid #CFE3D6; color: #1E6B45;">✓ Settled</span>
+          <span style="font-size: 9.5px; font-family: ui-monospace, monospace; color: #B5B5B5;">greenFill / green · closed · acknowledged · resolved · met</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #F4E6EA; border: 1px solid #E8CCD4; color: #8C002A;">→ Converted</span>
+          <span style="font-size: 9.5px; font-family: ui-monospace, monospace; color: #B5B5B5;">carmineTint / carmine · links to the action</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: transparent; border: 1px dashed #B5B5B5; color: #767676;">Archived</span>
+          <span style="font-size: 9.5px; font-family: ui-monospace, monospace; color: #B5B5B5;">ghost — matches lost / handed-over convention</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px; margin-top: 18px; padding-top: 14px; border-top: 1px solid #F0EFEC; flex-wrap: wrap;">
+        <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #767676;">Age clock, every open item</span>
+        <span style="font-size: 11px; color: #767676;">raised by <b style="color:#2A2E2C;">Priya N</b> ·</span>
+        <span style="font-size: 11px; font-weight: 600; color: #767676;">0–2d grey</span>
+        <span style="font-size: 11px; font-weight: 600; color: #A5741C;">3–5d amber</span>
+        <span style="font-size: 11px; font-weight: 600; color: #8C002A;">6d+ carmine</span>
+        <span style="font-size: 11px; color: #B5B5B5;">— one scale (the MARailFlag thresholds), applied everywhere; closes the exec "attribution + ageing" item without new data.</span>
+      </div>
+    </div>
+
+    <!-- 4c card anatomy -->
+    <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-top: 24px;">
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; padding: 20px 22px;">
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #0A0A0A;">One card anatomy, every surface</div>
+        <div style="font-size: 11.5px; color: #767676; margin-top: 6px; line-height: 1.55;">Kind mark · title · provenance strip · state chip · attribution + age. Density varies by surface; order and vocabulary never do.</div>
+        <!-- specimen card -->
+        <div style="border: 1px solid #E2E2DF; border-left: 3px solid #8C002A; background: #FFFFFF; padding: 14px 16px; margin-top: 14px;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+            <div style="display: flex; align-items: flex-start; gap: 10px; min-width: 0;">
+              <svg style="margin-top: 2px; flex-shrink: 0;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8C002A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+              <div style="min-width: 0;">
+                <div style="font-size: 13px; font-weight: 600; color: #0A0A0A; line-height: 1.4;">Landlord consent outstanding for riser works</div>
+                <div style="display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; font-size: 10.5px; color: #767676;">
+                  <span style="font-weight: 600; color: #466272;">Fitzrovia Yard</span>
+                  <span style="color: #D6D6D6;">·</span>
+                  <span>Raised in <b style="color:#2A2E2C;">DT 12 Jun</b></span>
+                  <span style="color: #B5B5B5;">→</span>
+                  <span>action <b style="color:#2A2E2C;">A-114</b></span>
+                  <span style="color: #B5B5B5;">→</span>
+                  <span>query resolved</span>
+                  <span style="color: #B5B5B5;">→</span>
+                  <span style="font-weight: 600; color: #8C002A;">Practical Completion +10d</span>
+                </div>
+              </div>
+            </div>
+            <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; background: #E8ECEE; border: 1px solid #D1D8DC; color: #183B4F; flex-shrink: 0;"><span style="width: 6px; height: 6px; background: #183B4F; border-radius: 50%;"></span>Open</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 11px; padding-top: 10px; border-top: 1px solid #F0EFEC; font-size: 10.5px;">
+            <span style="color: #767676;">raised by <b style="color:#2A2E2C;">Priya N</b> · for <b style="color:#2A2E2C;">Design team</b></span>
+            <span style="font-weight: 700; color: #8C002A;">7 days open</span>
+          </div>
+        </div>
+        <div style="font-size: 10.5px; color: #B5B5B5; margin-top: 10px; line-height: 1.5;">The grey middle line is the <b style="color:#767676;">provenance strip</b> — move 5's <span style="font-family: ui-monospace, monospace; font-size: 10px;">threadOf()</span> rendered inline. Each segment is clickable and opens that item's modal.</div>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DF; padding: 20px 22px;">
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #0A0A0A;">One settled treatment</div>
+        <div style="font-size: 11.5px; color: #767676; margin-top: 6px; line-height: 1.55;">The project-tab RESOLVED pattern (green check line + note on a green rule) becomes the standard everywhere — My Work closed list, Register, meeting pane.</div>
+        <div style="border: 1px solid #E2E2DF; background: #FFFFFF; padding: 14px 16px; margin-top: 14px; opacity: 0.92;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1E6B45" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+            <span style="font-size: 12.5px; color: #2A2E2C; text-decoration: line-through; text-decoration-color: #B5B5B5;">Confirm sprinkler head layout with M&amp;E</span>
+            <span style="margin-left: auto; display: inline-flex; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 3px 8px; background: #E7F0EA; border: 1px solid #CFE3D6; color: #1E6B45;">✓ Acknowledged</span>
+          </div>
+          <div style="font-size: 10.5px; color: #767676; margin-top: 7px;">by <b style="color:#2A2E2C;">Priya N</b> · 30 Jul, in the item modal</div>
+          <div style="font-size: 11.5px; color: #1E6B45; font-style: italic; margin-top: 7px; padding-left: 10px; border-left: 2px solid #2D7A5F;">"Layout agreed with contractor on site — drawing 2114 rev C issued."</div>
+        </div>
+        <div style="border: 1px dashed #D6D6D6; padding: 12px 14px; margin-top: 12px; font-size: 11px; color: #767676; line-height: 1.6;"><b style="color:#2A2E2C;">Never hidden, always sectioned.</b> Settled items move to a collapsible RESOLVED block on the same surface — they don't vanish (the Fitzrovia rule). The state ribbon stays as-is in the item modal: it is the detail form of this same map.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 5 · SEQUENCE ============ -->
+  <div style="margin-top: 56px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="width: 34px; height: 3px; background: #0A0A0A;"></span>
+      <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8C002A;">5 · Where it lands in the roadmap</span>
+      <span style="flex: 1; height: 1px; background: #E2E2DF;"></span>
+    </div>
+    <div style="background: #183B4F; padding: 24px 26px; margin-top: 20px;">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;">
+        <div>
+          <div style="font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.55);">Step 3 · next batch</div>
+          <div style="font-size: 12.5px; color: #FFFFFF; margin-top: 8px; line-height: 1.55;">Moves 1 — vocabulary + CHECK constraints ride the housekeeping batch already queued.</div>
+        </div>
+        <div>
+          <div style="font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.55);">Step 2.5 · insert</div>
+          <div style="font-size: 12.5px; color: #FFFFFF; margin-top: 8px; line-height: 1.55;">Moves 2 + 3 — service layer + one openness predicate, and the chip/age/card components reading STATE_META. One batch, mostly mechanical call-site routing.</div>
+        </div>
+        <div>
+          <div style="font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.55);">Step 4 · with Tom</div>
+          <div style="font-size: 12.5px; color: #FFFFFF; margin-top: 8px; line-height: 1.55;">Move 4 — audit-spine decision inside the Register rework scoping the plan already defers to a conversation.</div>
+        </div>
+        <div>
+          <div style="font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.55);">Step 5 · pays off</div>
+          <div style="font-size: 12.5px; color: #FFFFFF; margin-top: 8px; line-height: 1.55;">Move 5 — the provenance object becomes the chronology export. The delay record prints a thread that already exists on screen.</div>
+        </div>
+      </div>
+      <div style="font-size: 11.5px; color: rgba(255,255,255,0.72); margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.14); line-height: 1.6;"><b style="color:#FFFFFF;">Why before Steps 8–9:</b> every new register or agenda module multiplies the surfaces that write these verbs. Land the service layer while there are six surfaces, not sixteen. And Step 14's regression guard gets one seam to test instead of a matrix of copies — the foundations (RX bus, item_events, programme_revisions) already fit under this contract unchanged.</div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+</body>
+</html>
