@@ -1364,7 +1364,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
                     sb.from('projects').select('*').order('name'),
                     sb.from('app_users').select('*').eq('active', true),
                     sb.from('meetings').select('*').order('meeting_date', { ascending: false }).limit(50),
-                    sb.from('meeting_entries').select('project_id, pre_con_note, design_note, technical_note, furniture_note, graphic_note, ops_note, snag_note, flag, updated_at, meetings!inner(meeting_date)').order('updated_at', { ascending: false }),
+                    sb.from('meeting_entries').select('project_id, pre_con_note, design_note, technical_note, furniture_note, graphic_note, ops_note, snag_note, updated_at, meetings!inner(meeting_date)').order('updated_at', { ascending: false }),
                 ]);
                 if (!mounted)
                     return;
@@ -1443,7 +1443,10 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         if (!window.confirm('Mark this action complete?'))
             return;
         try {
-            const { error } = await sb.from('actions').update({ status: 'completed', completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', action.id);
+            // Move 1: actions settle as 'closed' — the one canonical word. This
+            // path wrote 'completed', which the many `status === 'closed'` filters
+            // silently missed. A CHECK constraint now rejects any other spelling.
+            const { error } = await sb.from('actions').update({ status: 'closed', completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', action.id);
             if (error)
                 throw error;
             setProjectActions(prev => prev.filter(a => a.id !== action.id));
@@ -7233,7 +7236,7 @@ function DateChangeReasonModal({ projectId, subjectLabel, fromDate, toDate, meet
             try {
                 const [f, a] = await Promise.all([
                     sb.from('meeting_handoffs').select('id, note, status').eq('project_id', projectId).neq('status', 'acknowledged').limit(40),
-                    sb.from('actions').select('id, description, status').eq('project_id', projectId).neq('status', 'complete').limit(40),
+                    sb.from('actions').select('id, description, status').eq('project_id', projectId).neq('status', 'closed').limit(40),
                 ]);
                 if (!live)
                     return;

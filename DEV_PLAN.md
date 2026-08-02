@@ -31,6 +31,15 @@ source (`shell-head.html` + `app.jsx` + `shell-tail.html` + `rebuild.sh`) is alr
 > or erase a revision, which is the whole basis of its evidential value, so keep it that way.
 > **No baseline was backfilled**, deliberately: a project shows no slip figure until a senior
 > explicitly baselines it. **Step 2 is next.**
+>
+> **Revision note (2026-07-31) — lifecycle + dashboard handoff folded in.** Tom's design workshop
+> produced a merged plan (**lifecycle unification + dashboard consolidation**), versioned at
+> **`docs/handoff/`** and reviewed against the live code. It reshapes the middle of the roadmap:
+> **Move 1** (canonical status vocabulary + CHECK constraints) rides **Step 3**; a new **Step 2.5** is
+> the lifecycle *seam* (one service layer, one openness predicate, one visual contract) and a hard
+> prerequisite; **Step 4** becomes the role-gated **Dashboard**, built as a consumer of that seam;
+> **Move 5** (provenance/`threadOf`) pays off in **Step 5**. Build order: **3 → 2.5 → 4**. The prior
+> ⚑ WORKSHOP placeholder is closed — this handoff is its output.
 
 ## What this is
 Internal PM web app for **Arke Creative** (commercial office design & fit-out). Rebranded/
@@ -717,33 +726,129 @@ and flags. The "senior/team-lead only" rules the app showed were JavaScript, not
 > envisaged". This is not a bug list, it's a design pass on what the Register *is* — how flags/actions
 > are triaged from it, what the activity feed shows and reads from (`audit_log` via `record_activity`
 > vs the per-item `item_events` timeline — the two currently diverge by path), and whether per-row
-> inline actions come back. Lands in/around **Step 4** (executive view — accountability & registers),
-> but needs its own scoping conversation first. Do not treat Step 4 as covering it by default.
+> inline actions come back. **Resolved by the 2026-07-31 handoff: absorbed into Step 4 (the Dashboard),
+> built on the Step 2.5 seam. The `audit_log` vs `item_events` reconciliation is Move 4, decided inside
+> Step 4's scoping.** See `docs/handoff/`.
 
-### ▶ Step 3 — Housekeeping batch  *(small · no dependencies · **NEXT**)*
-Several one-liners that have been carried for weeks. Worth one batch rather than one each.
-- `org_statuses` still stores `label = 'Won'`; the app already renders **LTA** from the `STATUSES`
-  const. Align the data or strike the item.
-- Drop dead `meeting_entries.flag`; settle `owner_name_fallback`; confirm the app actually reads
-  `org_meeting_types.group_field` (it is populated with real FK column names) or drop it.
-- `action_queries` carried three overlapping policies — confirm gone with the legacy table.
-- `project_checklists` has no `DELETE` policy — add or confirm intentional.
-- **Flag severity:** `meeting_handoffs` has no severity column, so the register cannot rank flags.
-- **Checklist follow-ups:** audit trigger so saves/sign-offs emit into the hub; "attach evidence" row
-  action; export (the PDF/XLSX buttons render but do nothing).
+### ▶ Step 3 — Housekeeping batch + lifecycle **Move 1**  *(small · no dependencies · **IN PROGRESS**)*
+Several one-liners carried for weeks, **plus lifecycle Move 1** (canonical vocabulary), which rides
+here per the handoff (`docs/handoff/`).
 
-### ▶ Step 4 — Executive view, part 1: accountability & registers  *(medium · no dependencies)*
-The half of the old Phase 7 that is buildable **today**, on data that already exists:
-- accountability register — open actions and flags by person, aged;
-- clickable project register;
-- meetings register;
-- the audit log surfaced properly (worth something now P0-1 is closed).
-- **Includes the Register / activity-log rework Tom flagged 2026-07-30** (see the note under Step 2) —
-  but scope it with him first; the two audit sources (`audit_log` vs `item_events`) need reconciling
-  and the Register's interaction model is a product decision, not a given.
+- **Move 1 — canonical status vocabulary + CHECK constraints.** One settled word per table.
+  - Fix the one divergent writer: `sb.from('actions').update({ status: 'completed', … })` (~line 1446)
+    → `'closed'`. Fix the third spelling in a filter: `.neq('status','complete')` (~line 7236) →
+    `'closed'`. **Order within the PR matters:** fix the writer first, then add the constraint, or the
+    next "Mark complete" click throws.
+  - Add a Postgres `CHECK` per status column so a wrong spelling fails loudly:
+    `actions.status IN ('open','closed')` · `meeting_handoffs.status IN ('open','acknowledged','converted')`
+    · `queries.status IN ('open','resolved')`. **Verified safe:** live data is already all-clean
+    (actions open/closed only, flags open/acknowledged, queries open/resolved — zero rejected rows).
+  - This hardens the vocabulary the Step 2.5 verbs will assume. It does **not** build the verbs — that
+    is Step 2.5.
+**Housekeeping outcomes (investigated against code + live DB 2026-07-31):**
+- ✅ **won → LTA.** `org_statuses.label` set to `LTA` (`db/migrations/step3_housekeeping.sql`). Note:
+  `org_statuses` is **dead config** — the app renders from a hardcoded `STATUSES` const and reads the
+  table nowhere (0 refs) — so this is honesty for a future org-configurable-statuses feature, not a
+  live change.
+- ✅ **`meeting_entries.flag`** confirmed dead (selected, never consumed). Removed from the app select
+  now; the **column DROP is deferred to a post-deploy follow-up** — dropping it before this PR deploys
+  would break the currently-live app, which still selects it.
+- ✅ **`action_queries`** confirmed **already gone** (`to_regclass` null) — nothing to do.
+- ✅ **`owner_name_fallback`** confirmed **actively used** (11 sites, free-text action owner) — keep.
+- ✅ **`project_checklists` DELETE policy** confirmed **intentionally absent** — the app has no delete
+  path for a checklist container; SELECT/INSERT/UPDATE only, by design.
+- ⏸ **`org_meeting_types.group_field`** — same dead-shadow-config as `org_statuses` (app uses hardcoded
+  `MEETING_TYPES.groupField`, reads the DB column nowhere). **Not dropped.** Retiring the shadow-config
+  tables (`org_statuses`, `org_meeting_types`) is a go-live decision for Tom, not a Step 3 one-liner.
+- ⏭ **Flag severity** (`meeting_handoffs` has no severity column, so the register can't rank flags) —
+  **NOT a one-liner; deferred to Step 4** (the dashboard/register is where ranking lives; adding the
+  column + the UI belongs with that build, not here).
+- ⏭ **Checklist follow-ups** (audit trigger for saves/sign-offs; "attach evidence"; working PDF/XLSX
+  export) — **features, deferred.** The export path also needs the serverless proxy (Step 13).
 
-Deliberately **excludes** anything needing money or baselines — that is Step 7. Building this first
-gets seniors a usable view without waiting on the commercial spine.
+> **✅ The accountability-spine workshop is CLOSED (2026-07-31).** Tom ran a design workshop and handed
+> back a merged plan — **lifecycle unification + dashboard consolidation** — versioned in the repo at
+> **`docs/handoff/`** (`README.md` master plan, `lifecycle-plan.md` = Moves 1–5 + visual contract B1–B6
+> authoritative, `dashboard-spec.md`, and the agreed mocks — the dashboard's agreed design is section
+> **`2a`** of `Dashboard Consolidation.dc.html`; match its row anatomy exactly). Claude reviewed it
+> against the live code (all anchors verified) and endorsed the sequencing. What follows replaces the
+> workshop placeholder: **Move 1 → Step 3** (above), **the seam → Step 2.5** (below), **the Dashboard →
+> Step 4**, **provenance → Step 5**.
+
+### ▶ Step 2.5 — the lifecycle seam (Moves 2 + 3 + visual contract)  *(large · **hard prerequisite for Step 4**)*
+Build order is **Step 3 → Step 2.5 → Step 4** (Move 1 rides Step 3 because it's queued housekeeping;
+this seam is the real prerequisite the dashboard consumes). Authoritative spec: `docs/handoff/lifecycle-plan.md`.
+
+**The rule: one operation, one implementation; one visual signal, one component. Deleting each
+surface's local copy is part of acceptance, not optional cleanup.** This is the single highest-value
+batch in the plan and the highest regression risk — a refactor across ~6 surfaces that ships no visible
+feature, on a repo with no automated guard yet (Step 14). Build it in **verifiable slices** under one
+batch, and unit-test the pure pieces (`STATE_META` / `isOpen` / the verbs) with the mock-PostgREST
+technique the RX bus used.
+
+- **Move 2 — one service layer.** One exported verb per transition — `completeAction`, `reopenAction`,
+  `acknowledgeFlag`, `convertFlag`, `resolveQuery`, `answerQuery`, `escalateQuery`, `markDateMet`,
+  `moveDate`. Each verb owns, in one place: its canonical write shape, its `item_events` entry (never
+  best-effort skipped), its `audit_log` emission (interim: emit both until Move 4), and it rides `sb`
+  so the RX bus auto-emits. **Duplicates to collapse:** acknowledge-flag (modal ~3453, meeting
+  ~6822, bulk ~6989); complete-action (~1446, ~2861, ~3360, ~7034/7095, ~7880). Authority checks live
+  in the verb (fold in Step 2's `canActOnHandoff`).
+- **Move 3 — one openness predicate + dumb loaders.** Loaders fetch a *scope* (this project, my dept),
+  never a lifecycle slice. Delete the `.neq('acknowledged')` (~1642, ~7235), `.neq('converted')`
+  (~3283), `.neq('open')` done-loaders (~5061, ~5080) and the `acked||converted||resulting_action_id`
+  family. One shared `isOpen(kind, item)`; `doneFlags`/`doneActions` become selectors over one dataset.
+  **This generalises the Fitzrovia fix so it can't recur per-view — and it replaces the interim
+  `doneFlags`/`openFlags` loaders Claude added in the Fitzrovia PR.**
+- **Part B — the visual contract (B1–B6), rendered identically everywhere.** One `STATE_META` map
+  drives chip + ribbon + filter + count so they cannot disagree. Shared helpers `StateChip(item)`,
+  `AgeClock(item)`, `ProvenanceStrip(thread)`, consumed by My Work, department rail, project Flags &
+  Actions tab, Register rows, meeting pane, item-modal header, ProgrammeHistory. Kind identity: flag =
+  carmine `flag`; action = prussian `check-square`; query = amber `message-square`; key date =
+  prussian-80 `calendar-check`. State chip: OPEN (prussian dot) · IN QUERY (amber) · **OVERDUE·Nd
+  (solid carmine, the one loud chip)** · ✓ SETTLED (green, word per kind) · → CONVERTED (carmine tint)
+  · ARCHIVED (dashed ghost). Age clock: 0–2d grey / 3–5d amber / 6d+ carmine, weight 700. Card anatomy
+  fixed order (kind mark · title · provenance strip · state chip · attribution+age footer). Settled
+  items **section, never vanish** (the Fitzrovia rule, now the standard). Use the live `MA`/`C` tokens
+  (~3154 / ~175) — the live tokens win over any hex in the handoff. **Reconcile Claude's interim
+  `ProgrammeHistory` (Step 1) into the B4 strip / B5 settled treatment rather than leaving it bespoke.**
+- **Lifecycle contract:** every kind is **OPEN** or **SETTLED** (kind-specific settled word); overdue /
+  in-query / escalated / slipped are **render-time overlays, never stored statuses**. Key dates stay a
+  boolean `completed`; a *move* is a `programme_revisions` event (Step 1), never a state.
+- **Interim conflicts to absorb (Claude's Steps 1–2 code):** `canActOnHandoff` → into the verbs; the
+  meeting-pane acknowledge note/`item_events` enrichment → into `acknowledgeFlag`; `DateChangeReasonModal`
+  + the `change_*` transient columns → into `moveDate`; `doneFlags`/`openFlags` → `isOpen` selectors.
+  These aren't rework of good code — they're the interim copies this step exists to unify.
+
+### ▶ Step 4 — Dashboard ("Command view")  *(large · **needs Step 2.5** · consumer of the seam)*
+Absorbs the old "exec view part 1" **and** the Register/activity-log rework into one role-gated landing
+page. Authoritative spec: `docs/handoff/dashboard-spec.md`; agreed design is section **`2a`** of
+`docs/handoff/Dashboard Consolidation.dc.html` — match its row anatomy exactly. **Built entirely as a
+consumer of the Step 2.5 verbs/chips — never a seventh copy.**
+
+- **Routing:** new `#/dashboard` is the **default landing for every role** (replaces Projects as home);
+  the **REGISTER ribbon tab retires**, DASHBOARD takes its slot first; `#/register` survives as the
+  filtered drill-down. **Plumbing needed:** `parseHash`/`writeHash` (~1767) don't parse query strings
+  today — the dashboard's URL-backed filters (`#/register?scope=overdue&team=technical&person=<id>`,
+  refresh-safe, switchable) require that. Role gating reuses `isSenior`; the wordmark "home" now → dashboard.
+- **Three tabs:** **Overview** (role-scoped KPI cards for everyone; exec-only boards — project health,
+  team performance, pipeline, meetings, slipping programme moves from `programme_revisions`, programme
+  strip, accountability by person; contributors get "your work this week"), **Open register** (unified
+  actions/flags/key-dates grouped by urgency, compact four-dropdown filter bar — timescale/kind/team/owner,
+  URL-backed), **Activity** (one tab, two lenses over the audit spine — a readable feed for everyone, an
+  exportable log table for seniors; the separate Audit-log tab merges away).
+- **Interaction contract:** every number is a filter. KPI / accountability / team rows navigate to the
+  Open register with the filter pre-selected as URL params — switchable from the register's dropdowns,
+  not just clearable.
+- **Team is derived (no schema change):** action's team = owner's discipline; flag's team =
+  `to_department`; one `teamOf(item)` helper in the service layer.
+- **Project health** = stage-weighted (open actions/flags/overdue dates & milestones vs how far along
+  the project is) × module completeness. Value movement joins in Step 7 (slot carries the caption now).
+- **Move 4 decision (audit spine) is made INSIDE this step's scoping** — `item_events` as the record
+  with `audit_log` narrowed to notification fan-out, or the feed becomes a view over `item_events`.
+  Until then the Step 2.5 verbs emit both, so nothing diverges. Note `audit_log` is trigger-written and
+  `item_events` app-written, so "emit both" is already a clean split.
+
+Deliberately **excludes** money/baseline-weighted health — that is Step 7, into slots this page carries.
 
 ### ▶ Step 5 — Delay record: the views  *(medium · **Step 1 done** — now needs accrued history)*
 Once revisions have been accruing for a few weeks:
@@ -762,6 +867,12 @@ Once revisions have been accruing for a few weeks:
   first-class linked objects rather than comment threads.
 - **Merges with** the Programme Links work-span (date-range) view — build the span model and the
   revision model together, once.
+- **Lifecycle Move 5 pays off here.** Add one `threadOf(item)` resolver (service layer) that walks
+  flag → action → query → date-change from the FKs that already exist (`resulting_action_id`,
+  `parent_type`/`parent_id`, `cause_flag_id`/`cause_action_id`, `meeting_id`). The provenance strip
+  (Step 2.5 Part B) renders it inline; the chronology export is a print of the same object. **Wrinkle:**
+  the flag→action edge is stored twice (`resulting_action_id` on the flag *and* `source_type='flag'`/
+  `source_ref` on the action) — `threadOf` must treat them as one edge.
 
 ### ▶ Step 6 — Commercial spine  *(medium schema, high leverage · needs a decision from Tom)*
 `projects` has 27 columns and **not one is a value, cost, fee or margin.** There is no money anywhere
@@ -872,6 +983,10 @@ should inform it: the **self-aborting SQL block** for anything touching the data
 deployed app is the third leg.
 
 ## Open decisions
+- ~~**accountability spine (workshop)**~~ — **RESOLVED 2026-07-31.** Tom's design workshop produced the
+  merged lifecycle+dashboard handoff (`docs/handoff/`), now folded into Steps 3 / 2.5 / 4 / 5. One
+  decision remains, deliberately deferred to Step 4 scoping: **Move 4 — the audit spine** (`item_events`
+  as the record with `audit_log` narrowed to notifications, or the feed as a view over `item_events`).
 - **Workflow:** one PR per batch, fresh branch off `main`, opened at the end.
 - New-project approval = a new project state (e.g. `pending`).
 - Default project-visibility rules per role (Phase 6).
