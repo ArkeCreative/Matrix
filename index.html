@@ -441,6 +441,126 @@ function AgeClock(props) {
 // Move 5. Left out here deliberately so the strip renders the full thread, not a
 // stub that would need replacing.
 // ============================================================
+// LIFECYCLE VERBS (Step 2.5, Move 2) — the service layer. --VERBS-BEGIN--
+// One exported verb per transition. EVERY surface calls these; no surface writes
+// a status column directly. Each verb owns, in one place: its canonical write
+// shape, its item_events entry (append-only spine — never skipped), and it rides
+// `sb` so the RX bus auto-emits. The audit_log trail is trigger-written, so
+// "emit both" is automatic until Move 4. Verbs THROW on error OR on a
+// policy-filtered write (which returns success with ZERO ROWS, not an error) —
+// call sites keep their try/catch + toast, and a refusal can never look saved.
+// ctx = { actorId, orgId, ...verb-specific }. Spec: docs/handoff/lifecycle-plan.md.
+async function completeAction(action, ctx) {
+    const note = (ctx.note || '').trim();
+    const { data: rows, error } = await sb.from('actions')
+        .update({ status: 'closed', completed_at: new Date().toISOString(), completed_by: ctx.actorId, completed_note: note || null })
+        .eq('id', action.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted — the owner, its raiser, a collaborator or a senior can complete this action.');
+    await logItemEvent('action', action.id, 'complete', { actorId: ctx.actorId, orgId: ctx.orgId, body: note ? 'Completed: ' + note : 'Marked complete' });
+}
+async function reopenAction(action, ctx) {
+    const { data: rows, error } = await sb.from('actions')
+        .update({ status: 'open', completed_at: null, completed_by: null, completed_note: null })
+        .eq('id', action.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted to reopen this action.');
+    await logItemEvent('action', action.id, 'reopen', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Reopened' });
+}
+async function acknowledgeFlag(flag, ctx) {
+    const note = (ctx.note || '').trim();
+    const { data: rows, error } = await sb.from('meeting_handoffs')
+        .update({ status: 'acknowledged', acknowledged_by: ctx.actorId, acknowledged_at: new Date().toISOString(), acknowledged_note: note || null })
+        .eq('id', flag.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Only the ' + (flag.to_department || 'target') + ' team lead, a senior, or whoever raised it can acknowledge this flag.');
+    await logItemEvent('flag', flag.id, 'acknowledge', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Acknowledged' + (note ? ': ' + note : (ctx.contextLabel ? ' in the ' + ctx.contextLabel : '')) });
+}
+async function convertFlag(flag, ctx) {
+    // Canonical: the flag settles as 'converted' (the meeting path used to write
+    // 'acknowledged' + resulting_action_id — a drift this collapses). Creates the
+    // action from ctx.action, OR links a pre-created one via ctx.resultingActionId
+    // (the meeting AddActionModal flow). Returns the action id.
+    let actionId = ctx.resultingActionId || null;
+    if (!actionId && ctx.action) {
+        const { data: a, error } = await sb.from('actions')
+            .insert(Object.assign({ org_id: ctx.orgId, project_id: flag.project_id, status: 'open', source_type: 'flag', source_ref: flag.id, created_by: ctx.actorId }, ctx.action))
+            .select().single();
+        if (error)
+            throw error;
+        actionId = a.id;
+        await logItemEvent('action', actionId, 'raised', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Converted from a flag (' + (flag.to_department || 'team') + ')' });
+    }
+    const { data: rows, error: e2 } = await sb.from('meeting_handoffs')
+        .update({ status: 'converted', resulting_action_id: actionId, acknowledged_by: ctx.actorId, acknowledged_at: new Date().toISOString() })
+        .eq('id', flag.id).select('id');
+    if (e2)
+        throw e2;
+    if (!rows || !rows.length)
+        throw new Error('Only the ' + (flag.to_department || 'target') + ' team lead, a senior, or whoever raised it can convert this flag.');
+    await logItemEvent('flag', flag.id, 'convert', { actorId: ctx.actorId, orgId: ctx.orgId, subjectId: ctx.ownerId || null, body: 'Converted to an action' + (ctx.ownerName ? ' owned by ' + ctx.ownerName : '') });
+    return actionId;
+}
+async function resolveQuery(query, ctx) {
+    const note = (ctx.note || '').trim();
+    const { error } = await sb.from('queries')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: ctx.actorId, resolution_note: note || null })
+        .eq('id', query.id);
+    if (error)
+        throw error;
+    await logItemEvent('query', query.id, 'resolve', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Query resolved' + (note ? ': ' + note : '') });
+    if (query.parent_type === 'action')
+        await logItemEvent('action', query.parent_id, 'resolve', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Query resolved, completion unblocked' });
+}
+async function answerQuery(query, ctx) {
+    const body = (ctx.body || '').trim();
+    await sb.from('query_messages').insert({ org_id: ctx.orgId, query_id: query.id, author_id: ctx.actorId, body: body });
+    await logItemEvent('query', query.id, ctx.isAnswer ? 'answer' : 'counter', { actorId: ctx.actorId, orgId: ctx.orgId, subjectId: ctx.returnTo || null, body: (ctx.isAnswer ? 'Answered' : 'Countered') + (ctx.returnToName ? ', returned to ' + ctx.returnToName : '') });
+}
+async function escalateQuery(query, ctx) {
+    const { error } = await sb.from('queries')
+        .update({ escalated_to: ctx.target, escalated_by: ctx.actorId, escalated_at: new Date().toISOString() })
+        .eq('id', query.id);
+    if (error)
+        throw error;
+    await logItemEvent('query', query.id, 'escalate', { actorId: ctx.actorId, orgId: ctx.orgId, subjectId: ctx.target, body: 'Escalated to ' + (ctx.targetName || 'the lead') + (ctx.ballName ? ' — unanswered by ' + ctx.ballName : '') });
+}
+async function markDateMet(keyDate, ctx) {
+    const note = (ctx.note || '').trim();
+    const { data: rows, error } = await sb.from('project_key_dates')
+        .update({ completed: true, completed_at: new Date().toISOString(), completed_by: ctx.actorId, completion_note: note || null })
+        .eq('id', keyDate.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted to update this key date.');
+    await logItemEvent('date', keyDate.id, 'met', { actorId: ctx.actorId, orgId: ctx.orgId, body: 'Marked met' + (note ? ': ' + note : '') });
+}
+async function moveDate(keyDate, ctx) {
+    // The change_* columns are transient: the DB trigger (Step 1) folds them into
+    // a programme_revisions row and blanks them. That revision IS the audit of a
+    // programme move, so there is deliberately no item_event here.
+    const { data: rows, error } = await sb.from('project_key_dates').update({
+        target_date: ctx.toDate,
+        updated_by: ctx.actorId,
+        change_reason: (ctx.reason || '').trim() || null,
+        change_meeting_id: ctx.meetingId || null,
+        change_cause_flag_id: ctx.causeFlagId || null,
+        change_cause_action_id: ctx.causeActionId || null,
+    }).eq('id', keyDate.id).select('id');
+    if (error)
+        throw error;
+    if (!rows || !rows.length)
+        throw new Error('Not permitted to move this key date.');
+}
+// --VERBS-END--
+// ============================================================
 // MEETING TYPES — central config driving filter, grouping, notes
 // ============================================================
 const MEETING_TYPES = {
