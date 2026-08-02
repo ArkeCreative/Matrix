@@ -3572,8 +3572,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!draftNote.trim() || blockedByQuery || busy) return;
         setBusy(true);
         try {
-            await sb.from('actions').update({ status: 'closed', completed_note: draftNote.trim(), completed_at: new Date().toISOString(), completed_by: currentUser.id }).eq('id', id);
-            await logItemEvent('action', id, 'complete', { actorId: currentUser.id, orgId: orgId, body: 'Completed with a close-out note' });
+            await completeAction(item, { actorId: currentUser.id, orgId: orgId, note: draftNote.trim() });
             setDraftNote('');
         }
         catch (e) { alert('Could not complete: ' + e.message); }
@@ -3602,8 +3601,8 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         const isAnswer = currentUser.id === aq.target_user_id && !aq.escalated_to || (aq.escalated_to === currentUser.id);
         const evType = isAnswer ? 'answer' : 'counter';
         try {
-            await sb.from('query_messages').insert({ org_id: orgId, query_id: aq.id, author_id: currentUser.id, body: draftReply.trim() });
-            await logItemEvent('query', aq.id, evType, { actorId: currentUser.id, orgId: orgId, subjectId: aq.raised_by, body: (evType === 'answer' ? 'Answered' : 'Countered') + ', returned to ' + nameOf(evType === 'answer' ? aq.raised_by : aq.target_user_id) });
+            const returnTo = isAnswer ? aq.raised_by : aq.target_user_id;
+            await answerQuery(aq, { actorId: currentUser.id, orgId: orgId, body: draftReply.trim(), isAnswer: isAnswer, returnTo: returnTo, returnToName: nameOf(returnTo) });
             setDraftReply('');
         }
         catch (e) { alert('Could not send: ' + e.message); }
@@ -3613,9 +3612,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!draftReply.trim() || !aq || busy) return;
         setBusy(true);
         try {
-            await sb.from('queries').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: currentUser.id, resolution_note: draftReply.trim() }).eq('id', aq.id);
-            await logItemEvent('query', aq.id, 'resolve', { actorId: currentUser.id, orgId: orgId, body: 'Query resolved: ' + draftReply.trim() });
-            if (aq.parent_type === 'action') await logItemEvent('action', aq.parent_id, 'resolve', { actorId: currentUser.id, orgId: orgId, body: 'Query resolved, completion unblocked' });
+            await resolveQuery(aq, { actorId: currentUser.id, orgId: orgId, note: draftReply.trim() });
             setDraftReply('');
         }
         catch (e) { alert('Could not resolve: ' + e.message); }
@@ -3627,8 +3624,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!target) { alert('No escalation target available (no department lead or PM set).'); return; }
         setBusy(true);
         try {
-            await sb.from('queries').update({ escalated_to: target, escalated_by: currentUser.id, escalated_at: new Date().toISOString() }).eq('id', aq.id);
-            await logItemEvent('query', aq.id, 'escalate', { actorId: currentUser.id, orgId: orgId, subjectId: target, body: 'Escalated to ' + nameOf(target) + ' — unanswered by ' + nameOf(ball) });
+            await escalateQuery(aq, { actorId: currentUser.id, orgId: orgId, target: target, targetName: nameOf(target), ballName: nameOf(ball) });
         }
         catch (e) { alert('Could not escalate: ' + e.message); }
         setBusy(false); reload();
@@ -3669,8 +3665,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!draftNote.trim() || busy) return;
         setBusy(true);
         try {
-            await sb.from('meeting_handoffs').update({ status: 'acknowledged', acknowledged_by: currentUser.id, acknowledged_at: new Date().toISOString(), acknowledged_note: draftNote.trim() }).eq('id', id);
-            await logItemEvent('flag', id, 'acknowledge', { actorId: currentUser.id, orgId: orgId, body: 'Acknowledged: ' + draftNote.trim() });
+            await acknowledgeFlag(item, { actorId: currentUser.id, orgId: orgId, note: draftNote.trim() });
             setDraftNote('');
         }
         catch (e) { alert('Could not acknowledge: ' + e.message); }
@@ -3680,11 +3675,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
         if (!convertOwner || busy) return;
         setBusy(true);
         try {
-            const { data: a, error } = await sb.from('actions').insert({ org_id: orgId, project_id: item.project_id, description: item.note, owner_user_id: convertOwner, status: 'open', due_date: dueDraft || null, source_type: 'flag', source_ref: id, created_by: currentUser.id }).select().single();
-            if (error) throw error;
-            await sb.from('meeting_handoffs').update({ status: 'converted', resulting_action_id: a.id, acknowledged_by: currentUser.id, acknowledged_at: new Date().toISOString() }).eq('id', id);
-            await logItemEvent('flag', id, 'convert', { actorId: currentUser.id, orgId: orgId, subjectId: convertOwner, body: 'Converted to an action owned by ' + nameOf(convertOwner) });
-            await logItemEvent('action', a.id, 'raised', { actorId: currentUser.id, orgId: orgId, body: 'Converted from a flag (' + (item.to_department || 'team') + ')' });
+            await convertFlag(item, { actorId: currentUser.id, orgId: orgId, action: { description: item.note, owner_user_id: convertOwner, due_date: dueDraft || null }, ownerId: convertOwner, ownerName: nameOf(convertOwner) });
             setConvertOwner(''); setDueDraft('');
         }
         catch (e) { alert('Could not convert: ' + e.message); }
