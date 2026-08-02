@@ -1611,7 +1611,7 @@ function CommandDashboard(props) {
         return (projects || []).filter(p => STAGE_MULT[p.status] != null).map(p => {
             const acts = items.filter(it => it.kind === 'action' && it.projectId === p.id).map(it => it.raw);
             const flgs = items.filter(it => it.kind === 'flag' && it.projectId === p.id).map(it => it.raw);
-            const dts = (keyDates[p.id] || []);
+            const dts = ((keyDates || {})[p.id]) || [];
             const h = projectHealth(p, acts, flgs, dts, null);
             return { p, h };
         }).sort((a, b) => a.h.score - b.h.score);
@@ -1660,6 +1660,11 @@ function CommandDashboard(props) {
         return order.map(o => ({ label: o.label, dot: o.dot, items: filtered.filter(it => bucketOf(it) === o.key).sort((a, b) => a.dueSort.localeCompare(b.dueSort)) })).filter(g => g.items.length);
     }, [filtered]);
     // ---- ACTIVITY ----
+    // item_events carries no project_id, so map item_id -> project from the open
+    // items we already hold (best-effort: blank for settled items until a
+    // follow-up adds project_id to item_events). See DEV_PLAN Step 4 deferrals.
+    const itemProjectById = React.useMemo(() => { const m = {}; items.forEach(it => { m[it.id] = it.projectId; }); return m; }, [items]);
+    const projForEvent = (a) => projById[itemProjectById[a.item_id]] || null;
     const nameOfActor = (id) => { const u = id && usersById[id]; return u ? u.display_name : 'System'; };
     const EVENT_VERB = { complete: 'completed', reopen: 'reopened', acknowledge: 'acknowledged', convert: 'converted', raised: 'raised', resolve: 'resolved', answer: 'answered', escalate: 'escalated', met: 'met', create: 'created', chase: 'chased', date_change: 'moved the date on', nudge: 'nudged', query: 'queried' };
     // ---- render pieces ----
@@ -1800,7 +1805,7 @@ function CommandDashboard(props) {
     function activityFeed() {
         return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', maxWidth: 760 } },
             activity.length === 0 ? React.createElement("div", { style: { padding: '20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No activity recorded yet.")
-                : activity.slice(0, 60).map(a => { const p = projById[a.project_id]; const km = KIND_META[a.item_type] || KIND_META.action; return React.createElement("div", { key: a.id, style: { display: 'flex', gap: 11, padding: '13px 18px', borderBottom: `1px solid ${C.line}` } },
+                : activity.slice(0, 60).map(a => { const p = projForEvent(a); const km = KIND_META[a.item_type] || KIND_META.action; return React.createElement("div", { key: a.id, style: { display: 'flex', gap: 11, padding: '13px 18px', borderBottom: `1px solid ${C.line}` } },
                     React.createElement("div", { style: { width: 30, height: 30, borderRadius: 6, background: C.white, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: km.accent } }, lucide(km.icon, 15, 'currentColor', 2)),
                     React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.45 } }, React.createElement("span", { style: { fontWeight: 700 } }, nameOfActor(a.actor_id)), React.createElement("span", null, ' ' + (EVENT_VERB[a.event_type] || a.event_type) + ' '), React.createElement("span", { style: { color: C.carmine, fontWeight: 600 } }, km.label.toLowerCase())), React.createElement("div", { style: { fontSize: 11, color: C.g500, marginTop: 4 } }, (p ? p.name : '') + (a.body ? ' · ' + a.body : ''))),
                     React.createElement("div", { style: { fontSize: 10, color: C.g400, whiteSpace: 'nowrap', marginTop: 3 } }, fmtStamp(a.created_at))); }));
@@ -1810,7 +1815,7 @@ function CommandDashboard(props) {
             React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 15, color: C.ink0, fontFamily: FONT } }, "Audit log"), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, "every recorded event, attributed")),
                 React.createElement("div", { style: { display: 'flex', gap: 8 } }, React.createElement("button", { onClick: () => exportAudit('csv'), style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, cursor: 'pointer' } }, "Export CSV"), React.createElement("button", { onClick: () => exportAudit('print'), style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, cursor: 'pointer' } }, "Print / PDF"))),
             React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, padding: '9px 20px', background: C.g50, borderBottom: `1px solid ${C.line}`, fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500 } }, React.createElement("span", null, "When"), React.createElement("span", null, "Actor"), React.createElement("span", null, "Event"), React.createElement("span", null, "Detail"), React.createElement("span", null, "Project")),
-            activity.slice(0, 200).map(a => { const p = projById[a.project_id]; return React.createElement("div", { key: a.id, style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}` } },
+            activity.slice(0, 200).map(a => { const p = projForEvent(a); return React.createElement("div", { key: a.id, style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}` } },
                 React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, fmtStamp(a.created_at)),
                 React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: C.ink0 } }, nameOfActor(a.actor_id)),
                 React.createElement("span", null, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 7px', borderRadius: 3, background: C.g100, color: C.text } }, (a.item_type || '') + ' ' + (EVENT_VERB[a.event_type] || a.event_type))),
@@ -1818,7 +1823,7 @@ function CommandDashboard(props) {
                 React.createElement("span", { style: { fontSize: 11.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p ? p.name : '—')); }));
     }
     function exportAudit(mode) {
-        const rows = activity.slice(0, 500).map(a => ({ when: fmtStamp(a.created_at), actor: nameOfActor(a.actor_id), event: (a.item_type || '') + ' ' + (EVENT_VERB[a.event_type] || a.event_type), detail: a.body || '', project: (projById[a.project_id] || {}).name || '' }));
+        const rows = activity.slice(0, 500).map(a => ({ when: fmtStamp(a.created_at), actor: nameOfActor(a.actor_id), event: (a.item_type || '') + ' ' + (EVENT_VERB[a.event_type] || a.event_type), detail: a.body || '', project: (projForEvent(a) || {}).name || '' }));
         if (mode === 'csv') {
             const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
             const csv = ['When,Actor,Event,Detail,Project'].concat(rows.map(r => [r.when, r.actor, r.event, r.detail, r.project].map(esc).join(','))).join('\n');
