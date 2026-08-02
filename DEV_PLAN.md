@@ -745,15 +745,26 @@ here per the handoff (`docs/handoff/`).
     (actions open/closed only, flags open/acknowledged, queries open/resolved — zero rejected rows).
   - This hardens the vocabulary the Step 2.5 verbs will assume. It does **not** build the verbs — that
     is Step 2.5.
-- `org_statuses` still stores `label = 'Won'`; the app already renders **LTA** from the `STATUSES`
-  const. Align the data or strike the item.
-- Drop dead `meeting_entries.flag`; settle `owner_name_fallback`; confirm the app actually reads
-  `org_meeting_types.group_field` (it is populated with real FK column names) or drop it.
-- `action_queries` carried three overlapping policies — confirm gone with the legacy table.
-- `project_checklists` has no `DELETE` policy — add or confirm intentional.
-- **Flag severity:** `meeting_handoffs` has no severity column, so the register cannot rank flags.
-- **Checklist follow-ups:** audit trigger so saves/sign-offs emit into the hub; "attach evidence" row
-  action; export (the PDF/XLSX buttons render but do nothing).
+**Housekeeping outcomes (investigated against code + live DB 2026-07-31):**
+- ✅ **won → LTA.** `org_statuses.label` set to `LTA` (`db/migrations/step3_housekeeping.sql`). Note:
+  `org_statuses` is **dead config** — the app renders from a hardcoded `STATUSES` const and reads the
+  table nowhere (0 refs) — so this is honesty for a future org-configurable-statuses feature, not a
+  live change.
+- ✅ **`meeting_entries.flag`** confirmed dead (selected, never consumed). Removed from the app select
+  now; the **column DROP is deferred to a post-deploy follow-up** — dropping it before this PR deploys
+  would break the currently-live app, which still selects it.
+- ✅ **`action_queries`** confirmed **already gone** (`to_regclass` null) — nothing to do.
+- ✅ **`owner_name_fallback`** confirmed **actively used** (11 sites, free-text action owner) — keep.
+- ✅ **`project_checklists` DELETE policy** confirmed **intentionally absent** — the app has no delete
+  path for a checklist container; SELECT/INSERT/UPDATE only, by design.
+- ⏸ **`org_meeting_types.group_field`** — same dead-shadow-config as `org_statuses` (app uses hardcoded
+  `MEETING_TYPES.groupField`, reads the DB column nowhere). **Not dropped.** Retiring the shadow-config
+  tables (`org_statuses`, `org_meeting_types`) is a go-live decision for Tom, not a Step 3 one-liner.
+- ⏭ **Flag severity** (`meeting_handoffs` has no severity column, so the register can't rank flags) —
+  **NOT a one-liner; deferred to Step 4** (the dashboard/register is where ranking lives; adding the
+  column + the UI belongs with that build, not here).
+- ⏭ **Checklist follow-ups** (audit trigger for saves/sign-offs; "attach evidence"; working PDF/XLSX
+  export) — **features, deferred.** The export path also needs the serverless proxy (Step 13).
 
 > **✅ The accountability-spine workshop is CLOSED (2026-07-31).** Tom ran a design workshop and handed
 > back a merged plan — **lifecycle unification + dashboard consolidation** — versioned in the repo at
