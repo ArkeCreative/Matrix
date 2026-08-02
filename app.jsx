@@ -1531,12 +1531,13 @@ function CmdKpiCard({ label, count, sub, subColor, icon, onGo }) {
 function CommandDashboard(props) {
     const { initialTab, initialFilters, projects, users, currentUser, isSenior, meetings, openActions, openFlags, keyDates, onOpenProject, onOpenMeeting, onOpenItem, onMarkActionComplete, onMarkDateMet, onTabChange, onFiltersChange } = props;
     const [tab, setTabState] = React.useState(initialTab || 'overview');
-    const [roleView, setRoleView] = React.useState('exec'); // seniors can preview the contributor view
     const [filters, setFiltersState] = React.useState(Object.assign({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }, initialFilters || {}));
     const [actLens, setActLens] = React.useState('feed');
     const [expanded, setExpanded] = React.useState(null);
     const [activity, setActivity] = React.useState([]);
     const [slips, setSlips] = React.useState([]);
+    const [moduleFillByProj, setModuleFillByProj] = React.useState({});
+    const [showAllHealth, setShowAllHealth] = React.useState(false);
     const setTab = (t) => { setTabState(t); if (onTabChange) onTabChange(t); };
     const setFilters = (next) => { const merged = Object.assign({}, filters, next); setFiltersState(merged); if (onFiltersChange) onFiltersChange(merged); };
     // React to deep-link changes (a KPI/board click updates the URL → props).
@@ -1544,7 +1545,7 @@ function CommandDashboard(props) {
     React.useEffect(() => { if (initialFilters) setFiltersState(prev => Object.assign({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }, initialFilters)); }, [initialFilters && initialFilters.scope, initialFilters && initialFilters.team, initialFilters && initialFilters.owner, initialFilters && initialFilters.kind]);
     const usersById = React.useMemo(() => { const m = {}; (users || []).forEach(u => { m[u.id] = u; }); return m; }, [users]);
     const projById = React.useMemo(() => { const m = {}; (projects || []).forEach(p => { m[p.id] = p; }); return m; }, [projects]);
-    const role = isSenior ? roleView : 'contributor';
+    const role = isSenior ? 'exec' : 'contributor'; // the dashboard follows the auth user's role
     const today = todayISO();
     // ---- auxiliary loaders (activity feed + programme slips) ----
     const loadActivity = React.useCallback(async () => {
@@ -1564,6 +1565,29 @@ function CommandDashboard(props) {
     }, []);
     React.useEffect(() => { loadSlips(); }, [loadSlips]);
     useLiveData(['dates', 'projects'], loadSlips);
+    // Module completeness for the health formula: answered rows (project_checklist_items)
+    // over template rows (module_template_items), averaged across the modules a project
+    // has touched. Projects that have built no modules stay null (factor 1.0, no penalty).
+    const loadModuleFill = React.useCallback(async () => {
+        try {
+            const [tiRes, ciRes] = await Promise.all([
+                sbQuiet.from('module_template_items').select('module_key'),
+                sbQuiet.from('project_checklist_items').select('project_id, module_key, status'),
+            ]);
+            const totals = {};
+            (tiRes.data || []).forEach(r => { totals[r.module_key] = (totals[r.module_key] || 0) + 1; });
+            const byProj = {};
+            (ciRes.data || []).forEach(r => { if (!r.status) return; const pm = byProj[r.project_id] || (byProj[r.project_id] = {}); pm[r.module_key] = (pm[r.module_key] || 0) + 1; });
+            const fill = {};
+            Object.keys(byProj).forEach(pid => {
+                const pcts = Object.keys(byProj[pid]).map(mk => { const t = totals[mk] || 0; return t ? Math.min(1, byProj[pid][mk] / t) : null; }).filter(x => x != null);
+                fill[pid] = pcts.length ? (pcts.reduce((s, x) => s + x, 0) / pcts.length) : null;
+            });
+            setModuleFillByProj(fill);
+        } catch (_) { /* module tables may be absent */ }
+    }, []);
+    React.useEffect(() => { loadModuleFill(); }, [loadModuleFill]);
+    useLiveData(['modules', 'checklist'], loadModuleFill);
     // ---- normalise every open item into one list (register + KPIs + boards) ----
     const items = React.useMemo(() => {
         const list = [];
@@ -1596,7 +1620,7 @@ function CommandDashboard(props) {
     const kpis = role === 'exec'
         ? [
             { label: 'Due this week', count: kpiWeek, icon: 'calendar-check', sub: '', go: () => goRegister({ scope: 'week' }) },
-            { label: 'Overdue', count: kpiOverdue, icon: 'alert-triangle', sub: kpiOverdue ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue' }) },
+            { label: 'Overdue', count: kpiOverdue, icon: 'clock', sub: kpiOverdue ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue' }) },
             { label: 'Open flags', count: kpiFlags, icon: 'flag', sub: '', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
             { label: 'Key dates', count: kpiDates, icon: 'calendar-plus', sub: '', go: () => goRegister({ scope: 'all', kind: 'date' }) },
         ]
@@ -1604,7 +1628,7 @@ function CommandDashboard(props) {
             { label: 'Your open actions', count: mine.filter(it => it.kind === 'action').length, icon: 'check-square', sub: '', go: () => goRegister({ scope: 'all', kind: 'action', owner: currentUser.id }) },
             { label: 'Due this week', count: mine.filter(it => dueThisWeek(it)).length, icon: 'calendar-check', sub: '', go: () => goRegister({ scope: 'week', owner: currentUser.id }) },
             { label: 'Flags for your team', count: kpiFlags, icon: 'flag', sub: '', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
-            { label: 'Overdue', count: mine.filter(it => it.overdue).length, icon: 'alert-triangle', sub: mine.filter(it => it.overdue).length ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue', owner: currentUser.id }) },
+            { label: 'Overdue', count: mine.filter(it => it.overdue).length, icon: 'clock', sub: mine.filter(it => it.overdue).length ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue', owner: currentUser.id }) },
         ];
     // ---- project health rows (exec) ----
     const healthRows = React.useMemo(() => {
@@ -1612,10 +1636,10 @@ function CommandDashboard(props) {
             const acts = items.filter(it => it.kind === 'action' && it.projectId === p.id).map(it => it.raw);
             const flgs = items.filter(it => it.kind === 'flag' && it.projectId === p.id).map(it => it.raw);
             const dts = ((keyDates || {})[p.id]) || [];
-            const h = projectHealth(p, acts, flgs, dts, null);
+            const h = projectHealth(p, acts, flgs, dts, moduleFillByProj[p.id]);
             return { p, h };
         }).sort((a, b) => a.h.score - b.h.score);
-    }, [projects, items, keyDates]);
+    }, [projects, items, keyDates, moduleFillByProj]);
     // ---- team performance ----
     const teamPerf = React.useMemo(() => {
         const map = {};
@@ -1639,8 +1663,8 @@ function CommandDashboard(props) {
     // ---- meetings cadence ----
     const meetStats = React.useMemo(() => {
         const byType = {};
-        (meetings || []).forEach(m => { const k = m.meeting_type || 'other'; const b = byType[k] || (byType[k] = { last: null, count: 0 }); b.count++; if (!b.last || (m.meeting_date || '') > b.last) b.last = m.meeting_date; });
-        return Object.keys(byType).map(k => ({ type: (MEETING_TYPES[k] && MEETING_TYPES[k].short) || k, last: byType[k].last ? formatMeetingDate(byType[k].last) : '—', count: byType[k].count })).slice(0, 6);
+        (meetings || []).forEach(m => { const k = m.meeting_type || 'other'; const b = byType[k] || (byType[k] = { last: null, id: null }); if (!b.last || (m.meeting_date || '') > b.last) { b.last = m.meeting_date; b.id = m.id; } });
+        return Object.keys(byType).map(k => ({ type: (MEETING_TYPES[k] && MEETING_TYPES[k].short) || k, last: byType[k].last ? formatMeetingDate(byType[k].last) : '—', id: byType[k].id })).slice(0, 6);
     }, [meetings]);
     // ---- REGISTER: filter + group ----
     const teamOptions = React.useMemo(() => { const set = {}; items.forEach(it => { if (it.team) set[it.team] = true; }); return Object.keys(set); }, [items]);
@@ -1705,14 +1729,17 @@ function CommandDashboard(props) {
             accountabilityBoard());
     }
     function healthBoard() {
-        return card('Project health', 'open items weighed against stage · module completeness', React.createElement("div", null,
-            healthRows.length === 0 ? React.createElement("div", { style: { padding: '16px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No active projects.")
-                : healthRows.map(({ p, h }) => { const rag = HEALTH_RAG[h.band]; const st = STATUSES.find(x => x.value === p.status) || { short: p.status, bg: C.g100, fg: C.g500 }; return React.createElement("div", { key: p.id, onClick: () => onOpenProject(p.id), style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) 92px 96px minmax(0,1.3fr) 130px', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
-                    React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT } }, p.name),
-                    React.createElement("div", null, React.createElement("span", { style: { display: 'inline-block', fontSize: 9.5, fontWeight: 700, padding: '3px 8px', borderRadius: 3, background: st.bg, color: st.fg, textTransform: 'uppercase', letterSpacing: '0.06em' } }, st.short)),
-                    React.createElement("div", null, React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: rag.fg } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: rag.fg } }), rag.label)),
-                    React.createElement("div", { style: { fontSize: 11, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, h.drivers),
-                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("div", { style: { flex: 1, height: 6, background: rag.bg, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { height: '100%', background: rag.fg, width: h.score + '%' } })), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: rag.fg, width: 30, textAlign: 'right' } }, h.score))); })));
+        const shown = showAllHealth ? healthRows : healthRows.slice(0, 6);
+        const hidden = healthRows.length - shown.length;
+        const rows = shown.map(({ p, h }) => { const rag = HEALTH_RAG[h.band]; const st = STATUSES.find(x => x.value === p.status) || { short: p.status, bg: C.g100, fg: C.g500 }; return React.createElement("div", { key: p.id, onClick: () => onOpenProject(p.id), style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) 92px 96px minmax(0,1.3fr) 130px', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
+            React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT } }, p.name),
+            React.createElement("div", null, React.createElement("span", { style: { display: 'inline-block', fontSize: 9.5, fontWeight: 700, padding: '3px 8px', borderRadius: 3, background: st.bg, color: st.fg, textTransform: 'uppercase', letterSpacing: '0.06em' } }, st.short)),
+            React.createElement("div", null, React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: rag.fg } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: rag.fg } }), rag.label)),
+            React.createElement("div", { style: { fontSize: 11, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, h.drivers),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("div", { style: { flex: 1, height: 6, background: rag.bg, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { height: '100%', background: rag.fg, width: h.score + '%' } })), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: rag.fg, width: 30, textAlign: 'right' } }, h.score))); });
+        const more = (healthRows.length > 6) ? React.createElement("div", { onClick: () => setShowAllHealth(v => !v), style: { padding: '11px 20px', textAlign: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: C.carmine, fontFamily: FONT, userSelect: 'none' } }, showAllHealth ? 'Show fewer' : ('+' + hidden + ' more')) : null;
+        return card('Project health', 'open items weighed against stage · module completeness',
+            healthRows.length === 0 ? React.createElement("div", { style: { padding: '16px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No active projects.") : React.createElement("div", null, rows, more));
     }
     function teamBoard() {
         return card('Team performance', 'open workload by team — click to filter the register', React.createElement("div", null,
@@ -1732,7 +1759,7 @@ function CommandDashboard(props) {
     function meetingsBoard() {
         return card('Meetings', 'cadence', React.createElement("div", null,
             meetStats.length === 0 ? React.createElement("div", { style: { padding: '13px 18px', fontSize: 12, color: C.g500 } }, "No meetings yet.")
-                : meetStats.map((m, i) => React.createElement("div", { key: i, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 18px', borderBottom: `1px solid ${C.line}`, fontSize: 12 } }, React.createElement("span", { style: { fontWeight: 700, color: C.ink0, width: 76 } }, m.type), React.createElement("span", { style: { color: C.g500, flex: 1 } }, 'last ' + m.last), React.createElement("span", { style: { color: C.g500, fontWeight: 600 } }, m.count + ' held')))));
+                : meetStats.map((m, i) => React.createElement("div", { key: i, onClick: m.id ? () => onOpenMeeting(m.id) : undefined, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 18px', borderBottom: `1px solid ${C.line}`, fontSize: 12, cursor: m.id ? 'pointer' : 'default' }, onMouseEnter: e => { if (m.id) e.currentTarget.style.background = C.g50; }, onMouseLeave: e => e.currentTarget.style.background = C.white }, React.createElement("span", { style: { fontWeight: 700, color: C.ink0, width: 76 } }, m.type), React.createElement("span", { style: { color: C.g500, flex: 1, textAlign: 'right' } }, 'last ' + m.last)))));
     }
     function slippingBoard() {
         return card('Slipping', 'programme moves this week', React.createElement("div", null,
@@ -1803,9 +1830,9 @@ function CommandDashboard(props) {
             (actLens === 'log' && isSenior) ? activityLog() : activityFeed());
     }
     function activityFeed() {
-        return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', maxWidth: 760 } },
+        return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } },
             activity.length === 0 ? React.createElement("div", { style: { padding: '20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No activity recorded yet.")
-                : activity.slice(0, 60).map(a => { const p = projForEvent(a); const km = KIND_META[a.item_type] || KIND_META.action; return React.createElement("div", { key: a.id, style: { display: 'flex', gap: 11, padding: '13px 18px', borderBottom: `1px solid ${C.line}` } },
+                : activity.slice(0, 60).map(a => { const p = projForEvent(a); const km = KIND_META[a.item_type] || KIND_META.action; const clickable = a.item_type && a.item_id; return React.createElement("div", { key: a.id, onClick: clickable ? () => onOpenItem(a.item_type, a.item_id) : undefined, style: { display: 'flex', gap: 11, padding: '13px 18px', borderBottom: `1px solid ${C.line}`, cursor: clickable ? 'pointer' : 'default' }, onMouseEnter: e => { if (clickable) e.currentTarget.style.background = C.g50; }, onMouseLeave: e => e.currentTarget.style.background = C.white },
                     React.createElement("div", { style: { width: 30, height: 30, borderRadius: 6, background: C.white, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: km.accent } }, lucide(km.icon, 15, 'currentColor', 2)),
                     React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.45 } }, React.createElement("span", { style: { fontWeight: 700 } }, nameOfActor(a.actor_id)), React.createElement("span", null, ' ' + (EVENT_VERB[a.event_type] || a.event_type) + ' '), React.createElement("span", { style: { color: C.carmine, fontWeight: 600 } }, km.label.toLowerCase())), React.createElement("div", { style: { fontSize: 11, color: C.g500, marginTop: 4 } }, (p ? p.name : '') + (a.body ? ' · ' + a.body : ''))),
                     React.createElement("div", { style: { fontSize: 10, color: C.g400, whiteSpace: 'nowrap', marginTop: 3 } }, fmtStamp(a.created_at))); }));
@@ -1815,7 +1842,7 @@ function CommandDashboard(props) {
             React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 15, color: C.ink0, fontFamily: FONT } }, "Audit log"), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, "every recorded event, attributed")),
                 React.createElement("div", { style: { display: 'flex', gap: 8 } }, React.createElement("button", { onClick: () => exportAudit('csv'), style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, cursor: 'pointer' } }, "Export CSV"), React.createElement("button", { onClick: () => exportAudit('print'), style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, cursor: 'pointer' } }, "Print / PDF"))),
             React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, padding: '9px 20px', background: C.g50, borderBottom: `1px solid ${C.line}`, fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500 } }, React.createElement("span", null, "When"), React.createElement("span", null, "Actor"), React.createElement("span", null, "Event"), React.createElement("span", null, "Detail"), React.createElement("span", null, "Project")),
-            activity.slice(0, 200).map(a => { const p = projForEvent(a); return React.createElement("div", { key: a.id, style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}` } },
+            activity.slice(0, 200).map(a => { const p = projForEvent(a); const clickable = a.item_type && a.item_id; return React.createElement("div", { key: a.id, onClick: clickable ? () => onOpenItem(a.item_type, a.item_id) : undefined, style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}`, cursor: clickable ? 'pointer' : 'default' }, onMouseEnter: e => { if (clickable) e.currentTarget.style.background = C.g50; }, onMouseLeave: e => e.currentTarget.style.background = C.white },
                 React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, fmtStamp(a.created_at)),
                 React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: C.ink0 } }, nameOfActor(a.actor_id)),
                 React.createElement("span", null, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 7px', borderRadius: 3, background: C.g100, color: C.text } }, (a.item_type || '') + ' ' + (EVENT_VERB[a.event_type] || a.event_type))),
@@ -1840,7 +1867,7 @@ function CommandDashboard(props) {
             React.createElement("div", { style: { maxWidth: 1360, margin: '0 auto' } },
                 React.createElement("div", { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20 } },
                     React.createElement("div", null, React.createElement("div", { style: { fontWeight: 700, fontSize: 22, color: C.ink0, fontFamily: FONT } }, "Dashboard"), React.createElement("div", { style: { fontSize: 13, color: C.g500, marginTop: 3 } }, "The portfolio at a glance — every number opens the register behind it.")),
-                    isSenior ? React.createElement("div", { style: { display: 'flex', border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, [{ k: 'exec', l: 'Exec view' }, { k: 'contributor', l: 'Contributor view' }].map(r => React.createElement("button", { key: r.k, onClick: () => setRoleView(r.k), style: { padding: '7px 13px', fontSize: 11.5, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: roleView === r.k ? C.prussian : C.white, color: roleView === r.k ? '#fff' : C.g500 } }, r.l))) : null),
+                    null),
                 React.createElement("div", { style: { display: 'flex', gap: 26, marginTop: 16 } }, tabs.map(t => React.createElement("button", { key: t.key, onClick: () => setTab(t.key), style: { padding: '0 0 12px', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? C.carmine : 'transparent'}`, color: tab === t.key ? C.ink0 : C.g500, fontSize: 13.5, fontWeight: tab === t.key ? 700 : 500, fontFamily: FONT, cursor: 'pointer' } }, t.label))))),
         React.createElement("main", { style: { padding: '22px 28px 60px' } }, React.createElement("div", { style: { maxWidth: 1360, margin: '0 auto' } },
             tab === 'overview' ? overviewTab() : (tab === 'register' ? registerTab() : activityTab()))));

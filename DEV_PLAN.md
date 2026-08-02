@@ -867,10 +867,13 @@ technique the RX bus used.
 > **Move 4 decision taken: `item_events` IS the record** the dashboard reads; `audit_log` stays as the
 > trigger-written notification spine (narrowing it further is a later cleanup, not needed for this step).
 >
+> **Module completeness in health — NOW WIRED (2026-08-02 tweak).** `CommandDashboard` loads an
+> org-wide module-fill aggregate (`module_template_items` totals ÷ `project_checklist_items` answered,
+> averaged over the modules a project has touched) and passes it to `projectHealth`. Projects that have
+> built no modules stay `null` (factor 1.0, no penalty). This fixed the "Halcyon reads 90 on 7%-filled
+> modules" case (now ~57 / Amber).
+>
 > **Deliberately deferred (noted, not forgotten):**
-> - **Module completeness in health** — `projectHealth` is called with `moduleFill = null` (factor 1.0,
->   no penalty) because module data isn't broadly populated yet. The formula supports it; wire the
->   org-wide module-fill aggregate once modules carry data. Outstanding-vs-stage is fully live.
 > - **Programme strip board** — omitted from the Overview; it duplicates the existing Live Tracker,
 >   which is still its own nav tab. Add the compact strip when the tracker bar model is factored out.
 > - **`item_events` has no `project_id`** — the activity feed/log project column is best-effort (blank
