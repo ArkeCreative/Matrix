@@ -775,9 +775,43 @@ here per the handoff (`docs/handoff/`).
 > workshop placeholder: **Move 1 → Step 3** (above), **the seam → Step 2.5** (below), **the Dashboard →
 > Step 4**, **provenance → Step 5**.
 
-### ▶ Step 2.5 — the lifecycle seam (Moves 2 + 3 + visual contract)  *(large · **hard prerequisite for Step 4**)*
+### ▶ Step 2.5 — the lifecycle seam (Moves 2 + 3 + visual contract)  *(large · **DONE** · **hard prerequisite for Step 4**)*
 Build order is **Step 3 → Step 2.5 → Step 4** (Move 1 rides Step 3 because it's queued housekeeping;
 this seam is the real prerequisite the dashboard consumes). Authoritative spec: `docs/handoff/lifecycle-plan.md`.
+
+> **BUILT (2026-08-02).** Landed in verifiable slices under one batch:
+> - **Slice A — lifecycle contract + chips.** `isOpen`, `settledWord`, `KIND_META`, `STATE_META`,
+>   `resolveChip`, `ageMeta`, and the shared `StateChip` / `AgeClock` render helpers (app.jsx ~256–344).
+> - **Slice C — the 9 service verbs** (`--VERBS-BEGIN--`/`--VERBS-END--`): `completeAction`,
+>   `reopenAction`, `acknowledgeFlag`, `convertFlag`, `resolveQuery`, `answerQuery`, `escalateQuery`,
+>   `markDateMet`, `moveDate`. Each owns its write shape, its `item_events` entry and a zero-row refusal
+>   throw. Unit-tested by `tests/verbs.test.js` (extracts real source, mock-PostgREST, **34/34**).
+> - **Slice D — every write surface routed through the verbs** (ItemModal, MeetingDetailView, App
+>   markActionComplete/markKeyDateMet, tracker, KeyDatesSection, ProgrammeTimeline, ActionRow/
+>   updateAction); and the **visual chip swap** — `StateChip`/`AgeClock` now render on My Work (flag
+>   rail + action overdue), the project Flags & Actions tab, the Register rows and the My Work key-date
+>   rail, deleting each surface's bespoke pill/badge/age code (incl. the pill-shaped `borderRadius:9999`
+>   chips → square corners). **Decision (Tom, 2026-08-02):** the Register + key-date rail were forced
+>   onto `StateChip` even though it drops the due-soon/due-today gradient (overdue stays the one loud
+>   chip; age shown via the age clock; the urgency *sort* is retained). Step 4 reworks the Register
+>   anyway. The item-modal State cell stays a fact-grid presentation by design (not a list-row chip).
+> - **Slice E — Move 3, full-scope loaders + one openness predicate.** `refreshProjectActions` /
+>   `refreshProjectFlags` no longer filter by status — they carry open **and** settled; the App derives
+>   `openProjectActions`/`openProjectFlags` **once** via `isOpen` and routes them to the open-only
+>   consumers, while the project dashboard reads the full arrays and derives its Completed/Resolved
+>   sections via `isOpen` (the per-view `loadDoneActions`/`loadDoneFlags` slices are **deleted**). This
+>   fixes the Fitzrovia vanishing-flag class of bug at the root. Side effect (a fix): the Register no
+>   longer counts `converted` flags as open. `keyDates` already followed this model (`!completed`).
+>
+> **Known tradeoff to revisit (not a blocker):** the full-scope action loader now fetches every
+> settled action org-wide on each `actions` RX emit, where the old dashboard done-loader was
+> project-scoped. Fine at current data volume; at scale, scope the global loader to open + recently
+> settled (or make settled lazy per-project). Flagged here so it isn't forgotten.
+>
+> **Deferred to Step 4 / later (unchanged by this step):** two `.neq(status)` filters that are
+> purposeful open-scoped *feature* queries, not shared-array slicing — the item-modal related-items
+> browse panel (app.jsx ~3476) and the date-move "caused by" cause picker (~7372–73). ProvenanceStrip
+> (B4) still lands with `threadOf()` in **Step 5**. Move 4 (audit spine) decision stays inside **Step 4**.
 
 **The rule: one operation, one implementation; one visual signal, one component. Deleting each
 surface's local copy is part of acceptance, not optional cleanup.** This is the single highest-value
