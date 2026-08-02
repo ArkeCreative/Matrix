@@ -853,7 +853,29 @@ technique the RX bus used.
   + the `change_*` transient columns → into `moveDate`; `doneFlags`/`openFlags` → `isOpen` selectors.
   These aren't rework of good code — they're the interim copies this step exists to unify.
 
-### ▶ Step 4 — Dashboard ("Command view")  *(large · **needs Step 2.5** · consumer of the seam)*
+### ▶ Step 4 — Dashboard ("Command view")  *(large · **BUILT 2026-08-02** · consumer of the seam)*
+
+> **BUILT.** New `CommandDashboard` component + service helpers `teamOf`/`teamLabel`/`projectHealth`
+> (the agreed formula) + `STAGE_MULT`/`HEALTH_RAG`. `#/dashboard` is the default landing; nav reordered
+> (Dashboard first, Register ribbon tab retired); `#/register?scope=&kind=&team=&owner=` is the
+> URL-backed deep-link, `#/activity` the activity tab; `parseHash`/`writeHash` now handle query strings.
+> Overview = 4 role-scoped KPI cards (each deep-links the register) + exec boards (project health, team
+> performance, pipeline, meetings, slipping from `programme_revisions`, accountability) or the
+> contributor "Your work this week" list. Open register = four-dropdown filter bar + urgency groups +
+> `item_events` row-history expansion. Activity = feed (all) + log (seniors) with CSV + print/PDF export.
+> Every row uses `StateChip`/`AgeClock`/`KIND_META`; every one-click action calls a Move-2 verb.
+> **Move 4 decision taken: `item_events` IS the record** the dashboard reads; `audit_log` stays as the
+> trigger-written notification spine (narrowing it further is a later cleanup, not needed for this step).
+>
+> **Deliberately deferred (noted, not forgotten):**
+> - **Module completeness in health** — `projectHealth` is called with `moduleFill = null` (factor 1.0,
+>   no penalty) because module data isn't broadly populated yet. The formula supports it; wire the
+>   org-wide module-fill aggregate once modules carry data. Outstanding-vs-stage is fully live.
+> - **Programme strip board** — omitted from the Overview; it duplicates the existing Live Tracker,
+>   which is still its own nav tab. Add the compact strip when the tracker bar model is factored out.
+> - **`item_events` has no `project_id`** — the activity feed/log project column is best-effort (blank
+>   for settled items). A small follow-up can add `project_id` to `item_events` (or the `record_activity`
+>   path) for a complete audit "Project" column.
 Absorbs the old "exec view part 1" **and** the Register/activity-log rework into one role-gated landing
 page. Authoritative spec: `docs/handoff/dashboard-spec.md`; agreed design is section **`2a`** of
 `docs/handoff/Dashboard Consolidation.dc.html` — match its row anatomy exactly. **Built entirely as a
