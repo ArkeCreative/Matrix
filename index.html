@@ -549,11 +549,11 @@ ${list.length ? `<table><thead><tr><th>Changed</th><th>Subject</th><th>From &rar
 <div class="foot">This record is generated from the live programme revision log. Each entry is timestamped and attributed at the moment the change was made — a contemporaneous record, not a reconstruction.</div>
 </body></html>`;
         const w = window.open('', '_blank');
-        if (!w) { alert('Please allow pop-ups to export the chronology.'); return; }
+        if (!w) { appAlert('Please allow pop-ups to export the chronology.'); return; }
         w.document.write(html); w.document.close(); w.focus();
         setTimeout(() => { try { w.print(); } catch (_) { } }, 350);
     }
-    catch (e) { alert('Could not build the chronology: ' + (e && e.message ? e.message : e)); }
+    catch (e) { appAlert('Could not build the chronology: ' + (e && e.message ? e.message : e)); }
 }
 // ============================================================
 // LIFECYCLE VERBS (Step 2.5, Move 2) — the service layer. --VERBS-BEGIN--
@@ -1020,7 +1020,7 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
             setEditProject(null);
         }
         catch (e) {
-            alert('Save failed: ' + e.message);
+            appAlert('Save failed: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -1039,7 +1039,7 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
             setKdForm({ type: 'site-start', date: '' });
         }
         catch (e) {
-            alert('Failed to save date: ' + e.message);
+            appAlert('Failed to save date: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -1728,10 +1728,12 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
 // action, isOpen for openness. Health = the agreed formula (projectHealth).
 // Team = teamOf (derived). Audit = item_events (Move 4: item_events is the record).
 // ============================================================
-function CmdKpiCard({ label, count, sub, subColor, icon, onGo }) {
+function CmdKpiCard({ label, count, sub, subColor, icon, onGo, explain }) {
     return React.createElement("div", { onClick: onGo, role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(); } }, style: { flex: 1, minWidth: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: '16px 18px', boxShadow: '0 1px 2px rgba(24,59,79,0.06)', cursor: 'pointer', transition: 'border-color 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.borderColor = C.carmine, onMouseLeave: e => e.currentTarget.style.borderColor = C.line },
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-            React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500, fontFamily: FONT } }, label),
+            React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5 } },
+                React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500, fontFamily: FONT } }, label),
+                explain ? React.createElement(ExplainPopover, { width: 224, trigger: React.createElement("span", { onClick: e => e.stopPropagation(), style: { display: 'inline-flex', cursor: 'help', color: C.g400 } }, lucide('help-circle', 12, 'currentColor', 2)), content: React.createElement("div", { style: { fontSize: 11.5, color: C.g700, lineHeight: 1.5 } }, explain) }) : null),
             React.createElement("span", { style: { width: 28, height: 28, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(icon, 15, 'currentColor', 2))),
         React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 9, marginTop: 10 } },
             React.createElement("span", { style: { fontWeight: 700, fontSize: 30, color: C.carmine, lineHeight: 1, fontFamily: FONT } }, count),
@@ -1829,16 +1831,16 @@ function CommandDashboard(props) {
     const goRegister = (f) => { setTab('register'); setFilters(Object.assign({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }, f)); };
     const kpis = role === 'exec'
         ? [
-            { label: 'Due this week', count: kpiWeek, icon: 'calendar-check', sub: '', go: () => goRegister({ scope: 'week' }) },
-            { label: 'Overdue', count: kpiOverdue, icon: 'clock', sub: kpiOverdue ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue' }) },
-            { label: 'Open flags', count: kpiFlags, icon: 'flag', sub: '', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
-            { label: 'Key dates', count: kpiDates, icon: 'calendar-plus', sub: '', go: () => goRegister({ scope: 'all', kind: 'date' }) },
+            { label: 'Due this week', count: kpiWeek, icon: 'calendar-check', sub: '', explain: 'Open actions and key dates due in the next 7 days (and not already overdue).', go: () => goRegister({ scope: 'week' }) },
+            { label: 'Overdue', count: kpiOverdue, icon: 'clock', sub: kpiOverdue ? 'needs attention' : '', subColor: C.carmine, explain: 'Open actions and key dates whose date has already passed.', go: () => goRegister({ scope: 'overdue' }) },
+            { label: 'Open flags', count: kpiFlags, icon: 'flag', sub: '', explain: 'Flags raised to a team that have not yet been acknowledged or converted.', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
+            { label: 'Key dates', count: kpiDates, icon: 'calendar-plus', sub: '', explain: 'Programme key dates that are still open (not yet met).', go: () => goRegister({ scope: 'all', kind: 'date' }) },
         ]
         : [
-            { label: 'Your open actions', count: mine.filter(it => it.kind === 'action').length, icon: 'check-square', sub: '', go: () => goRegister({ scope: 'all', kind: 'action', owner: currentUser.id }) },
-            { label: 'Due this week', count: mine.filter(it => dueThisWeek(it)).length, icon: 'calendar-check', sub: '', go: () => goRegister({ scope: 'week', owner: currentUser.id }) },
-            { label: 'Flags for your team', count: kpiFlags, icon: 'flag', sub: '', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
-            { label: 'Overdue', count: mine.filter(it => it.overdue).length, icon: 'clock', sub: mine.filter(it => it.overdue).length ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue', owner: currentUser.id }) },
+            { label: 'Your open actions', count: mine.filter(it => it.kind === 'action').length, icon: 'check-square', sub: '', explain: 'Actions you own that are still open.', go: () => goRegister({ scope: 'all', kind: 'action', owner: currentUser.id }) },
+            { label: 'Due this week', count: mine.filter(it => dueThisWeek(it)).length, icon: 'calendar-check', sub: '', explain: 'Your open items due in the next 7 days (and not already overdue).', go: () => goRegister({ scope: 'week', owner: currentUser.id }) },
+            { label: 'Flags for your team', count: kpiFlags, icon: 'flag', sub: '', explain: 'Open flags routed to your team, not yet acknowledged.', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
+            { label: 'Overdue', count: mine.filter(it => it.overdue).length, icon: 'clock', sub: mine.filter(it => it.overdue).length ? 'needs attention' : '', subColor: C.carmine, explain: 'Your open items whose date has already passed.', go: () => goRegister({ scope: 'overdue', owner: currentUser.id }) },
         ];
     // ---- project health rows (exec) ----
     const healthRows = React.useMemo(() => {
@@ -1907,7 +1909,7 @@ function CommandDashboard(props) {
         body);
     function overviewTab() {
         return React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' } }, kpis.map((k, i) => React.createElement(CmdKpiCard, { key: i, label: k.label, count: k.count, sub: k.sub, subColor: k.subColor, icon: k.icon, onGo: k.go }))),
+            React.createElement("div", { style: { display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' } }, kpis.map((k, i) => React.createElement(CmdKpiCard, { key: i, label: k.label, count: k.count, sub: k.sub, subColor: k.subColor, icon: k.icon, onGo: k.go, explain: k.explain }))),
             role === 'contributor' ? contribBody() : execBoards());
     }
     function contribBody() {
@@ -1946,7 +1948,7 @@ function CommandDashboard(props) {
             React.createElement("div", null, React.createElement("span", { style: { display: 'inline-block', fontSize: 9.5, fontWeight: 700, padding: '3px 8px', borderRadius: 3, background: st.bg, color: st.fg, textTransform: 'uppercase', letterSpacing: '0.06em' } }, st.short)),
             React.createElement("div", null, React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: rag.fg } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: rag.fg } }), rag.label)),
             React.createElement("div", { style: { fontSize: 11, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, h.drivers),
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("div", { style: { flex: 1, height: 6, background: rag.bg, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { height: '100%', background: rag.fg, width: h.score + '%' } })), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: rag.fg, width: 30, textAlign: 'right' } }, h.score))); });
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("div", { style: { flex: 1, height: 6, background: rag.bg, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { height: '100%', background: rag.fg, width: h.score + '%' } })), React.createElement(ExplainPopover, { width: 262, trigger: React.createElement("span", { onClick: (e) => e.stopPropagation(), style: { fontSize: 11, fontWeight: 700, color: rag.fg, width: 30, textAlign: 'right', cursor: 'help', borderBottom: `1px dotted ${rag.fg}` } }, h.score), content: healthBreakdown(h, st.short) }))); });
         const more = (healthRows.length > 6) ? React.createElement("div", { onClick: () => setShowAllHealth(v => !v), style: { padding: '11px 20px', textAlign: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: C.carmine, fontFamily: FONT, userSelect: 'none' } }, showAllHealth ? 'Show fewer' : ('+' + hidden + ' more')) : null;
         return card('Project health', 'open items weighed against stage · module completeness',
             healthRows.length === 0 ? React.createElement("div", { style: { padding: '16px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No active projects.") : React.createElement("div", null, rows, more));
@@ -1958,7 +1960,7 @@ function CommandDashboard(props) {
                     React.createElement("div", null, React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.ink0 } }, t.label), React.createElement("div", { style: { fontSize: 10.5, color: C.g500 } }, t.people + (t.people === 1 ? ' person' : ' people'))),
                     React.createElement("div", { style: { position: 'relative', height: 8, background: C.g100, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, width: Math.round(100 * t.open / maxTeamOpen) + '%', background: C.prussian80 } }), React.createElement("div", { style: { position: 'absolute', top: 0, bottom: 0, left: 0, width: Math.round(100 * t.overdue / maxTeamOpen) + '%', background: C.carmine } })),
                     React.createElement("div", { style: { fontSize: 12, color: C.text } }, React.createElement("span", { style: { fontWeight: 700 } }, t.open), " open", t.overdue ? React.createElement("span", { style: { color: C.carmine, fontWeight: 700 } }, ' · ' + t.overdue + ' overdue') : null),
-                    React.createElement("div", { style: { textAlign: 'right' } }, t.overdue >= 2 ? React.createElement("span", { style: { display: 'inline-block', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 7px', background: C.carmine, color: '#fff' } }, "Needs assistance") : null)))));
+                    React.createElement("div", { style: { textAlign: 'right' } }, t.overdue >= 2 ? React.createElement("span", { title: "Shown when a team has 2 or more overdue items.", style: { display: 'inline-block', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 7px', background: C.carmine, color: '#fff', cursor: 'help' } }, "Needs assistance") : null)))));
     }
     function pipelineBoard() {
         return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: '16px 18px' } },
@@ -2124,9 +2126,44 @@ function projectHealth(project, actions, flags, dates, moduleFill) {
     if (oda) drivers.push(oda + ' overdue action' + (oda > 1 ? 's' : ''));
     if (fl) drivers.push(fl + ' open flag' + (fl > 1 ? 's' : ''));
     if (moduleFill != null && moduleFill < 0.5) drivers.push('thin module data');
-    return { score, band, drivers: drivers.length ? drivers.join(' · ') : 'clear', mult, od, oda, fl, oa };
+    return { score, band, drivers: drivers.length ? drivers.join(' · ') : 'clear', mult, od, oda, fl, oa, sev, pressure, moduleFactor, moduleFill: (moduleFill == null ? null : moduleFill) };
 }
 const HEALTH_RAG = { green: { fg: '#1E6B45', bg: '#E7F0EA', label: 'On track' }, amber: { fg: '#A5741C', bg: '#FEF3C7', label: 'Watch' }, red: { fg: '#8C002A', bg: '#F4E6EA', label: 'At risk' } };
+// P0.1 "explain this number" (Step 15) — a hover popover that decomposes a
+// composite metric into its inputs, so a number that surprises a user never
+// reads as a bug. `trigger` is the number as shown; `content` is the breakdown.
+function ExplainPopover(props) {
+    const [pos, setPos] = React.useState(null);
+    const ref = React.useRef(null);
+    const w = props.width || 250;
+    const open = () => { const el = ref.current; if (!el) return; const r = el.getBoundingClientRect(); setPos({ top: r.bottom + 8, left: Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) }); };
+    // position:fixed so the popover escapes any overflow:hidden card it sits in.
+    return React.createElement("span", { ref: ref, style: { position: 'relative', display: 'inline-flex', alignItems: 'center' }, onMouseEnter: open, onMouseLeave: () => setPos(null) },
+        props.trigger,
+        pos ? React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { position: 'fixed', zIndex: 500, top: pos.top, left: pos.left, width: w, background: '#fff', border: `1px solid ${C.line}`, borderRadius: 6, boxShadow: '0 10px 34px rgba(24,59,79,0.20)', padding: '13px 15px', textAlign: 'left', fontWeight: 400, cursor: 'default', whiteSpace: 'normal', fontFamily: FONT } }, props.content) : null);
+}
+// Plain-English decomposition of a project-health score (see projectHealth).
+function healthBreakdown(h, stageLabel) {
+    const r1 = (n) => Math.round(n * 10) / 10;
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const row = (label, val, color) => React.createElement("div", { key: label, style: { display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11.5, color: color || C.g700, padding: '2px 0' } }, React.createElement("span", null, label), React.createElement("span", { style: { fontWeight: 700, whiteSpace: 'nowrap' } }, val));
+    const parts = [];
+    if (h.od) parts.push(row(h.od + ' overdue date' + (h.od > 1 ? 's' : ''), '×3 = ' + (h.od * 3)));
+    if (h.oda) parts.push(row(h.oda + ' overdue action' + (h.oda > 1 ? 's' : ''), '×2 = ' + (h.oda * 2)));
+    if (h.fl) parts.push(row(h.fl + ' open flag' + (h.fl > 1 ? 's' : ''), '×2 = ' + (h.fl * 2)));
+    if (h.oa) parts.push(row(h.oa + ' open action' + (h.oa > 1 ? 's' : ''), '×0.5 = ' + r1(h.oa * 0.5)));
+    if (!parts.length) parts.push(React.createElement("div", { key: 'clear', style: { fontSize: 11.5, color: C.success } }, "Nothing outstanding."));
+    return React.createElement("div", null,
+        React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.g500, marginBottom: 9 } }, "How the score is worked out"),
+        parts,
+        React.createElement("div", { style: { borderTop: `1px solid ${C.line}`, marginTop: 8, paddingTop: 8 } },
+            row('Outstanding load', r1(h.sev)),
+            row('× ' + (stageLabel || 'stage') + ' stage', '×' + h.mult),
+            row('Pressure', r1(h.pressure), C.carmine),
+            h.moduleFill == null ? row('Modules', 'none built — no penalty') : row('Modules ' + Math.round(h.moduleFill * 100) + '% fed', '×' + r2(h.moduleFactor))),
+        React.createElement("div", { style: { borderTop: `1px solid ${C.line}`, marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: C.ink0 } }, React.createElement("span", null, "Score"), React.createElement("span", null, '(100 − ' + r1(h.pressure) + ') × ' + r2(h.moduleFactor) + ' = ' + h.score)),
+        React.createElement("div", { style: { marginTop: 9, fontSize: 10, color: C.g500, lineHeight: 1.4 } }, "Grading: 70+ on track · 40–69 watch · under 40 at risk."));
+}
 function Dashboard({ user, profile, onProfileUpdated }) {
     const [projects, setProjects] = useState([]);
     const [users, setUsers] = useState([]);
@@ -2252,7 +2289,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     }, []);
     // ---- Register (Open register) inline actions ----
     const markActionComplete = useCallback(async (action) => {
-        if (!window.confirm('Mark this action complete?'))
+        if (!await appConfirm('Mark this action complete?'))
             return;
         try {
             // The verb owns the write shape, the audit event (this path used to
@@ -2265,18 +2302,18 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             setProjectActions(prev => prev.map(a => a.id === action.id ? Object.assign(Object.assign({}, a), { status: 'closed', completed_at: new Date().toISOString(), completed_by: user.id }) : a));
         }
         catch (e) {
-            alert('Failed to mark complete: ' + e.message);
+            appAlert('Failed to mark complete: ' + e.message);
         }
     }, [user.id]);
     const markKeyDateMet = useCallback(async (kd) => {
-        if (!window.confirm('Mark this key date as met?'))
+        if (!await appConfirm('Mark this key date as met?'))
             return;
         try {
             await markDateMet(kd, { actorId: user.id });
             refreshKeyDates();
         }
         catch (e) {
-            alert('Failed to update key date: ' + e.message);
+            appAlert('Failed to update key date: ' + e.message);
         }
     }, [user.id]);
     // Save a project field — debounced per project per field
@@ -2362,7 +2399,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             setShowNewProject(false);
         }
         catch (e) {
-            alert('Failed to create project: ' + e.message);
+            appAlert('Failed to create project: ' + e.message);
         }
     };
     const createMeeting = async (meetingType) => {
@@ -2384,7 +2421,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             setCurrentView('meeting-detail');
         }
         catch (e) {
-            alert('Failed to create meeting: ' + e.message);
+            appAlert('Failed to create meeting: ' + e.message);
         }
     };
     const openMeeting = (meetingId) => {
@@ -2400,7 +2437,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             refreshProjectActions();
         }
         catch (e) {
-            alert('Failed to delete meeting: ' + e.message);
+            appAlert('Failed to delete meeting: ' + e.message);
         }
     };
     const refreshLatestNotes = useCallback(async () => {
@@ -2789,7 +2826,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { onClick: goHome, role: "button", tabIndex: 0, title: "Back to projects", onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } }, onMouseEnter: e => { e.currentTarget.style.opacity = '0.78'; }, onMouseLeave: e => { e.currentTarget.style.opacity = '1'; }, style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3, cursor: 'pointer', transition: 'opacity 160ms ease-out' } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Dashboard", active: currentView === 'dashboard', onClick: goHome }), React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Work", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Organisation", active: currentView === 'organisation', onClick: () => setCurrentView('organisation') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setDashTab('activity'); setDashFilters(null); setCurrentView('dashboard'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'dashboard' && (React.createElement(CommandDashboard, { key: 'dashboard', initialTab: dashTab, initialFilters: dashFilters, projects: projects, users: users, currentUser: user, isSenior: isSenior, meetings: meetings, openActions: openProjectActions, openFlags: openProjectFlags, keyDates: keyDates, onOpenProject: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onOpenMeeting: openMeeting, onOpenItem: openItem, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onTabChange: (t) => setDashTab(t), onFiltersChange: (f) => setDashFilters(f) })), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: openProjectActions, projectFlags: openProjectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, sort: projectSort, setSort: setProjectSort, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: openProjectActions, projectFlags: openProjectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: openProjectActions, projectFlags: openProjectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onBack: () => setCurrentView('tracker') })), currentView === 'organisation' && (React.createElement(OrganisationView, { key: currentView, currentUser: user, profile: profile, isSenior: isSenior, projects: projects })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { onClick: goHome, role: "button", tabIndex: 0, title: "Back to projects", onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } }, onMouseEnter: e => { e.currentTarget.style.opacity = '0.78'; }, onMouseLeave: e => { e.currentTarget.style.opacity = '1'; }, style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3, cursor: 'pointer', transition: 'opacity 160ms ease-out' } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Dashboard", active: currentView === 'dashboard', onClick: goHome }), React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Work", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Organisation", active: currentView === 'organisation', onClick: () => setCurrentView('organisation') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setDashTab('activity'); setDashFilters(null); setCurrentView('dashboard'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'dashboard' && (React.createElement(CommandDashboard, { key: 'dashboard', initialTab: dashTab, initialFilters: dashFilters, projects: projects, users: users, currentUser: user, isSenior: isSenior, meetings: meetings, openActions: openProjectActions, openFlags: openProjectFlags, keyDates: keyDates, onOpenProject: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onOpenMeeting: openMeeting, onOpenItem: openItem, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onTabChange: (t) => setDashTab(t), onFiltersChange: (f) => setDashFilters(f) })), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: openProjectActions, projectFlags: openProjectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, sort: projectSort, setSort: setProjectSort, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: openProjectActions, projectFlags: openProjectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: openProjectActions, projectFlags: openProjectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onBack: () => setCurrentView('tracker') })), currentView === 'organisation' && (React.createElement(OrganisationView, { key: currentView, currentUser: user, profile: profile, isSenior: isSenior, projects: projects })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) })), React.createElement(DialogHost, { key: 'app-dialog-host' })));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
@@ -3094,7 +3131,7 @@ function ProgrammeTimeline({ project, keyDates, editable, currentUser, onKeyDate
                     await commitDateMove(pendingMove.id, pendingMove.to, ctx);
                 }
                 catch (e) {
-                    alert('Could not move the date: ' + e.message);
+                    appAlert('Could not move the date: ' + e.message);
                 }
                 setPendingMove(null);
             } }));
@@ -4001,6 +4038,45 @@ const MA = {
 // the handler at mount. No prop-drilling, no state manager.
 let _openItemHandler = null;
 function openItem(kind, id) { if (_openItemHandler) _openItemHandler({ kind: kind, id: id }); }
+// ---- App dialogs (Step 15) — non-blocking in-app confirm/alert. The native
+// window.confirm/alert froze the renderer (~30s hang on Delete meeting) and blocked
+// automation; these resolve a Promise from a DialogHost mounted at the root, same
+// module-level pattern as openItem. `appConfirm` → Promise<boolean>; `appAlert` →
+// Promise<void>. Fall back to native only if no host is mounted (never silently no-op).
+let _dialogHandler = null;
+function appDialog(spec) {
+    return new Promise((resolve) => {
+        if (_dialogHandler) { _dialogHandler(Object.assign({}, spec, { resolve: resolve })); return; }
+        if (spec.mode === 'confirm') { resolve(typeof window !== 'undefined' ? window.confirm(spec.message) : false); return; }
+        if (typeof window !== 'undefined' && spec.message) window.alert(spec.message);
+        resolve(true);
+    });
+}
+function appConfirm(message, opts) { const o = opts || {}; return appDialog({ mode: 'confirm', message: message, title: o.title || null, confirmLabel: o.confirmLabel || 'Confirm', cancelLabel: o.cancelLabel || 'Cancel', danger: !!o.danger }); }
+function appAlert(message, opts) { const o = opts || {}; return appDialog({ mode: 'alert', message: message, title: o.title || null, confirmLabel: o.okLabel || 'OK' }); }
+function DialogHost() {
+    const [queue, setQueue] = React.useState([]);
+    React.useEffect(() => { _dialogHandler = (d) => setQueue((q) => q.concat(d)); return () => { _dialogHandler = null; }; }, []);
+    React.useEffect(() => {
+        if (!queue.length) return;
+        const onKey = (e) => { if (e.key === 'Escape') { const d = queue[0]; setQueue((q) => q.slice(1)); if (d.resolve) d.resolve(d.mode === 'confirm' ? false : true); } };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [queue]);
+    if (!queue.length)
+        return null;
+    const dlg = queue[0];
+    const isConfirm = dlg.mode === 'confirm';
+    const done = (result) => { const r = dlg.resolve; setQueue((q) => q.slice(1)); if (r) r(result); };
+    return React.createElement("div", { onClick: () => done(isConfirm ? false : true), style: { position: 'fixed', inset: 0, background: 'rgba(10,10,10,0.42)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+        React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: '#fff', borderTop: `3px solid ${dlg.danger ? C.carmine : C.prussian}`, borderRadius: 2, width: 440, maxWidth: '94vw', boxShadow: '0 24px 60px rgba(10,10,10,0.35)', fontFamily: FONT } },
+            React.createElement("div", { style: { padding: '22px 24px 18px' } },
+                dlg.title ? React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink0, marginBottom: 8 } }, dlg.title) : null,
+                React.createElement("div", { style: { fontSize: 13.5, color: C.g700, lineHeight: 1.55, whiteSpace: 'pre-wrap' } }, dlg.message)),
+            React.createElement("div", { style: { padding: '14px 24px', borderTop: `1px solid ${C.line}`, display: 'flex', justifyContent: 'flex-end', gap: 10 } },
+                isConfirm ? React.createElement("button", { onClick: () => done(false), style: btnSecondary() }, dlg.cancelLabel || 'Cancel') : null,
+                React.createElement("button", { autoFocus: true, onClick: () => done(true), style: Object.assign(Object.assign({}, btnPrimary()), dlg.danger ? { background: C.carmine } : {}) }, dlg.confirmLabel || 'OK'))));
+}
 // Append-only audit write. RLS forces actor_id = auth.uid(), so actorId is always the
 // current user. Best-effort at the UI layer — never blocks the action it records.
 async function logItemEvent(itemType, itemId, eventType, opts) {
@@ -4200,7 +4276,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await completeAction(item, { actorId: currentUser.id, orgId: orgId, note: draftNote.trim() });
             setDraftNote('');
         }
-        catch (e) { alert('Could not complete: ' + e.message); }
+        catch (e) { appAlert('Could not complete: ' + e.message); }
         setBusy(false); reload();
     };
     const doRaiseQuery = async () => {
@@ -4217,7 +4293,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await logItemEvent(parentType, parentId, 'query', { actorId: currentUser.id, orgId: orgId, subjectId: queryTo, body: 'Query raised by ' + nameOf(currentUser.id) + ', routed to ' + nameOf(queryTo) });
             setQueryText(''); setShowRaise(false);
         }
-        catch (e) { alert(/duplicate|unique/i.test(e.message || '') ? 'There is already an open query on this item. Resolve it before raising another.' : ('Could not raise query: ' + e.message)); }
+        catch (e) { appAlert(/duplicate|unique/i.test(e.message || '') ? 'There is already an open query on this item. Resolve it before raising another.' : ('Could not raise query: ' + e.message)); }
         setBusy(false); reload();
     };
     const doReply = async () => {
@@ -4230,7 +4306,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await answerQuery(aq, { actorId: currentUser.id, orgId: orgId, body: draftReply.trim(), isAnswer: isAnswer, returnTo: returnTo, returnToName: nameOf(returnTo) });
             setDraftReply('');
         }
-        catch (e) { alert('Could not send: ' + e.message); }
+        catch (e) { appAlert('Could not send: ' + e.message); }
         setBusy(false); reload();
     };
     const doResolve = async () => {
@@ -4240,18 +4316,18 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await resolveQuery(aq, { actorId: currentUser.id, orgId: orgId, note: draftReply.trim() });
             setDraftReply('');
         }
-        catch (e) { alert('Could not resolve: ' + e.message); }
+        catch (e) { appAlert('Could not resolve: ' + e.message); }
         setBusy(false); reload();
     };
     const doEscalate = async () => {
         if (!aq || busy) return;
         const target = escalationTarget(ball, users, projForItem);
-        if (!target) { alert('No escalation target available (no department lead or PM set).'); return; }
+        if (!target) { appAlert('No escalation target available (no department lead or PM set).'); return; }
         setBusy(true);
         try {
             await escalateQuery(aq, { actorId: currentUser.id, orgId: orgId, target: target, targetName: nameOf(target), ballName: nameOf(ball) });
         }
-        catch (e) { alert('Could not escalate: ' + e.message); }
+        catch (e) { appAlert('Could not escalate: ' + e.message); }
         setBusy(false); reload();
     };
     const doChase = async () => {
@@ -4270,7 +4346,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await logItemEvent('action', id, 'reassign', { actorId: currentUser.id, orgId: orgId, subjectId: reassignTo, body: 'Reassigned ' + nameOf(from) + ' → ' + nameOf(reassignTo) });
             setReassignTo('');
         }
-        catch (e) { alert('Could not reassign: ' + e.message); }
+        catch (e) { appAlert('Could not reassign: ' + e.message); }
         setBusy(false); reload();
     };
     const doMoveDate = async () => {
@@ -4282,7 +4358,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await logItemEvent('action', id, 'date_change', { actorId: currentUser.id, orgId: orgId, body: 'Due date moved ' + (from ? formatMeetingDate(from) : '—') + ' → ' + formatMeetingDate(dueDraft) });
             setDueDraft('');
         }
-        catch (e) { alert('Could not move date: ' + e.message); }
+        catch (e) { appAlert('Could not move date: ' + e.message); }
         setBusy(false); reload();
     };
     // ---- flag / date handlers ----
@@ -4293,7 +4369,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await acknowledgeFlag(item, { actorId: currentUser.id, orgId: orgId, note: draftNote.trim() });
             setDraftNote('');
         }
-        catch (e) { alert('Could not acknowledge: ' + e.message); }
+        catch (e) { appAlert('Could not acknowledge: ' + e.message); }
         setBusy(false); reload();
     };
     const doConvertFlag = async () => {
@@ -4303,7 +4379,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await convertFlag(item, { actorId: currentUser.id, orgId: orgId, action: { description: item.note, owner_user_id: convertOwner, due_date: dueDraft || null }, ownerId: convertOwner, ownerName: nameOf(convertOwner) });
             setConvertOwner(''); setDueDraft('');
         }
-        catch (e) { alert('Could not convert: ' + e.message); }
+        catch (e) { appAlert('Could not convert: ' + e.message); }
         setBusy(false); reload();
     };
     const doNudge = async () => {
@@ -4323,7 +4399,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
             await logItemEvent('date', id, 'raised', { actorId: currentUser.id, orgId: orgId, body: 'Recovery action raised' });
             setDraftNote('');
         }
-        catch (e) { alert('Could not raise action: ' + e.message); }
+        catch (e) { appAlert('Could not raise action: ' + e.message); }
         setBusy(false); reload();
     };
     // ---- derived render values ----
@@ -4994,7 +5070,7 @@ function ProjectEditModal({ project, onClose, onSave }) {
     const save = async () => {
         if (!canSave)
             return;
-        if (identityChanged && !window.confirm('This project’s name and number appear across meetings, actions and the tracker. Updating them here changes them everywhere. Continue?'))
+        if (identityChanged && !await appConfirm('This project’s name and number appear across meetings, actions and the tracker. Updating them here changes them everywhere. Continue?'))
             return;
         setSaving(true);
         try {
@@ -5007,7 +5083,7 @@ function ProjectEditModal({ project, onClose, onSave }) {
             onClose();
         }
         catch (e) {
-            alert('Save failed: ' + e.message);
+            appAlert('Save failed: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -5036,7 +5112,7 @@ function SecureProjectModal({ project, users, currentUser, onClose, onSave }) {
     const save = async () => {
         if (!canSave)
             return;
-        if (wasSecured && !form.secured && !window.confirm('Mark this project as no longer secured? Its programme dates will show as projected again on the tracker.'))
+        if (wasSecured && !form.secured && !await appConfirm('Mark this project as no longer secured? Its programme dates will show as projected again on the tracker.'))
             return;
         setSaving(true);
         try {
@@ -5059,7 +5135,7 @@ function SecureProjectModal({ project, users, currentUser, onClose, onSave }) {
             onClose();
         }
         catch (e) {
-            alert('Save failed: ' + e.message);
+            appAlert('Save failed: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -5374,14 +5450,14 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
     const leave = () => { flushAll(); if (onBack) onBack(); };
     const toggleSignOff = async () => {
         const next = !signedOff;
-        if (next && !window.confirm('Sign off ' + template.label + '? This stamps the record into the project audit trail.'))
+        if (next && !await appConfirm('Sign off ' + template.label + '? This stamps the record into the project audit trail.'))
             return;
         setSignedOff(next);
         try {
             await sb.from('project_checklists').upsert({ project_id: project.id, module_key: template.module_key, notes: notes || null, signed_off: next, signed_off_by: next && currentUser ? currentUser.id : null, signed_off_at: next ? new Date().toISOString() : null }, { onConflict: 'project_id,module_key' });
             flash(next ? 'Signed off' : 'Sign-off withdrawn');
         }
-        catch (e) { alert('Sign-off failed: ' + e.message); }
+        catch (e) { appAlert('Sign-off failed: ' + e.message); }
     };
     // ---- routing a row out to a real flag or a real action ----
     const openRoute = (r, kind) => setModal({ row: r, kind: kind, target: kind === 'flag' ? (cfg.defaultTeam || 'pre-con') : null, note: (valueFor(r).note || ''), due: '' });
@@ -5420,7 +5496,7 @@ function ChecklistModule({ project, template, currentUser, users, isSenior, onBa
             if (onDataChanged)
                 onDataChanged();
         }
-        catch (e) { alert('Failed: ' + e.message); }
+        catch (e) { appAlert('Failed: ' + e.message); }
     };
     if (loading)
         return React.createElement("div", { style: { padding: 40, textAlign: 'center', color: C.mist } }, "Loading checklist…");
@@ -5702,12 +5778,12 @@ function ProjectDirectory({ projectId, currentUser }) {
             if (error) throw error;
             setContacts(prev => [...prev, data]);
         }
-        catch (e) { alert('Failed to add row: ' + e.message); }
+        catch (e) { appAlert('Failed to add row: ' + e.message); }
     };
     const updateFields = async (id, fields) => {
         setContacts(prev => prev.map(c => c.id === id ? Object.assign(Object.assign({}, c), fields) : c));
         try { await sb.from('project_contacts').update(fields).eq('id', id); }
-        catch (e) { alert('Save failed: ' + e.message); }
+        catch (e) { appAlert('Save failed: ' + e.message); }
     };
     const updateField = (id, field, value) => updateFields(id, { [field]: value });
     // Briefly tint whatever the auto-fill wrote, so it reads as "pulled from a
@@ -5749,10 +5825,10 @@ function ProjectDirectory({ projectId, currentUser }) {
         markFilled(c.id, auto);
     };
     const remove = async (id) => {
-        if (!window.confirm('Remove this contact from the directory?')) return;
+        if (!await appConfirm('Remove this contact from the directory?', { danger: true, confirmLabel: 'Remove' })) return;
         setContacts(prev => prev.filter(c => c.id !== id));
         try { await sb.from('project_contacts').delete().eq('id', id); }
-        catch (e) { alert('Delete failed: ' + e.message); }
+        catch (e) { appAlert('Delete failed: ' + e.message); }
     };
     // Controlled so an auto-fill lands in the field immediately; persisted on
     // blur, and only when the value actually changed since focus.
@@ -5900,7 +5976,9 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const doneFlags = projFlags.filter(f => !isOpen('flag', f)).sort((a, b) => String(b.acknowledged_at || '').localeCompare(String(a.acknowledged_at || '')));
     const myKeyDates = (keyDates && keyDates[projectId]) || [];
     const openKeyDates = myKeyDates.filter(kd => !isAutoComplete(kd));
-    const overdueCount = myActions.filter(a => a.due_date && a.due_date < today).length;
+    // "Overdue dates" = open key dates past their target (the label was showing
+    // overdue actions — a number that didn't match its label). P0.1 fix.
+    const overdueCount = myKeyDates.filter(kd => !kd.completed && kd.target_date && kd.target_date < today && !isAutoComplete(kd)).length;
     const lastUpdater = users.find(u => u.id === project.last_updated_by);
     const lastUpdated = project.updated_at ? formatRelative(project.updated_at) : '—';
     const secured = project.secured === true;
@@ -5916,7 +5994,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         { label: 'Project Manager', field: 'project_manager_user_id', department: 'pm' },
     ];
     const commitTeamChange = async (field, newUserId) => { setSaving(field); try { await onSaveTeam(projectId, field, newUserId); } finally { setSaving(null); } };
-    const reassignActionsTo = async (actionIds, newOwnerId) => { try { await sb.from('actions').update({ owner_user_id: newOwnerId }).in('id', actionIds); if (onActionsChange) onActionsChange(); } catch (e) { alert('Failed to reassign actions: ' + e.message); } };
+    const reassignActionsTo = async (actionIds, newOwnerId) => { try { await sb.from('actions').update({ owner_user_id: newOwnerId }).in('id', actionIds); if (onActionsChange) onActionsChange(); } catch (e) { appAlert('Failed to reassign actions: ' + e.message); } };
     // Team-change integrity: if the outgoing member still owns open actions on
     // this project, warn before committing so those actions aren't quietly
     // orphaned. Actions are retained either way (they belong to the person,
@@ -5955,12 +6033,12 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const roText = (v) => React.createElement("div", { style: { border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 14px', fontSize: 15, color: C.ink0, background: '#fff' } }, v || '—');
     const editInput = (defVal, onSave, opts) => React.createElement("input", Object.assign({ defaultValue: defVal, onBlur: e => onSave(e.target.value), style: { border: `1px solid ${C.line}`, borderRadius: 2, padding: '11px 14px', fontSize: 15, color: C.ink0, background: '#fff', width: '100%', boxSizing: 'border-box', fontFamily: FONT, outline: 'none' } }, opts || {}));
     // ----- STAT STRIP ----------------------------------------------------------
-    const statCard = (label, node, onClick) => React.createElement("div", { onClick: onClick || undefined, onMouseEnter: onClick ? (e => { e.currentTarget.style.borderColor = C.carmineMid; e.currentTarget.style.boxShadow = '0 2px 10px rgba(24,59,79,.12)'; }) : undefined, onMouseLeave: onClick ? (e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.boxShadow = SHADOW_SM; }) : undefined, style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: SHADOW_SM, padding: '18px 20px', cursor: onClick ? 'pointer' : 'default', transition: 'box-shadow 160ms ease-out, border-color 160ms ease-out' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 } }, React.createElement("span", { style: { fontWeight: 500, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500 } }, label), onClick && React.createElement("span", { style: { display: 'inline-flex', color: C.carmine } }, lucide('arrow-right', 13, 'currentColor', 2))), node);
+    const statCard = (label, node, onClick, title) => React.createElement("div", { title: title || undefined, onClick: onClick || undefined, onMouseEnter: onClick ? (e => { e.currentTarget.style.borderColor = C.carmineMid; e.currentTarget.style.boxShadow = '0 2px 10px rgba(24,59,79,.12)'; }) : undefined, onMouseLeave: onClick ? (e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.boxShadow = SHADOW_SM; }) : undefined, style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: SHADOW_SM, padding: '18px 20px', cursor: onClick ? 'pointer' : 'default', transition: 'box-shadow 160ms ease-out, border-color 160ms ease-out' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 } }, React.createElement("span", { style: { fontWeight: 500, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.g500 } }, label), onClick && React.createElement("span", { style: { display: 'inline-flex', color: C.carmine } }, lucide('arrow-right', 13, 'currentColor', 2))), node);
     const bigNum = (v, col) => React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 34, color: col, lineHeight: 1 } }, v);
     const statStrip = React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 } },
-        statCard('Open actions', bigNum(myActions.length, myActions.length ? C.warn : C.ink0), () => setActiveTab('actions')),
-        statCard('Open flags', bigNum(openFlags.length, openFlags.length ? C.warn : C.ink0), () => setActiveTab('actions')),
-        statCard('Overdue dates', bigNum(overdueCount, overdueCount ? C.carmine : C.ink0), () => setActiveTab('actions')),
+        statCard('Open actions', bigNum(myActions.length, myActions.length ? C.warn : C.ink0), () => setActiveTab('actions'), 'Actions on this project that are still open (not completed).'),
+        statCard('Open flags', bigNum(openFlags.length, openFlags.length ? C.warn : C.ink0), () => setActiveTab('actions'), 'Flags raised on this project, not yet acknowledged or converted.'),
+        statCard('Overdue dates', bigNum(overdueCount, overdueCount ? C.carmine : C.ink0), () => setActiveTab('actions'), 'Open key dates on this project whose target date has already passed.'),
         statCard('Last updated', React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 22, color: C.ink0, lineHeight: 1.1 } }, lastUpdated), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 3 } }, lastUpdater ? ('by ' + lastUpdater.display_name) : ''))));
     // ----- PLANNED STRIP (site area solid, rest planned) -----------------------
     const plannedCard = (label, value, sub, solid) => React.createElement("div", { style: { border: solid ? `1px solid ${C.line}` : `1px dashed ${C.g300}`, borderRadius: 4, padding: '16px 20px', background: solid ? C.white : 'transparent' } }, React.createElement("div", { style: { fontWeight: 500, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: solid ? C.g500 : C.g500, marginBottom: 8 } }, label), React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 22, color: solid ? C.ink0 : C.g300, lineHeight: 1 } }, value), React.createElement("div", { style: { fontSize: 12, fontStyle: 'italic', color: solid ? C.g500 : C.mist, marginTop: 4 } }, sub));
@@ -5989,7 +6067,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             infoRow('Project Number', isSenior ? editInput(project.project_number || '', v => { if (v.trim() !== (project.project_number || '')) onProjectSave(project.id, { project_number: v.trim() || null }); }) : roText(project.project_number)),
             infoRow('Address', isSenior ? editInput(project.address || '', v => { if (v.trim() !== (project.address || '')) onProjectSave(project.id, { address: v.trim() || null }); }) : roText(project.address)),
             infoRow('Status', statusControl)),
-        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0 2px' } }, isSenior ? React.createElement(ToggleSwitch, { on: secured, colour: C.success, onChange: v => { if (!v && !window.confirm('Mark this project as no longer secured? Its programme dates will show as projected again.')) return; const f = { secured: v }; if (v && project.secured !== true) { f.secured_at = new Date().toISOString(); f.secured_by = currentUser.id; } if (!v) { f.secured_at = null; f.secured_by = null; } onProjectSave(project.id, f); } }) : React.createElement("span", { style: { width: 12, height: 12, borderRadius: '50%', background: secured ? C.success : C.g300 } }), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: secured ? C.success : C.g500 } }, secured ? 'Secured' : 'Unsecured'), secured && securedBy && React.createElement("span", { style: { fontSize: 13, color: C.g500 } }, "by ", securedBy.display_name)),
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0 2px' } }, isSenior ? React.createElement(ToggleSwitch, { on: secured, colour: C.success, onChange: async v => { if (!v && !(await appConfirm('Mark this project as no longer secured? Its programme dates will show as projected again.'))) return; const f = { secured: v }; if (v && project.secured !== true) { f.secured_at = new Date().toISOString(); f.secured_by = currentUser.id; } if (!v) { f.secured_at = null; f.secured_by = null; } onProjectSave(project.id, f); } }) : React.createElement("span", { style: { width: 12, height: 12, borderRadius: '50%', background: secured ? C.success : C.g300 } }), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 15, color: secured ? C.success : C.g500 } }, secured ? 'Secured' : 'Unsecured'), secured && securedBy && React.createElement("span", { style: { fontSize: 13, color: C.g500 } }, "by ", securedBy.display_name)),
         secured && React.createElement("div", { style: { marginTop: 16 } }, infoRow('How secured', isSenior ? editInput(project.secured_note || '', v => { if (v.trim() !== (project.secured_note || '')) onProjectSave(project.id, { secured_note: v.trim() || null }); }, { placeholder: 'Commitment in place' }) : roText(project.secured_note))),
         React.createElement("div", { style: { marginTop: 14 } }, infoRow('Site area', React.createElement("div", { style: { display: 'flex', gap: 10 } }, areaInput(areaState.m2, 'm²', e => { const v = e.target.value; setArea({ m2: v, ft2: v ? String(Math.round((parseFloat(v.replace(/[^0-9.]/g, '')) || 0) * 10.7639)) : '' }); }), areaInput(areaState.ft2, 'ft²', e => { const v = e.target.value; setArea({ ft2: v, m2: v ? String(Math.round((parseFloat(v.replace(/[^0-9.]/g, '')) || 0) / 10.7639)) : '' }); })))),
         React.createElement("div", { style: { marginTop: 14 } }, infoRow('Floor level', React.createElement("div", { style: { display: 'flex', gap: 10, alignItems: 'stretch' } },
@@ -6025,7 +6103,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
                     });
                 }
                 catch (e) {
-                    alert('Could not save the date: ' + e.message);
+                    appAlert('Could not save the date: ' + e.message);
                 }
             } }),
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12, borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 20 } }, React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 13, letterSpacing: '0.14em', color: C.carmine } }, "CONSTRUCTION"), !secured && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, border: `1.5px solid ${C.carmine}`, color: C.carmine, fontFamily: FONT, fontWeight: 600, fontSize: 10, letterSpacing: '0.12em', padding: '3px 9px', borderRadius: 9999 } }, "ANTICIPATED")),
@@ -6054,7 +6132,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             (isSenior && !project.programme_baselined_at) && React.createElement("button", { onClick: async () => {
                     if (baselining)
                         return;
-                    if (!window.confirm('Freeze the current dates as this project\u2019s agreed programme baseline?\n\nThis cannot be undone or re-set later — every future date change will be measured against these dates.'))
+                    if (!await appConfirm('Freeze the current dates as this project\u2019s agreed programme baseline?\n\nThis cannot be undone or re-set later — every future date change will be measured against these dates.'))
                         return;
                     setBaselining(true);
                     setBaselineMsg(null);
@@ -6135,7 +6213,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
             setVisBase(JSON.stringify(vis));
         }
         catch (e) {
-            alert('Could not save permissions: ' + e.message);
+            appAlert('Could not save permissions: ' + e.message);
         }
         setVisSaving(false);
     };
@@ -6523,7 +6601,7 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
         const p = byId[id];
         if (!p)
             return;
-        if (!window.confirm('Put ' + p.display_name + '\u2019s password back to the temporary one?\n\nThey will be asked to choose a new one the next time they sign in.'))
+        if (!await appConfirm('Put ' + p.display_name + '\u2019s password back to the temporary one?\n\nThey will be asked to choose a new one the next time they sign in.'))
             return;
         try {
             const { error } = await sb.rpc('reset_password_to_temporary', { p_user: id });
@@ -6531,11 +6609,11 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
                 throw error;
             flash(p.display_name + '\u2019s password is back to ' + DEV_TEMP_PASSWORD + ' \u2014 they set a new one on next sign-in.');
         }
-        catch (e) { alert('Could not reset that password: ' + e.message); }
+        catch (e) { appAlert('Could not reset that password: ' + e.message); }
     };
     const removePerson = async (id) => {
         const p = byId[id];
-        if (!p || !window.confirm('Remove ' + p.display_name + ' from the organisation? They stay on historic records — this marks them inactive.')) return;
+        if (!p || !await appConfirm('Remove ' + p.display_name + ' from the organisation? They stay on historic records — this marks them inactive.', { danger: true, confirmLabel: 'Remove' })) return;
         try {
             const { error } = await sb.from('app_users').update({ active: false }).eq('id', id);
             if (error) throw error;
@@ -6544,7 +6622,7 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
             setSelected(null);
             load();
         }
-        catch (e) { alert('Could not remove: ' + e.message); }
+        catch (e) { appAlert('Could not remove: ' + e.message); }
     };
     // ---- save / discard ------------------------------------------------------
     const save = async () => {
@@ -6574,7 +6652,7 @@ function OrganisationView({ currentUser, profile, isSenior, projects }) {
             setBasePos(JSON.stringify(positions));
             flash(changed.length ? (changed.length + (changed.length === 1 ? ' person saved' : ' people saved')) : 'Layout saved');
         }
-        catch (e) { alert('Save failed: ' + e.message); }
+        catch (e) { appAlert('Save failed: ' + e.message); }
         setSaving(false);
     };
     const discard = () => { setPeople(JSON.parse(base)); setPositions(JSON.parse(basePos)); setSelected(null); };
@@ -7122,7 +7200,7 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
             fontFamily: FONT,
         }, onMouseEnter: e => e.currentTarget.style.background = C.carmineSoft, onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, opt.label))))))))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, inProgressMeetings.length > 0 && (React.createElement("div", { style: { marginBottom: 20 } }, inProgressMeetings.map(m => {
         const cfg = MEETING_TYPES[m.meeting_type] || { label: m.meeting_type };
-        return (React.createElement("div", { key: m.id, style: { display: 'grid', gridTemplateColumns: '200px 1fr', borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.amber}`, marginBottom: 8 } }, React.createElement("div", { style: { background: C.amber, padding: '14px 18px' } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4, fontFamily: FONT } }, "In progress"), React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.white } }, cfg.label), React.createElement("div", { style: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 } }, formatMeetingDateLong(m.meeting_date))), React.createElement("div", { style: { background: C.white, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 } }, React.createElement("button", { onClick: () => { if (window.confirm(`Discard this draft ${cfg.label}? Nothing has been formally recorded yet — this cannot be undone.`))
+        return (React.createElement("div", { key: m.id, style: { display: 'grid', gridTemplateColumns: '200px 1fr', borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.amber}`, marginBottom: 8 } }, React.createElement("div", { style: { background: C.amber, padding: '14px 18px' } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4, fontFamily: FONT } }, "In progress"), React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.white } }, cfg.label), React.createElement("div", { style: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 } }, formatMeetingDateLong(m.meeting_date))), React.createElement("div", { style: { background: C.white, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 } }, React.createElement("button", { onClick: async () => { if (await appConfirm(`Discard this draft ${cfg.label}? Nothing has been formally recorded yet — this cannot be undone.`))
                 onDelete(m.id); }, style: { padding: '9px 16px', background: 'transparent', color: C.muted, border: `1px solid ${C.line}`, borderRadius: 3, fontFamily: FONT, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }, onMouseEnter: e => { e.currentTarget.style.color = C.redStatus; e.currentTarget.style.borderColor = C.redStatus; }, onMouseLeave: e => { e.currentTarget.style.color = C.muted; e.currentTarget.style.borderColor = C.line; } }, "Discard"), React.createElement("button", { onClick: () => onOpen(m.id), style: { padding: '9px 18px', background: C.amber, color: '#fff', border: 'none', borderRadius: 3, fontFamily: FONT, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' } }, "Resume meeting \u2192"))));
     }))), visibleMeetings.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 48, textAlign: 'center', color: C.muted } }, "No meetings yet. Use \"+ New meeting\" above to start.")) : (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 16 } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 2 } }, React.createElement("div", { style: { width: 22, height: 3, background: '#000', flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.16em', fontFamily: FONT } }, "Closed meetings"), React.createElement("span", { style: { fontSize: 10, color: C.mist, fontWeight: 500, fontFamily: FONT } }, `· ${filteredPresentTypes.reduce((n, t) => n + groupedMeetings[t].length, 0)}`)), filteredPresentTypes.map(typeKey => {
         const cfg = MEETING_TYPES[typeKey] || { label: typeKey };
@@ -7182,7 +7260,7 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
                     entryTouched.forEach(pid => touched.add(pid));
                 const updated = relevant.filter(p => touched.has(p.id)).length;
                 return React.createElement("span", { style: { fontSize: 13, color: updated >= relevant.length ? C.success : C.g500, fontWeight: 300, fontFamily: FONT } }, `· ${updated} of ${relevant.length} projects updated`);
-            })())), React.createElement("div", null, m.status === 'in-progress' ? (React.createElement("span", { style: { background: C.warn, color: '#fff', padding: '9px 14px', borderRadius: 2, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: FONT } }, "In progress")) : (React.createElement("span", { onMouseEnter: e => e.currentTarget.style.background = C.prussian20, onMouseLeave: e => e.currentTarget.style.background = C.prussian10, style: { background: C.prussian10, color: C.prussian, padding: '9px 14px', borderRadius: 2, fontSize: 12, fontWeight: 600, fontFamily: FONT, letterSpacing: '0.02em', transition: 'background 160ms ease-out' } }, "Closed"))), isSenior && React.createElement("button", { onClick: (e) => { e.stopPropagation(); if (window.confirm(`Delete this ${cfg.label}? This cannot be undone.`))
+            })())), React.createElement("div", null, m.status === 'in-progress' ? (React.createElement("span", { style: { background: C.warn, color: '#fff', padding: '9px 14px', borderRadius: 2, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: FONT } }, "In progress")) : (React.createElement("span", { onMouseEnter: e => e.currentTarget.style.background = C.prussian20, onMouseLeave: e => e.currentTarget.style.background = C.prussian10, style: { background: C.prussian10, color: C.prussian, padding: '9px 14px', borderRadius: 2, fontSize: 12, fontWeight: 600, fontFamily: FONT, letterSpacing: '0.02em', transition: 'background 160ms ease-out' } }, "Closed"))), isSenior && React.createElement("button", { onClick: async (e) => { e.stopPropagation(); if (await appConfirm(`Delete this ${cfg.label}? This cannot be undone.`))
                     onDelete(m.id); }, title: "Delete meeting", onMouseEnter: e => { e.currentTarget.style.borderColor = C.carmine40; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = C.g300; }, style: { width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: 2, cursor: 'pointer', color: C.g300, fontSize: 13, padding: 0, lineHeight: 1, transition: 'all 160ms ease-out' } }, "\uD83D\uDDD1")));
         })));
     })))))));
@@ -7462,7 +7540,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             const msg = /duplicate key|unique/i.test(e.message || '')
                 ? 'There is already an open query on this action.'
                 : 'Failed to raise query: ' + e.message;
-            alert(msg);
+            appAlert(msg);
             throw e;
         }
     };
@@ -7477,7 +7555,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setActionQueries(prev => (prev || []).filter(q => q.id !== query.id));
         }
         catch (e) {
-            alert('Failed to answer query: ' + e.message);
+            appAlert('Failed to answer query: ' + e.message);
             throw e;
         }
     };
@@ -7523,7 +7601,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             }
         }
         catch (e) {
-            alert('Failed to apply group: ' + e.message);
+            appAlert('Failed to apply group: ' + e.message);
         }
     };
     const removeAttendanceGroup = async (groupIds) => {
@@ -7543,7 +7621,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setAttendees(prev => prev.filter(a => !ids.includes(a.id)));
         }
         catch (e) {
-            alert('Failed to remove group: ' + e.message);
+            appAlert('Failed to remove group: ' + e.message);
         }
     };
     const toggleAttendeePresent = async (att) => {
@@ -7554,7 +7632,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setAttendees(prev => prev.map(a => a.id === att.id ? data : a));
         }
         catch (e) {
-            alert('Failed to update attendance: ' + e.message);
+            appAlert('Failed to update attendance: ' + e.message);
         }
     };
     const addAttendee = async (userId) => {
@@ -7567,7 +7645,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setAttendees(prev => [...prev, data]);
         }
         catch (e) {
-            alert('Failed to add attendee: ' + e.message);
+            appAlert('Failed to add attendee: ' + e.message);
         }
     };
     const removeAttendee = async (att) => {
@@ -7578,7 +7656,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setAttendees(prev => prev.filter(a => a.id !== att.id));
         }
         catch (e) {
-            alert('Failed to remove attendee: ' + e.message);
+            appAlert('Failed to remove attendee: ' + e.message);
         }
     };
     // ----- CROSS-MEETING HANDOFFS -----
@@ -7600,20 +7678,20 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setHandoffs(prev => [data, ...prev]);
         }
         catch (e) {
-            alert('Failed to flag for another team: ' + e.message);
+            appAlert('Failed to flag for another team: ' + e.message);
         }
     };
     const acknowledgeHandoff = async (handoff, note) => {
         // Step 2: the target department's lead, a senior, or the raiser.
         if (!canActOnHandoff(handoff)) {
-            alert('Only the ' + (handoff.to_department || 'target') + ' team lead, a senior, or whoever raised it can acknowledge this flag.');
+            appAlert('Only the ' + (handoff.to_department || 'target') + ' team lead, a senior, or whoever raised it can acknowledge this flag.');
             return;
         }
         // A closed meeting is a historical record — a flag can't be acknowledged
         // (silently killed) after the fact. It carries forward to the next
         // relevant meeting until actioned there. Reopen to act on it here.
         if (meeting && meeting.status === 'closed') {
-            alert('This meeting is closed — reopen it to acknowledge this flag. Until then it carries forward to the next relevant meeting.');
+            appAlert('This meeting is closed — reopen it to acknowledge this flag. Until then it carries forward to the next relevant meeting.');
             return;
         }
         const trimmed = (note || '').trim();
@@ -7625,16 +7703,16 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setHandoffs(prev => prev.map(h => h.id === handoff.id ? Object.assign({}, h, { status: 'acknowledged', acknowledged_by: currentUser ? currentUser.id : null, acknowledged_at: new Date().toISOString(), acknowledged_note: trimmed || null }) : h));
         }
         catch (e) {
-            alert('Failed to acknowledge: ' + e.message);
+            appAlert('Failed to acknowledge: ' + e.message);
         }
     };
     const convertHandoffToAction = (handoff) => {
         if (!canActOnHandoff(handoff)) {
-            alert('Only the ' + (handoff.to_department || 'target') + ' team lead, a senior, or whoever raised it can convert this flag to an action.');
+            appAlert('Only the ' + (handoff.to_department || 'target') + ' team lead, a senior, or whoever raised it can convert this flag to an action.');
             return;
         }
         if (meeting && meeting.status === 'closed') {
-            alert('This meeting is closed — reopen it to convert this flag into an action.');
+            appAlert('This meeting is closed — reopen it to convert this flag into an action.');
             return;
         }
         // Open the full add-action dialogue, pre-filled with the flag text.
@@ -7738,7 +7816,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             }
         }
         catch (e) {
-            alert('Failed to mark reviewed: ' + e.message);
+            appAlert('Failed to mark reviewed: ' + e.message);
         }
     };
     const addAction = async (actionData) => {
@@ -7802,7 +7880,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setShowAddAction(false);
         }
         catch (e) {
-            alert('Failed to add action: ' + e.message);
+            appAlert('Failed to add action: ' + e.message);
         }
     };
     const updateAction = async (actionId, updates) => {
@@ -7857,11 +7935,11 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             }
         }
         catch (e) {
-            alert('Failed to update action: ' + e.message);
+            appAlert('Failed to update action: ' + e.message);
         }
     };
     const deleteAction = async (actionId) => {
-        if (!window.confirm('Delete this action?'))
+        if (!await appConfirm('Delete this action?', { danger: true, confirmLabel: 'Delete' }))
             return;
         try {
             const { error } = await sb.from('actions').delete().eq('id', actionId);
@@ -7870,11 +7948,11 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setActions(prev => prev.filter(a => a.id !== actionId));
         }
         catch (e) {
-            alert('Failed to delete action: ' + e.message);
+            appAlert('Failed to delete action: ' + e.message);
         }
     };
     const closeMeeting = async () => {
-        if (!window.confirm('Close this meeting? You can still view it afterwards but the notes will become read-only for future editing.'))
+        if (!await appConfirm('Close this meeting? You can still view it afterwards but the notes will become read-only for future editing.'))
             return;
         try {
             const { error } = await sb.from('meetings').update({ status: 'closed' }).eq('id', meetingId);
@@ -7883,14 +7961,14 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setMeeting(prev => (Object.assign(Object.assign({}, prev), { status: 'closed' })));
         }
         catch (e) {
-            alert('Failed to close meeting: ' + e.message);
+            appAlert('Failed to close meeting: ' + e.message);
         }
     };
     const deleteMeeting = async () => {
-        const confirmed = window.confirm('Delete this entire meeting? This will permanently remove all captured notes and actions for this meeting. This cannot be undone.');
+        const confirmed = await appConfirm('Delete this entire meeting? This will permanently remove all captured notes and actions for this meeting. This cannot be undone.', { danger: true, confirmLabel: 'Delete meeting' });
         if (!confirmed)
             return;
-        const doubleCheck = window.confirm('Are you sure? All notes and actions in this meeting will be deleted permanently.');
+        const doubleCheck = await appConfirm('Are you sure? All notes and actions in this meeting will be deleted permanently.', { danger: true, confirmLabel: 'Delete permanently' });
         if (!doubleCheck)
             return;
         try {
@@ -7900,12 +7978,12 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             onBack();
         }
         catch (e) {
-            alert('Failed to delete meeting: ' + e.message);
+            appAlert('Failed to delete meeting: ' + e.message);
         }
     };
     const reopenMeeting = async () => {
         if (!isSenior) {
-            alert('Only senior users can reopen a closed meeting.');
+            appAlert('Only senior users can reopen a closed meeting.');
             return;
         }
         // Re-authenticate: senior must re-enter their password to reopen.
@@ -7913,13 +7991,13 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
         if (pw === null)
             return;
         if (!pw) {
-            alert('Password required to reopen.');
+            appAlert('Password required to reopen.');
             return;
         }
         try {
             const { error: authErr } = await sb.auth.signInWithPassword({ email: currentUser.email, password: pw });
             if (authErr) {
-                alert('Password incorrect — meeting not reopened.');
+                appAlert('Password incorrect — meeting not reopened.');
                 return;
             }
             const { error } = await sb.from('meetings').update({ status: 'in-progress' }).eq('id', meetingId);
@@ -7928,7 +8006,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             setMeeting(prev => (Object.assign(Object.assign({}, prev), { status: 'in-progress' })));
         }
         catch (e) {
-            alert('Failed to reopen meeting: ' + e.message);
+            appAlert('Failed to reopen meeting: ' + e.message);
         }
     };
     if (loading)
@@ -8252,7 +8330,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
                 await onKeyDatesChange();
         }
         catch (e) {
-            alert('Failed to save: ' + e.message);
+            appAlert('Failed to save: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -8297,7 +8375,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
             await writeEdit(id, null);
         }
         catch (e) {
-            alert('Failed to update: ' + e.message);
+            appAlert('Failed to update: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -8313,7 +8391,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
                 await onKeyDatesChange();
         }
         catch (e) {
-            alert('Failed to complete: ' + e.message);
+            appAlert('Failed to complete: ' + e.message);
         }
         finally {
             setSaving(false);
@@ -8338,14 +8416,14 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
                 await onKeyDatesChange();
         }
         catch (e) {
-            alert('Failed to reopen: ' + e.message);
+            appAlert('Failed to reopen: ' + e.message);
         }
         finally {
             setSaving(false);
         }
     };
     const handleDelete = async (id) => {
-        if (!window.confirm('Delete this key date?'))
+        if (!await appConfirm('Delete this key date?', { danger: true, confirmLabel: 'Delete' }))
             return;
         try {
             const { error } = await sb.from('project_key_dates').delete().eq('id', id);
@@ -8355,7 +8433,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
                 await onKeyDatesChange();
         }
         catch (e) {
-            alert('Failed to delete: ' + e.message);
+            appAlert('Failed to delete: ' + e.message);
         }
     };
     const openDates = keyDates.filter(kd => !isAutoComplete(kd));
@@ -8365,7 +8443,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
             await writeEdit(pendingMove.id, ctx);
         }
         catch (e) {
-            alert('Failed to update: ' + e.message);
+            appAlert('Failed to update: ' + e.message);
             setPendingMove(null);
         }
         finally {
@@ -8929,7 +9007,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
     const emailAllRecipients = () => {
         const emails = grouped.map(r => r.email).filter(Boolean);
         if (emails.length === 0) {
-            alert('No recipients have an email address on file.');
+            appAlert('No recipients have an email address on file.');
             return;
         }
         const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Meeting Actions`;
@@ -8939,7 +9017,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
     const exportMinutes = () => {
         const w = window.open('', '_blank');
         if (!w) {
-            alert('Pop-up blocked. Allow pop-ups for this site to export minutes.');
+            appAlert('Pop-up blocked. Allow pop-ups for this site to export minutes.');
             return;
         }
         const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -8981,7 +9059,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
         w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Minutes — ${esc(cfg.label)} — ${esc(formatMeetingDate(meeting.meeting_date))}</title><style>body{font-family:'Century Gothic',system-ui,sans-serif;color:#2A2E2C;max-width:800px;margin:32px auto;padding:0 24px;line-height:1.5}h1{font-size:22px;color:#8C002A;margin-bottom:4px}.meta{color:#6B7270;font-size:13px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #E2E0DD}@media print{body{margin:0}}</style></head><body><h1>${esc(cfg.label)} — Minutes</h1><div class="meta">${esc(formatMeetingDateLong(meeting.meeting_date))} \u00B7 Chair: ${esc(chairName)} \u00B7 ${actions.length} action${actions.length === 1 ? '' : 's'}${flags.length > 0 ? ` \u00B7 ${flags.length} flag${flags.length === 1 ? '' : 's'}` : ''}</div>${projectsHtml || '<p style="color:#6B7270">No actions recorded for this meeting.</p>'}${flagsHtml}<p style="margin-top:32px;color:#9BA3A0;font-size:11px">Generated by arke [matrix] \u00B7 ${esc(new Date().toLocaleDateString('en-GB'))}</p><script>window.onload=function(){window.print()}<\/script></body></html>`);
         w.document.close();
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length > 0 && (React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: emailAllRecipients, style: btnPrimary() }, "Email all attendees"), React.createElement("button", { onClick: () => { navigator.clipboard.writeText(buildAllEmailsBody()); alert('All actions copied to clipboard.'); }, style: btnSecondary() }, "Copy all"), React.createElement("button", { onClick: exportMinutes, style: btnSecondary() }, "Export minutes"))), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
+    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: FONT, fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length > 0 && (React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: emailAllRecipients, style: btnPrimary() }, "Email all attendees"), React.createElement("button", { onClick: () => { navigator.clipboard.writeText(buildAllEmailsBody()); appAlert('All actions copied to clipboard.'); }, style: btnSecondary() }, "Copy all"), React.createElement("button", { onClick: exportMinutes, style: btnSecondary() }, "Export minutes"))), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
             const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
             const lines = [];
             lines.push(`Subject: ${subject}`);
@@ -9020,7 +9098,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
             lines.push('');
             lines.push(chairName);
             navigator.clipboard.writeText(lines.join('\n'));
-            alert('Copied to clipboard. Paste into a new email manually.');
+            appAlert('Copied to clipboard. Paste into a new email manually.');
         }, style: btnSecondary() }, "Copy"))), React.createElement("div", { style: { fontSize: 12, color: C.text, paddingTop: 8, borderTop: `1px solid ${C.line}` } }, React.createElement("strong", null, r.actions.length, " action", r.actions.length === 1 ? '' : 's', ":"), React.createElement("ul", { style: { margin: '6px 0 0', paddingLeft: 18 } }, r.actions.map(item => (React.createElement("li", { key: item.action.id + ':' + item.relation, style: { marginBottom: 2 } }, item.action.description, item.relation === 'collaborator' && React.createElement("span", { style: { color: C.carmine, fontWeight: 600, fontSize: 10, marginLeft: 6, textTransform: 'uppercase', letterSpacing: '0.05em' } }, "Collab"), item.action.due_date && React.createElement("span", { style: { color: C.muted } }, " \u00B7 Due ", formatMeetingDate(item.action.due_date)))))))))))))));
 }
 function Field({ label, children }) {
