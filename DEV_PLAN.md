@@ -887,6 +887,22 @@ consumer of the Step 2.5 verbs/chips — never a seventh copy.**
   `to_department`; one `teamOf(item)` helper in the service layer.
 - **Project health** = stage-weighted (open actions/flags/overdue dates & milestones vs how far along
   the project is) × module completeness. Value movement joins in Step 7 (slot carries the caption now).
+  **Formula AGREED with Tom (2026-08-02 workshop) — build to these exact numbers:**
+  - Score starts at 100. `health = max(0, 100 − pressure) × moduleFactor`, RAG-graded.
+  - **Outstanding pressure** = `Σ(severity) × stageMultiplier`.
+    - Severity per item: overdue key date/milestone = **3**, open flag = **2**, overdue action = **2**,
+      plain (not-overdue) open action = **0.5**.
+    - Stage multiplier (from `projects.status`): lead **0.3** · pitching **0.4** · tender **0.6** ·
+      won/LTA **0.8** · contract **1.0** · on-site **1.4**. (`lost` / `handed-over` are excluded from
+      the board.) *Steep by design — an item on-site bites ~4.7× a lead.*
+  - **moduleFactor** = `0.6 + 0.4 × (avg fill % of the project's active modules)` — under-feeding
+    scales the whole score, floor 0.6. If the project has **no** modules built yet (nothing expected at
+    this stage), factor = **1.0** (no penalty) rather than 0.6.
+  - **RAG:** Green **≥ 70** · Amber **40–69** · Red **< 40** ("broadly on top" philosophy — a few open
+    items is normal; red is a genuine alarm).
+  - Build note: the board needs module fill for *every* project; `moduleProgress` is computed per-project
+    in `ProjectDashboardView` today, so an org-wide aggregate (or a lighter board-level proxy) is a build
+    task inside Slice 3 — resolve there, don't block the formula on it.
 - **Move 4 decision (audit spine) is made INSIDE this step's scoping** — `item_events` as the record
   with `audit_log` narrowed to notification fan-out, or the feed becomes a view over `item_events`.
   Until then the Step 2.5 verbs emit both, so nothing diverges. Note `audit_log` is trigger-written and
