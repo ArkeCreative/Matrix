@@ -1159,8 +1159,13 @@ together:
 > ✅ **P0.1 number legibility done** (2026-08-02) — `ExplainPopover` on the health score (full working +
 > RAG bands), KPI-card "?" explanations, "Needs assistance" trigger tooltip, project stat-card tooltips;
 > and fixed a mislabelled "Overdue dates" stat (was counting overdue actions).
-> ⏳ **P0.2 data hygiene** still to do — needs a migration (`is_test`) + admin bulk-clear + purging live
-> junk (touches live data; confirm what's safe to delete with Tom first).
+> ✅ **P0.2 data hygiene + demo dataset done** (2026-08-02) — purged the 3 test-residue rows, then (at
+> Tom's request) seeded a rich cross-section for the **27 Aug exec presentation**: ~1,900 module
+> checklist answers across 21 projects (incl. N/A + attention rows), 38 more actions, 14 flags
+> (open/ack/converted with provenance), queries with exchanges, baselines + slippage (8 slips this week),
+> and item_events for a live feed. Health now spreads **1 red / 1 amber / 12 green**. The `is_test` flag +
+> admin bulk-clear are **moot** — the whole instance is the demo; real go-live (Step 10) starts clean.
+> Seed recorded in `db/migrations/demo_seed_2026-08.sql`.
 - **P0.1 "explain this number."** Add a hover/click breakdown that decomposes each composite metric into
   its inputs. *Health is already half-done* — `projectHealth` returns `drivers`; surface it (and the
   score arithmetic: `100 − pressure` × `moduleFactor`) in a popover on the health score, and do the same
