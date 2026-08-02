@@ -1750,12 +1750,9 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         if (!window.confirm('Mark this action complete?'))
             return;
         try {
-            // Move 1: actions settle as 'closed' — the one canonical word. This
-            // path wrote 'completed', which the many `status === 'closed'` filters
-            // silently missed. A CHECK constraint now rejects any other spelling.
-            const { error } = await sb.from('actions').update({ status: 'closed', completed_at: new Date().toISOString(), completed_by: user.id }).eq('id', action.id);
-            if (error)
-                throw error;
+            // The verb owns the write shape, the audit event (this path used to
+            // skip it) and the refusal check.
+            await completeAction(action, { actorId: user.id });
             setProjectActions(prev => prev.filter(a => a.id !== action.id));
         }
         catch (e) {
@@ -3167,12 +3164,8 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
             if (!note || !note.trim())
                 return; // note is mandatory
             try {
-                await sb.from('actions').update({
-                    status: 'closed',
-                    completed_note: note.trim(),
-                    completed_at: new Date().toISOString(),
-                    completed_by: currentUser ? currentUser.id : null,
-                }).eq('id', actionId);
+                // orgId omitted — item_events has a set_org_id trigger that fills it.
+                await completeAction({ id: actionId }, { actorId: currentUser && currentUser.id, note: note.trim() });
                 if (onActionsChange)
                     await onActionsChange();
             }
@@ -6970,11 +6963,10 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     // Records the answer as a thread message and resolves the query.
     const answerQueryOnAction = async (query, answerText) => {
         try {
+            // The answer is stored as a thread message (a creation); the verb
+            // owns the resolve status write + its item_events entry.
             await sb.from('query_messages').insert({ org_id: profile.org_id, query_id: query.id, author_id: currentUser.id, body: answerText });
-            const { error } = await sb.from('queries').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: currentUser.id, resolution_note: answerText }).eq('id', query.id);
-            if (error)
-                throw error;
-            try { await logItemEvent('query', query.id, 'resolve', { actorId: currentUser.id, orgId: profile.org_id, body: 'Answered and resolved' }); } catch (_) { /* */ }
+            await resolveQuery(query, { actorId: currentUser.id, orgId: profile.org_id, note: answerText });
             setActionQueries(prev => (prev || []).filter(q => q.id !== query.id));
         }
         catch (e) {
@@ -7119,23 +7111,11 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
         }
         const trimmed = (note || '').trim();
         try {
-            const { data, error } = await sb.from('meeting_handoffs').update({
-                status: 'acknowledged',
-                acknowledged_by: currentUser ? currentUser.id : null,
-                acknowledged_at: new Date().toISOString(),
-                acknowledged_note: trimmed || null,
-            }).eq('id', handoff.id).select().single();
-            if (error)
-                throw error;
-            setHandoffs(prev => prev.map(h => h.id === handoff.id ? data : h));
-            // Record on the flag's own timeline too — the DB trigger only writes
-            // the activity-log line; this is what the item modal's history reads,
-            // so acknowledging in a meeting now leaves the same trace as the modal.
-            await logItemEvent('flag', handoff.id, 'acknowledge', {
-                actorId: currentUser ? currentUser.id : null,
-                orgId: profile ? profile.org_id : null,
-                body: 'Acknowledged' + (trimmed ? ': ' + trimmed : ' in the ' + ((MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short || 'meeting')),
-            });
+            // The verb owns the write, the item_events entry and the refusal
+            // check; the pane keeps its optimistic local update since its handoff
+            // loader isn't on the RX bus yet.
+            await acknowledgeFlag(handoff, { actorId: currentUser && currentUser.id, orgId: profile && profile.org_id, note: trimmed, contextLabel: (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short || 'meeting' });
+            setHandoffs(prev => prev.map(h => h.id === handoff.id ? Object.assign({}, h, { status: 'acknowledged', acknowledged_by: currentUser ? currentUser.id : null, acknowledged_at: new Date().toISOString(), acknowledged_note: trimmed || null }) : h));
         }
         catch (e) {
             alert('Failed to acknowledge: ' + e.message);
@@ -7286,30 +7266,26 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             // (owner, optional deadline) exists.
             if (convertingHandoff) {
                 try {
-                    const { data: h, error: hErr } = await sb.from('meeting_handoffs').update({
-                        status: 'acknowledged',
-                        acknowledged_by: currentUser ? currentUser.id : null,
-                        acknowledged_at: new Date().toISOString(),
-                        resulting_action_id: data.id,
-                    }).eq('id', convertingHandoff.id).select().single();
-                    if (!hErr && h) {
-                        setHandoffs(prev => prev.map(x => x.id === h.id ? h : x));
-                        // Make the provenance immediately available without a reload
-                        setResultingActions(prev => Object.assign(Object.assign({}, prev), { [data.id]: Object.assign(Object.assign({}, data), { _meeting: { id: meetingId, meeting_type: meeting.meeting_type, meeting_date: meeting.meeting_date } }) }));
-                        // Record on both timelines — the flag became an action, and
-                        // the action was raised from a flag — matching the item modal.
-                        await logItemEvent('flag', convertingHandoff.id, 'convert', {
-                            actorId: currentUser ? currentUser.id : null,
-                            orgId: profile ? profile.org_id : null,
-                            subjectId: data.owner_user_id || null,
-                            body: 'Converted to an action' + (data.owner_user_id ? ' owned by ' + (((users || []).find(u => u.id === data.owner_user_id) || {}).display_name || 'someone') : ''),
-                        });
-                        await logItemEvent('action', data.id, 'raised', {
-                            actorId: currentUser ? currentUser.id : null,
-                            orgId: profile ? profile.org_id : null,
-                            body: 'Converted from a flag (' + (convertingHandoff.to_department || 'team') + ')',
-                        });
-                    }
+                    // Link the just-created action to the flag via the verb — it
+                    // settles the flag 'converted' (the canonical word; this path
+                    // used to write the 'acknowledged' + resulting_action_id shadow
+                    // status) and logs the flag 'convert' event. The action already
+                    // exists (addAction created it above), so link-mode doesn't log
+                    // its 'raised' event — the pane keeps that one line.
+                    await convertFlag(convertingHandoff, {
+                        actorId: currentUser && currentUser.id,
+                        orgId: profile && profile.org_id,
+                        resultingActionId: data.id,
+                        ownerId: data.owner_user_id || null,
+                        ownerName: data.owner_user_id ? (((users || []).find(u => u.id === data.owner_user_id) || {}).display_name || 'someone') : null,
+                    });
+                    await logItemEvent('action', data.id, 'raised', {
+                        actorId: currentUser && currentUser.id,
+                        orgId: profile && profile.org_id,
+                        body: 'Converted from a flag (' + (convertingHandoff.to_department || 'team') + ')',
+                    });
+                    setHandoffs(prev => prev.map(x => x.id === convertingHandoff.id ? Object.assign(Object.assign({}, x), { status: 'converted', resulting_action_id: data.id, acknowledged_by: currentUser ? currentUser.id : null, acknowledged_at: new Date().toISOString() }) : x));
+                    setResultingActions(prev => Object.assign(Object.assign({}, prev), { [data.id]: Object.assign(Object.assign({}, data), { _meeting: { id: meetingId, meeting_type: meeting.meeting_type, meeting_date: meeting.meeting_date } }) }));
                 }
                 catch (he) {
                     console.error('Failed to link handoff to action', he);
