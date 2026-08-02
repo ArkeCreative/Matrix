@@ -859,6 +859,16 @@ page. Authoritative spec: `docs/handoff/dashboard-spec.md`; agreed design is sec
 `docs/handoff/Dashboard Consolidation.dc.html` — match its row anatomy exactly. **Built entirely as a
 consumer of the Step 2.5 verbs/chips — never a seventh copy.**
 
+> **Wiring note carried from Step 2.5 (Move 3).** `MasterResourceTracker` → `ProjectRow` (the per-role
+> `⚑ N` flag badges + `ActionIndicatorBadge` per discipline column, app.jsx ~2965/2966/3066) is
+> **defined but never mounted** today — it renders nowhere. It counts raw `.length` with **no** status
+> filter (the badge assumes its array is open-only). When this view is brought alive here, hand it the
+> App's derived **`openProjectActions` / `openProjectFlags`** (the `isOpen`-filtered arrays), NOT the
+> full-scope `projectActions` / `projectFlags` — otherwise settled actions/flags double-count into the
+> per-role badges. `ActionIndicatorBadge` (~3102) likewise has date-defensiveness but no status check,
+> so it must be fed the open slice too. Same rule as the other open-only consumers the App already
+> routes to.
+
 - **Routing:** new `#/dashboard` is the **default landing for every role** (replaces Projects as home);
   the **REGISTER ribbon tab retires**, DASHBOARD takes its slot first; `#/register` survives as the
   filtered drill-down. **Plumbing needed:** `parseHash`/`writeHash` (~1767) don't parse query strings
