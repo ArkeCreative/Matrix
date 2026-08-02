@@ -1179,7 +1179,14 @@ together:
   wrappers (markActionComplete, markKeyDateMet, deleteMeetingById, reopen, …). Also unblocks automated
   testing (Step 14).
 
-### ▶ Step 16 — Project data-completeness, first-class  *(small–medium · builds on the Step 4 module-fill aggregate)*
+### ▶ Step 16 — Project data-completeness, first-class  *(core **BUILT 2026-08-02**)*
+
+> **BUILT (core):** the project dashboard's MODULES section now shows a **completeness bar + "N% fed"**
+> (avg fill across built modules, RAG-coloured) beside "N of 14 built", and an amber **thin-data nudge**
+> ("N modules are thin on data — filling them in sharpens this project's health score…"). Same signal
+> that feeds health, now visible and actionable per project. Remaining (later): portfolio-level
+> completeness column + a "fully-loaded project" reference.
+
 "Thin module data" already feeds health (Step 4 tweak). Promote it to a visible driver of behaviour: a
 per-project completeness bar ("8 of 14 modules built · N% fed"), owner-facing prompts to populate, and a
 reference picture of a fully-loaded project. Pulls the culture toward the completeness the app already

@@ -6076,8 +6076,19 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         React.createElement(ProgrammeHistory, { project: project, keyDates: myKeyDates, users: users })));
     // ----- MODULES tab ---------------------------------------------------------
     const builtCount = MODULE_DEFS.filter(d => moduleTemplates.some(t => t.module_key === d.key)).length;
+    // Step 16 — project data-completeness, first-class: avg fill across built
+    // modules + a nudge on thin data. This is the same signal that feeds health.
+    const builtProgs = MODULE_DEFS.map(d => moduleProgress[d.key]).filter(Boolean);
+    const avgFed = builtProgs.length ? Math.round(builtProgs.reduce((s, p) => s + (p.pct || 0), 0) / builtProgs.length) : 0;
+    const thinCount = builtProgs.filter(p => (p.pct || 0) < 40).length;
+    const fedColor = avgFed >= 70 ? C.success : (avgFed >= 40 ? C.warn : C.carmine);
     const modulesCard = card(React.createElement(React.Fragment, null,
-        sectionHead('MODULES', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, builtCount, " of ", MODULE_DEFS.length, " built")),
+        sectionHead('MODULES', React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 12 } },
+            React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, builtCount, " of ", MODULE_DEFS.length, " built"),
+            builtProgs.length ? React.createElement("span", { title: "Average of how far the built modules have been filled in. Thin data drags the project's health score.", style: { display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'help' } },
+                React.createElement("span", { style: { width: 88, height: 6, background: C.g100, borderRadius: 3, overflow: 'hidden' } }, React.createElement("span", { style: { display: 'block', height: 6, width: avgFed + '%', background: fedColor } })),
+                React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: fedColor } }, avgFed + '% fed')) : null)),
+        thinCount > 0 ? React.createElement("div", { style: { fontSize: 12, color: C.g700, background: C.amberLight, border: '1px solid #EAD08A', borderRadius: 3, padding: '9px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 } }, lucide('alert-triangle', 14, C.warn, 2), React.createElement("span", null, thinCount + (thinCount === 1 ? ' module is' : ' modules are') + " thin on data — filling them in sharpens this project’s health score and what shows on the dashboard.")) : null,
         React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 } }, MODULE_DEFS.map(def => {
             const tpl = moduleTemplates.find(t => t.module_key === def.key);
             const prog = moduleProgress[def.key];
