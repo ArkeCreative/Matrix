@@ -548,6 +548,65 @@ Self now prefers the full `profile` record.
 cross-referencing a phase letter any more. Restructured 2026-07-29 at Tom's request, because
 "9a" and "4d" in the same breath had stopped being useful.
 
+### ▶ REPRIORITISATION — Product Review (2026-08) *(read this first — it reorders what comes next)*
+An external hands-on product review landed 2026-08 (~40-person fit-out contractor, all disciplines, full
+operating-system tool). It **confirms the core architecture as load-bearing** — the single accountability
+object, the Raised→Working→Queried→Answered→Complete state machine, ownership transfer on query ("ball
+with X"), the immutable per-action audit trail, the meeting workspace as the engine, dashboard
+drill-through with URL-encoded filters, and the 14-module library. **These are preserve-don't-regress.**
+
+**The review's headline: we are approaching rollout, and trust/adoption hardening is cheap and should
+precede more feature-building (esp. the Step 6 commercial spine, which the review doesn't ask for at
+all).** Recommended near-term order — *rollout-hardening first, then loop-closing, then reach/polish*:
+
+**Track A — Pre-rollout hardening (do before wider rollout; small, no schema decisions) → new Step 15.**
+- **P0.1 — make composite numbers legible ("explain this number").** *Cheaper than the review assumed:*
+  the health board already renders `drivers` ("1 overdue date · 2 open flags") and "Needs assistance" is
+  already a defined rule (≥2 overdue on a team). Work = surface a hover/click breakdown on the health
+  **score** and the **KPI cards**, and expose the "Needs assistance" trigger text. Highest priority —
+  "the moment one number surprises a user they distrust all of them."
+- **P0.2 — data hygiene / test residue.** Junk rows ("blah blah", "hello", a "testt" flag) sit next to
+  real items. Purge placeholders; add an `is_test`/`is_demo` flag + a bulk-clear admin utility so demo
+  data never mixes with live. Connects to **Step 10** (go-live) but must land earlier.
+- **Blocking-dialog fix (bug).** `window.confirm`/`alert` froze the renderer on "Delete meeting" (~30s
+  hang). Replace every blocking native dialog with the in-app modal pattern — also fixes testability.
+  These sit at many verb call-sites (markActionComplete, deleteMeeting, mark-met, etc.).
+
+**Track B — Close the loop from tracking to doing.**
+- **P1.2 — project data-completeness as a first-class concept.** *Extends the module-fill aggregate just
+  built for health (Step 4 tweak).* Add a per-project completeness bar ("8 of 14 built", % fed), owner
+  prompts, and a "what a fully-loaded project looks like" picture. → folds into **Step 12** / a new
+  **Step 16**.
+- **P1.3 — finish baseline + Excel import.** Step 1 shipped the baseline + history; the Excel import is
+  still "(Claude conversion — coming soon)". Complete import → auto-register key dates; promote
+  baseline-vs-slippage (already on the dashboard "Slipping" board + the Step 5 chronology export) to a
+  headline capability. → **Step 5 (slip-analytics, deferred)** + a new **Step 17 (import)**.
+- **P1.1 — proactive outbound nudges (email/Teams/Slack)** on overdue / query-awaiting-you / flag-routed
+  / key-date-approaching. Review calls this "the single biggest lever." The notification spine +
+  activity feed + action object already exist; the blocker is delivery infra → **Step 13 (scheduler,
+  needs an infra decision from Tom).**
+
+**Track C — Reach & polish.**
+- **P2.1 — outward-facing reports** (per-project + portfolio status one-pager for clients/directors who
+  won't log in). Promote the module-level PDF/XLSX + the Step 5 chronology to project/portfolio level. →
+  **Step 8**.
+- **P2.2 — terminology consistency + glossary** ("overdue" vs "needs attention" vs "ball with you"). New
+  small item → **Step 18**.
+- **P2.3 — people-lifecycle robustness** (role changes / leavers → reassign owned actions, retained
+  access). → **Step 11**.
+- **Perceived-perf**: skeleton/optimistic states for the "Loading…" stalls. **Responsive**: project
+  dashboard + wide tables/Live Tracker overflow horizontally < ~800px; audit breakpoints (~1440px is the
+  design target, degrade gracefully to laptop/tablet). → new **Step 19 (responsive + perf pass).**
+
+*Note (not a task): the review names the org "Dawlish Projects" and tester "Priya Anand"; our repo/org is
+arke [matrix] / ArkeCreative and Priya is a seed user — likely the reviewer's anonymisation or seed-org
+data. Worth confirming the live org name is set correctly, but no action implied.*
+
+New steps 15–19 are **defined at the bottom of this roadmap**; they take priority over Steps 6–9 for the
+rollout push unless Tom redirects. Steps 6–14 below are unchanged.
+
+---
+
 ### Crosswalk — old numbering → new
 Anything committed before 2026-07-29 uses the old scheme; this is how it maps.
 
@@ -1086,6 +1145,51 @@ Nothing automated protects the cross-reference chain. Two candidates proved usef
 should inform it: the **self-aborting SQL block** for anything touching the database, and the
 **mock-PostgREST unit test** used on the RX bus for pure client logic. A Playwright pass over the
 deployed app is the third leg.
+
+---
+*Steps 15–19 below come from the 2026-08 Product Review (see the REPRIORITISATION block near the top of
+the roadmap). They take priority over Steps 6–9 for the rollout push.*
+
+### ▶ Step 15 — Pre-rollout hardening: number legibility + data hygiene + blocking dialogs  *(small · **do first** · no schema decisions)*
+The cheapest way to protect adoption before a 40-person rollout. Three independent pieces, shippable
+together:
+- **P0.1 "explain this number."** Add a hover/click breakdown that decomposes each composite metric into
+  its inputs. *Health is already half-done* — `projectHealth` returns `drivers`; surface it (and the
+  score arithmetic: `100 − pressure` × `moduleFactor`) in a popover on the health score, and do the same
+  for the KPI cards and checklist %. Expose the "Needs assistance" rule (≥2 overdue on a team) as visible
+  text. The bar is legibility, not new maths.
+- **P0.2 data hygiene.** Purge seeded junk from live (`programme` register + flags carry "blah blah",
+  "hello", "testt"). Add an `is_test`/`is_demo` boolean (default false) on the item tables + a
+  senior-only bulk-clear/admin utility, so demo and live never mix. Coordinate with **Step 10**.
+- **Blocking-dialog fix (bug).** Replace every `window.confirm`/`window.alert` with the in-app modal
+  pattern — a native `confirm()` on "Delete meeting" froze the renderer for ~30s. Call-sites are the verb
+  wrappers (markActionComplete, markKeyDateMet, deleteMeetingById, reopen, …). Also unblocks automated
+  testing (Step 14).
+
+### ▶ Step 16 — Project data-completeness, first-class  *(small–medium · builds on the Step 4 module-fill aggregate)*
+"Thin module data" already feeds health (Step 4 tweak). Promote it to a visible driver of behaviour: a
+per-project completeness bar ("8 of 14 modules built · N% fed"), owner-facing prompts to populate, and a
+reference picture of a fully-loaded project. Pulls the culture toward the completeness the app already
+rewards. Overlaps the Step 12 projects-home work.
+
+### ▶ Step 17 — Programme Excel import  *(medium · finishes the P1.3 loop with Step 1/5)*
+Complete the "(Claude conversion — coming soon)" importer: parse an uploaded programme spreadsheet →
+auto-register `project_key_dates` (+ baseline them), so the slippage story (dashboard "Slipping" board +
+the Step 5 chronology export) has real dates to track. This is the missing input side of the delay-record
+differentiator.
+
+### ▶ Step 18 — Terminology consistency + glossary  *(small)*
+Align metric language across screens ("overdue actions" vs "needs attention" vs "ball with you" vs "due
+this week") to one vocabulary, and add a short in-app glossary for new starters. Cheap trust win; pairs
+naturally with Step 15's legibility work.
+
+### ▶ Step 19 — Responsive + perceived-performance pass  *(medium)*
+- **Responsive:** the project dashboard and wide tables/Live Tracker (Gantt) overflow horizontally below
+  ~800px (header/cards clip, horizontal scrollbar). Audit breakpoints; the design target is ~1440px but it
+  must degrade gracefully to laptop-narrow and tablet. The new Command dashboard's fixed `1360`/grid
+  columns are prime suspects.
+- **Perceived performance:** replace the "Loading checklist…/your actions…" stalls and the full-screen
+  branded loader on navigation with skeleton states / optimistic UI.
 
 ## Open decisions
 - ~~**accountability spine (workshop)**~~ — **RESOLVED 2026-07-31.** Tom's design workshop produced the
