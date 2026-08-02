@@ -342,9 +342,65 @@ function AgeClock(props) {
     const m = ageMeta(props.since);
     return React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 11, color: m.color, whiteSpace: 'nowrap' } }, m.label);
 }
-// ProvenanceStrip (B4) lands with threadOf() in Step 5 — the chain resolver is
-// Move 5. Left out here deliberately so the strip renders the full thread, not a
-// stub that would need replacing.
+// B4 — provenance. threadOf() (lifecycle Move 5) walks an item's causal chain
+// from the FKs that already exist: flag↔action (meeting_handoffs.resulting_action_id
+// == actions.source_type='flag'/source_ref — one edge, not two), query→parent
+// (parent_type/parent_id), and the date moves an item caused
+// (programme_revisions.cause_flag_id / cause_action_id). Self-contained: it does
+// its own reads (sbQuiet, non-emitting) so any surface can call it. Returns
+// { origin, links, impact } and ProvenanceStrip renders it inline.
+async function threadOf(kind, id) {
+    const out = { origin: null, links: [], impact: [] };
+    try {
+        let meetingId = null;
+        if (kind === 'flag') {
+            const { data } = await sbQuiet.from('meeting_handoffs').select('id, from_meeting_id, resulting_action_id').eq('id', id).maybeSingle();
+            if (data) { meetingId = data.from_meeting_id; if (data.resulting_action_id) out.links.push({ kind: 'action', id: data.resulting_action_id, rel: 'became action' }); }
+        }
+        else if (kind === 'action') {
+            const { data } = await sbQuiet.from('actions').select('id, meeting_id, source_type, source_ref').eq('id', id).maybeSingle();
+            if (data) { meetingId = data.meeting_id; if (data.source_type === 'flag' && data.source_ref) out.links.push({ kind: 'flag', id: data.source_ref, rel: 'from flag' }); }
+            // The flag→action edge is stored on the flag (resulting_action_id) and
+            // MAY also be mirrored on the action (source_ref). Reverse-resolve it
+            // and dedupe so the one edge is shown once, wherever it was recorded.
+            if (!out.links.some(l => l.kind === 'flag')) {
+                const { data: srcFlag } = await sbQuiet.from('meeting_handoffs').select('id').eq('resulting_action_id', id).maybeSingle();
+                if (srcFlag) out.links.push({ kind: 'flag', id: srcFlag.id, rel: 'from flag' });
+            }
+        }
+        else if (kind === 'query') {
+            const { data } = await sbQuiet.from('queries').select('id, parent_type, parent_id').eq('id', id).maybeSingle();
+            if (data && data.parent_id) out.links.push({ kind: data.parent_type, id: data.parent_id, rel: 'on' });
+        }
+        if (meetingId) {
+            const { data: m } = await sbQuiet.from('meetings').select('id, meeting_type, meeting_date').eq('id', meetingId).maybeSingle();
+            if (m) out.origin = { meetingId: m.id, label: (typeof MEETING_TYPES !== 'undefined' && MEETING_TYPES[m.meeting_type] && MEETING_TYPES[m.meeting_type].short) || 'Meeting', when: m.meeting_date };
+        }
+        if (kind === 'flag' || kind === 'action') {
+            const col = kind === 'flag' ? 'cause_flag_id' : 'cause_action_id';
+            const { data: revs } = await sbQuiet.from('programme_revisions').select('id, subject_label, previous_date, new_date').eq(col, id).order('changed_at', { ascending: true });
+            (revs || []).forEach(r => { if (r.previous_date && r.new_date) { const days = Math.round((new Date(r.new_date) - new Date(r.previous_date)) / 86400000); out.impact.push({ id: r.id, subject: r.subject_label || 'Key date', days: days }); } });
+        }
+    }
+    catch (_) { /* provenance is best-effort — never block the surface it rides */ }
+    return out;
+}
+// The B4 strip: kind marks · origin meeting · linked items · impact (carmine).
+// Each segment opens its target. Renders nothing when there's no provenance.
+function ProvenanceStrip(props) {
+    const t = props.thread;
+    if (!t || (!t.origin && (!t.links || !t.links.length) && (!t.impact || !t.impact.length)))
+        return null;
+    const seg = (key, label, onClick, color) => React.createElement("span", { key: key, onClick: onClick, style: { cursor: onClick ? 'pointer' : 'default', color: color || C.g500, whiteSpace: 'nowrap', fontWeight: 600, textDecoration: onClick ? 'none' : 'none' } }, label);
+    const parts = [];
+    if (t.origin)
+        parts.push(seg('origin', 'Raised in ' + t.origin.label + (t.origin.when ? ' ' + formatMeetingDate(t.origin.when) : ''), (t.origin.meetingId && props.onOpenMeeting) ? () => props.onOpenMeeting(t.origin.meetingId) : null, C.prussian80));
+    (t.links || []).forEach((l, i) => parts.push(seg('l' + i, l.rel, props.onOpen ? () => props.onOpen(l.kind, l.id) : null, C.prussian)));
+    (t.impact || []).forEach((im, i) => parts.push(seg('i' + i, '→ ' + im.subject + ' +' + im.days + 'd', null, C.carmine)));
+    const rendered = [];
+    parts.forEach((p, i) => { if (i) rendered.push(React.createElement("span", { key: 'sep' + i, style: { color: C.g300, margin: '0 7px' } }, '·')); rendered.push(p); });
+    return React.createElement("div", { style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', fontSize: 11, fontFamily: FONT, lineHeight: 1.6 } }, rendered);
+}
 // ============================================================
 // LIFECYCLE VERBS (Step 2.5, Move 2) — the service layer. --VERBS-BEGIN--
 // One exported verb per transition. EVERY surface calls these; no surface writes
@@ -3872,6 +3928,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
     const [messages, setMessages] = React.useState([]);
     const [events, setEvents] = React.useState([]);
     const [related, setRelated] = React.useState([]);
+    const [thread, setThread] = React.useState(null); // B4 provenance (threadOf)
     const [tab, setTab] = React.useState('thread');
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
@@ -3954,6 +4011,7 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
     // spinner every time something unrelated changed. Content stays current via
     // the silent bus subscription below.
     React.useEffect(() => { load(); }, [kind, id]); // eslint-disable-line react-hooks/exhaustive-deps
+    React.useEffect(() => { let live = true; setThread(null); threadOf(kind, id).then(t => { if (live) setThread(t); }); return () => { live = false; }; }, [kind, id]);
     // The modal is mounted at the app root and is now the primary write surface
     // app-wide, so it both publishes to the bus (via sb) and listens on it —
     // that is what keeps it honest when the same item is changed elsewhere.
@@ -4159,7 +4217,8 @@ function ItemModal({ kind, id, currentUser, profile, users, projects, isSenior, 
                         projForItem && React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: MA.carmine, textDecoration: 'underline', textDecorationColor: MA.carmineMid, textUnderlineOffset: 2 } }, projForItem.name),
                         React.createElement("span", { style: { marginLeft: 'auto' } }),
                         React.createElement("button", { onClick: onClose, "aria-label": "Close", style: { background: 'none', border: 'none', cursor: 'pointer', color: MA.grey, padding: 2, display: 'inline-flex' } }, lucide('x', 18, 'currentColor', 2))),
-                    React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 22, lineHeight: 1.28, color: MA.ink } }, title)),
+                    React.createElement("div", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 22, lineHeight: 1.28, color: MA.ink } }, title),
+                    React.createElement(ProvenanceStrip, { thread: thread, onOpen: (k, i) => openItem(k, i) })),
                 // ribbon bar
                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 26px', background: MA.page, borderBottom: `1px solid ${MA.line}`, minHeight: 52, flexWrap: 'wrap' } },
                     ribbonSteps ? React.createElement(StateRibbon, { steps: ribbonSteps, reachedIndex: ribbonReached, big: true, desaturated: isClosed }) : React.createElement("span", { style: { fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: MA.grey } }, "For noting"),
