@@ -1192,7 +1192,18 @@ per-project completeness bar ("8 of 14 modules built · N% fed"), owner-facing p
 reference picture of a fully-loaded project. Pulls the culture toward the completeness the app already
 rewards. Overlaps the Step 12 projects-home work.
 
-### ▶ Step 17 — Programme Excel import  *(medium · finishes the P1.3 loop with Step 1/5)*
+### ▶ Step 17 — Programme Excel + PDF import  *(**BUILT 2026-08-02**)*
+
+> **BUILT.** The IMPORT PROGRAMME upload now works for **Excel (.xlsx/.xls/.csv) and PDF**, plus a
+> **paste** fallback. Architecture note: dropped the "Claude conversion" idea — no backend or API key.
+> Instead it parses client-side (SheetJS + pdf.js pulled from the same unpkg CDN the app already uses;
+> paste needs no library), extracts candidate `{event_name, target_date}` rows with a UK-centric date
+> parser (`ProgrammeImportModal` + helpers before `ProjectDashboardView`), and shows a **preview the user
+> checks/edits** before anything is written. On confirm it inserts `project_key_dates` and can **baseline**
+> them in one step (so Step 5 slippage measures against them). The pure parsers are node-unit-tested;
+> the paste path is the guaranteed fallback if a CDN lib ever fails to load. Later polish: smarter
+> start-vs-finish column detection (today it takes the latest date on a row as the deadline).
+
 Complete the "(Claude conversion — coming soon)" importer: parse an uploaded programme spreadsheet →
 auto-register `project_key_dates` (+ baseline them), so the slippage story (dashboard "Slipping" board +
 the Step 5 chronology export) has real dates to track. This is the missing input side of the delay-record
