@@ -1153,6 +1153,14 @@ the roadmap). They take priority over Steps 6–9 for the rollout push.*
 ### ▶ Step 15 — Pre-rollout hardening: number legibility + data hygiene + blocking dialogs  *(small · **do first** · no schema decisions)*
 The cheapest way to protect adoption before a 40-person rollout. Three independent pieces, shippable
 together:
+
+> **Progress:** ✅ **Blocking dialogs done** (2026-08-02) — all `window.confirm`/`alert` → non-blocking
+> `appConfirm`/`appAlert` via a root `DialogHost`; fixes the Delete-meeting renderer freeze.
+> ✅ **P0.1 number legibility done** (2026-08-02) — `ExplainPopover` on the health score (full working +
+> RAG bands), KPI-card "?" explanations, "Needs assistance" trigger tooltip, project stat-card tooltips;
+> and fixed a mislabelled "Overdue dates" stat (was counting overdue actions).
+> ⏳ **P0.2 data hygiene** still to do — needs a migration (`is_test`) + admin bulk-clear + purging live
+> junk (touches live data; confirm what's safe to delete with Tom first).
 - **P0.1 "explain this number."** Add a hover/click breakdown that decomposes each composite metric into
   its inputs. *Health is already half-done* — `projectHealth` returns `drivers`; surface it (and the
   score arithmetic: `100 − pressure` × `moduleFactor`) in a popover on the health score, and do the same
