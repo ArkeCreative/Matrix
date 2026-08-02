@@ -853,11 +853,43 @@ technique the RX bus used.
   + the `change_*` transient columns → into `moveDate`; `doneFlags`/`openFlags` → `isOpen` selectors.
   These aren't rework of good code — they're the interim copies this step exists to unify.
 
-### ▶ Step 4 — Dashboard ("Command view")  *(large · **needs Step 2.5** · consumer of the seam)*
+### ▶ Step 4 — Dashboard ("Command view")  *(large · **BUILT 2026-08-02** · consumer of the seam)*
+
+> **BUILT.** New `CommandDashboard` component + service helpers `teamOf`/`teamLabel`/`projectHealth`
+> (the agreed formula) + `STAGE_MULT`/`HEALTH_RAG`. `#/dashboard` is the default landing; nav reordered
+> (Dashboard first, Register ribbon tab retired); `#/register?scope=&kind=&team=&owner=` is the
+> URL-backed deep-link, `#/activity` the activity tab; `parseHash`/`writeHash` now handle query strings.
+> Overview = 4 role-scoped KPI cards (each deep-links the register) + exec boards (project health, team
+> performance, pipeline, meetings, slipping from `programme_revisions`, accountability) or the
+> contributor "Your work this week" list. Open register = four-dropdown filter bar + urgency groups +
+> `item_events` row-history expansion. Activity = feed (all) + log (seniors) with CSV + print/PDF export.
+> Every row uses `StateChip`/`AgeClock`/`KIND_META`; every one-click action calls a Move-2 verb.
+> **Move 4 decision taken: `item_events` IS the record** the dashboard reads; `audit_log` stays as the
+> trigger-written notification spine (narrowing it further is a later cleanup, not needed for this step).
+>
+> **Deliberately deferred (noted, not forgotten):**
+> - **Module completeness in health** — `projectHealth` is called with `moduleFill = null` (factor 1.0,
+>   no penalty) because module data isn't broadly populated yet. The formula supports it; wire the
+>   org-wide module-fill aggregate once modules carry data. Outstanding-vs-stage is fully live.
+> - **Programme strip board** — omitted from the Overview; it duplicates the existing Live Tracker,
+>   which is still its own nav tab. Add the compact strip when the tracker bar model is factored out.
+> - **`item_events` has no `project_id`** — the activity feed/log project column is best-effort (blank
+>   for settled items). A small follow-up can add `project_id` to `item_events` (or the `record_activity`
+>   path) for a complete audit "Project" column.
 Absorbs the old "exec view part 1" **and** the Register/activity-log rework into one role-gated landing
 page. Authoritative spec: `docs/handoff/dashboard-spec.md`; agreed design is section **`2a`** of
 `docs/handoff/Dashboard Consolidation.dc.html` — match its row anatomy exactly. **Built entirely as a
 consumer of the Step 2.5 verbs/chips — never a seventh copy.**
+
+> **Wiring note carried from Step 2.5 (Move 3).** `MasterResourceTracker` → `ProjectRow` (the per-role
+> `⚑ N` flag badges + `ActionIndicatorBadge` per discipline column, app.jsx ~2965/2966/3066) is
+> **defined but never mounted** today — it renders nowhere. It counts raw `.length` with **no** status
+> filter (the badge assumes its array is open-only). When this view is brought alive here, hand it the
+> App's derived **`openProjectActions` / `openProjectFlags`** (the `isOpen`-filtered arrays), NOT the
+> full-scope `projectActions` / `projectFlags` — otherwise settled actions/flags double-count into the
+> per-role badges. `ActionIndicatorBadge` (~3102) likewise has date-defensiveness but no status check,
+> so it must be fed the open slice too. Same rule as the other open-only consumers the App already
+> routes to.
 
 - **Routing:** new `#/dashboard` is the **default landing for every role** (replaces Projects as home);
   the **REGISTER ribbon tab retires**, DASHBOARD takes its slot first; `#/register` survives as the
@@ -877,6 +909,22 @@ consumer of the Step 2.5 verbs/chips — never a seventh copy.**
   `to_department`; one `teamOf(item)` helper in the service layer.
 - **Project health** = stage-weighted (open actions/flags/overdue dates & milestones vs how far along
   the project is) × module completeness. Value movement joins in Step 7 (slot carries the caption now).
+  **Formula AGREED with Tom (2026-08-02 workshop) — build to these exact numbers:**
+  - Score starts at 100. `health = max(0, 100 − pressure) × moduleFactor`, RAG-graded.
+  - **Outstanding pressure** = `Σ(severity) × stageMultiplier`.
+    - Severity per item: overdue key date/milestone = **3**, open flag = **2**, overdue action = **2**,
+      plain (not-overdue) open action = **0.5**.
+    - Stage multiplier (from `projects.status`): lead **0.3** · pitching **0.4** · tender **0.6** ·
+      won/LTA **0.8** · contract **1.0** · on-site **1.4**. (`lost` / `handed-over` are excluded from
+      the board.) *Steep by design — an item on-site bites ~4.7× a lead.*
+  - **moduleFactor** = `0.6 + 0.4 × (avg fill % of the project's active modules)` — under-feeding
+    scales the whole score, floor 0.6. If the project has **no** modules built yet (nothing expected at
+    this stage), factor = **1.0** (no penalty) rather than 0.6.
+  - **RAG:** Green **≥ 70** · Amber **40–69** · Red **< 40** ("broadly on top" philosophy — a few open
+    items is normal; red is a genuine alarm).
+  - Build note: the board needs module fill for *every* project; `moduleProgress` is computed per-project
+    in `ProjectDashboardView` today, so an org-wide aggregate (or a lighter board-level proxy) is a build
+    task inside Slice 3 — resolve there, don't block the formula on it.
 - **Move 4 decision (audit spine) is made INSIDE this step's scoping** — `item_events` as the record
   with `audit_log` narrowed to notification fan-out, or the feed becomes a view over `item_events`.
   Until then the Step 2.5 verbs emit both, so nothing diverges. Note `audit_log` is trigger-written and

@@ -1606,6 +1606,385 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
                         React.createElement("div", { style: { padding: '8px 18px', background: C.bg, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.mist } }, g.bucket),
                         g.items.map(n => React.createElement(NotificationRow, { key: n.id, n: n, projects: projects, users: users, onOpenProject: onOpenProject, dense: false })))))))));
 }
+// ============================================================
+// COMMAND DASHBOARD (Step 4) — the role-gated landing. Three tabs (Overview,
+// Open register, Activity) built entirely on the Step 2.5 seam: StateChip /
+// AgeClock / KIND_META for every row, the Move-2 verbs for every one-click
+// action, isOpen for openness. Health = the agreed formula (projectHealth).
+// Team = teamOf (derived). Audit = item_events (Move 4: item_events is the record).
+// ============================================================
+function CmdKpiCard({ label, count, sub, subColor, icon, onGo }) {
+    return React.createElement("div", { onClick: onGo, role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(); } }, style: { flex: 1, minWidth: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: '16px 18px', boxShadow: '0 1px 2px rgba(24,59,79,0.06)', cursor: 'pointer', transition: 'border-color 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.borderColor = C.carmine, onMouseLeave: e => e.currentTarget.style.borderColor = C.line },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
+            React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g500, fontFamily: FONT } }, label),
+            React.createElement("span", { style: { width: 28, height: 28, borderRadius: 6, background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(icon, 15, 'currentColor', 2))),
+        React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 9, marginTop: 10 } },
+            React.createElement("span", { style: { fontWeight: 700, fontSize: 30, color: C.carmine, lineHeight: 1, fontFamily: FONT } }, count),
+            sub ? React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: subColor || C.g500 } }, sub) : null),
+        React.createElement("div", { style: { marginTop: 10, fontSize: 10.5, fontWeight: 600, color: C.carmine } }, "View in register →"));
+}
+function CommandDashboard(props) {
+    const { initialTab, initialFilters, projects, users, currentUser, isSenior, meetings, openActions, openFlags, keyDates, onOpenProject, onOpenMeeting, onOpenItem, onMarkActionComplete, onMarkDateMet, onTabChange, onFiltersChange } = props;
+    const [tab, setTabState] = React.useState(initialTab || 'overview');
+    const [roleView, setRoleView] = React.useState('exec'); // seniors can preview the contributor view
+    const [filters, setFiltersState] = React.useState(Object.assign({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }, initialFilters || {}));
+    const [actLens, setActLens] = React.useState('feed');
+    const [expanded, setExpanded] = React.useState(null);
+    const [activity, setActivity] = React.useState([]);
+    const [slips, setSlips] = React.useState([]);
+    const setTab = (t) => { setTabState(t); if (onTabChange) onTabChange(t); };
+    const setFilters = (next) => { const merged = Object.assign({}, filters, next); setFiltersState(merged); if (onFiltersChange) onFiltersChange(merged); };
+    // React to deep-link changes (a KPI/board click updates the URL → props).
+    React.useEffect(() => { if (initialTab) setTabState(initialTab); }, [initialTab]);
+    React.useEffect(() => { if (initialFilters) setFiltersState(prev => Object.assign({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }, initialFilters)); }, [initialFilters && initialFilters.scope, initialFilters && initialFilters.team, initialFilters && initialFilters.owner, initialFilters && initialFilters.kind]);
+    const usersById = React.useMemo(() => { const m = {}; (users || []).forEach(u => { m[u.id] = u; }); return m; }, [users]);
+    const projById = React.useMemo(() => { const m = {}; (projects || []).forEach(p => { m[p.id] = p; }); return m; }, [projects]);
+    const role = isSenior ? roleView : 'contributor';
+    const today = todayISO();
+    // ---- auxiliary loaders (activity feed + programme slips) ----
+    const loadActivity = React.useCallback(async () => {
+        try {
+            const { data } = await sbQuiet.from('item_events').select('id, item_type, item_id, event_type, body, actor_id, created_at').order('created_at', { ascending: false }).limit(120);
+            if (data) setActivity(data);
+        } catch (_) { /* older schema */ }
+    }, []);
+    React.useEffect(() => { loadActivity(); }, [loadActivity]);
+    useLiveData(['activity', 'actions', 'flags', 'dates'], loadActivity);
+    const loadSlips = React.useCallback(async () => {
+        try {
+            const since = new Date(Date.now() - 8 * 86400000).toISOString();
+            const { data } = await sbQuiet.from('programme_revisions').select('id, project_id, subject_label, previous_date, new_date, reason, changed_by, changed_at, meeting_id').gte('changed_at', since).order('changed_at', { ascending: false }).limit(40);
+            if (data) setSlips(data.filter(r => r.new_date && r.previous_date && r.new_date > r.previous_date));
+        } catch (_) { /* revisions table may be absent */ }
+    }, []);
+    React.useEffect(() => { loadSlips(); }, [loadSlips]);
+    useLiveData(['dates', 'projects'], loadSlips);
+    // ---- normalise every open item into one list (register + KPIs + boards) ----
+    const items = React.useMemo(() => {
+        const list = [];
+        (openActions || []).forEach(a => {
+            const overdue = a.due_date && a.due_date < today;
+            list.push({ kind: 'action', id: a.id, title: a.description, projectId: a.project_id, ownerId: a.owner_user_id, team: teamOf('action', a, usersById), overdue: !!overdue, dueSort: a.due_date || '9999', raw: a });
+        });
+        (openFlags || []).forEach(f => {
+            list.push({ kind: 'flag', id: f.id, title: f.note, projectId: f.project_id, ownerId: f.created_by, team: teamOf('flag', f, usersById), overdue: false, dueSort: f.created_at || '9999', raw: f });
+        });
+        Object.keys(keyDates || {}).forEach(pid => (keyDates[pid] || []).forEach(kd => {
+            if (!kd.completed && kd.target_date && !isAutoComplete(kd)) {
+                const overdue = kd.target_date < today;
+                list.push({ kind: 'date', id: kd.id, title: kd.event_name, projectId: pid, ownerId: null, team: null, overdue: !!overdue, dueSort: kd.target_date || '9999', raw: kd });
+            }
+        }));
+        list.forEach(it => { const p = projById[it.projectId]; it.proj = p ? p.name : ''; it.prov = it.raw.from_meeting_type ? String(it.raw.from_meeting_type).replace('checklist:', '') : ''; });
+        return list;
+    }, [openActions, openFlags, keyDates, usersById, projById, today]);
+    // My items (contributor scope)
+    const mine = React.useMemo(() => items.filter(it => it.ownerId === currentUser.id || (it.kind === 'flag' && it.team && usersById[currentUser.id] && usersById[currentUser.id].department === it.team)), [items, currentUser.id, usersById]);
+    // ---- KPI counts (role-scoped) ----
+    const dueThisWeek = (it) => { const iso = it.kind === 'action' ? it.raw.due_date : (it.kind === 'date' ? it.raw.target_date : null); if (!iso) return false; return iso >= today && regDaysUntil(iso) <= 7; };
+    const scopeSet = role === 'exec' ? items : mine;
+    const kpiOverdue = scopeSet.filter(it => it.overdue).length;
+    const kpiWeek = scopeSet.filter(it => dueThisWeek(it)).length;
+    const kpiFlags = (role === 'exec' ? items : mine).filter(it => it.kind === 'flag').length;
+    const kpiDates = scopeSet.filter(it => it.kind === 'date').length;
+    const goRegister = (f) => { setTab('register'); setFilters(Object.assign({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }, f)); };
+    const kpis = role === 'exec'
+        ? [
+            { label: 'Due this week', count: kpiWeek, icon: 'calendar-check', sub: '', go: () => goRegister({ scope: 'week' }) },
+            { label: 'Overdue', count: kpiOverdue, icon: 'alert-triangle', sub: kpiOverdue ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue' }) },
+            { label: 'Open flags', count: kpiFlags, icon: 'flag', sub: '', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
+            { label: 'Key dates', count: kpiDates, icon: 'calendar-plus', sub: '', go: () => goRegister({ scope: 'all', kind: 'date' }) },
+        ]
+        : [
+            { label: 'Your open actions', count: mine.filter(it => it.kind === 'action').length, icon: 'check-square', sub: '', go: () => goRegister({ scope: 'all', kind: 'action', owner: currentUser.id }) },
+            { label: 'Due this week', count: mine.filter(it => dueThisWeek(it)).length, icon: 'calendar-check', sub: '', go: () => goRegister({ scope: 'week', owner: currentUser.id }) },
+            { label: 'Flags for your team', count: kpiFlags, icon: 'flag', sub: '', go: () => goRegister({ scope: 'all', kind: 'flag' }) },
+            { label: 'Overdue', count: mine.filter(it => it.overdue).length, icon: 'alert-triangle', sub: mine.filter(it => it.overdue).length ? 'needs attention' : '', subColor: C.carmine, go: () => goRegister({ scope: 'overdue', owner: currentUser.id }) },
+        ];
+    // ---- project health rows (exec) ----
+    const healthRows = React.useMemo(() => {
+        return (projects || []).filter(p => STAGE_MULT[p.status] != null).map(p => {
+            const acts = items.filter(it => it.kind === 'action' && it.projectId === p.id).map(it => it.raw);
+            const flgs = items.filter(it => it.kind === 'flag' && it.projectId === p.id).map(it => it.raw);
+            const dts = ((keyDates || {})[p.id]) || [];
+            const h = projectHealth(p, acts, flgs, dts, null);
+            return { p, h };
+        }).sort((a, b) => a.h.score - b.h.score);
+    }, [projects, items, keyDates]);
+    // ---- team performance ----
+    const teamPerf = React.useMemo(() => {
+        const map = {};
+        items.forEach(it => { if (!it.team) return; const t = map[it.team] || (map[it.team] = { open: 0, overdue: 0 }); t.open++; if (it.overdue) t.overdue++; });
+        return Object.keys(map).map(dept => ({ dept, label: teamLabel(dept), open: map[dept].open, overdue: map[dept].overdue, people: (users || []).filter(u => u.department === dept && u.active).length }))
+            .sort((a, b) => b.overdue - a.overdue || b.open - a.open);
+    }, [items, users]);
+    const maxTeamOpen = Math.max(1, ...teamPerf.map(t => t.open));
+    // ---- accountability (by person) ----
+    const acct = React.useMemo(() => {
+        const map = {};
+        items.forEach(it => { if (!it.ownerId) return; const a = map[it.ownerId] || (map[it.ownerId] = { open: 0, overdue: 0, flags: 0, oldest: '' }); a.open++; if (it.overdue) a.overdue++; if (it.kind === 'flag') a.flags++; const c = it.raw.created_at || ''; if (c && (!a.oldest || c < a.oldest)) a.oldest = c; });
+        return Object.keys(map).map(uid => Object.assign({ uid, u: usersById[uid] }, map[uid])).filter(r => r.u).sort((a, b) => b.overdue - a.overdue || b.open - a.open).slice(0, 8);
+    }, [items, usersById]);
+    // ---- pipeline (by count) ----
+    const pipeline = React.useMemo(() => {
+        const order = ['lead', 'pitching', 'tender', 'won', 'contract', 'on-site'];
+        return order.map(s => { const st = STATUSES.find(x => x.value === s) || { label: s, bg: C.g300 }; return { value: s, label: st.label, count: (projects || []).filter(p => p.status === s).length, bg: st.bg }; }).filter(p => p.count > 0);
+    }, [projects]);
+    const pipeTotal = Math.max(1, pipeline.reduce((s, p) => s + p.count, 0));
+    // ---- meetings cadence ----
+    const meetStats = React.useMemo(() => {
+        const byType = {};
+        (meetings || []).forEach(m => { const k = m.meeting_type || 'other'; const b = byType[k] || (byType[k] = { last: null, count: 0 }); b.count++; if (!b.last || (m.meeting_date || '') > b.last) b.last = m.meeting_date; });
+        return Object.keys(byType).map(k => ({ type: (MEETING_TYPES[k] && MEETING_TYPES[k].short) || k, last: byType[k].last ? formatMeetingDate(byType[k].last) : '—', count: byType[k].count })).slice(0, 6);
+    }, [meetings]);
+    // ---- REGISTER: filter + group ----
+    const teamOptions = React.useMemo(() => { const set = {}; items.forEach(it => { if (it.team) set[it.team] = true; }); return Object.keys(set); }, [items]);
+    const ownerOptions = React.useMemo(() => { const set = {}; items.forEach(it => { if (it.ownerId) set[it.ownerId] = true; }); return Object.keys(set).map(id => usersById[id]).filter(Boolean); }, [items, usersById]);
+    const filtered = React.useMemo(() => items.filter(it => {
+        if (filters.kind !== 'all' && it.kind !== filters.kind) return false;
+        if (filters.team !== 'all' && it.team !== filters.team) return false;
+        if (filters.owner !== 'all' && it.ownerId !== filters.owner) return false;
+        if (filters.scope === 'overdue' && !it.overdue) return false;
+        if (filters.scope === 'week' && !(it.overdue || dueThisWeek(it))) return false;
+        if (filters.scope === 'attention' && !it.overdue) return false;
+        return true;
+    }), [items, filters, today]);
+    const bucketOf = (it) => { if (it.overdue) return 'now'; const iso = it.kind === 'action' ? it.raw.due_date : (it.kind === 'date' ? it.raw.target_date : null); if (it.kind === 'flag') { const age = it.raw.created_at ? daysSinceDate(it.raw.created_at) : 0; return age > 3 ? 'now' : 'week'; } if (iso && regDaysUntil(iso) <= 7) return 'week'; return 'upcoming'; };
+    const regGroups = React.useMemo(() => {
+        const order = [{ key: 'now', label: 'Needs attention now', dot: C.carmine }, { key: 'week', label: 'This week', dot: C.amber }, { key: 'upcoming', label: 'Upcoming', dot: C.g500 }];
+        return order.map(o => ({ label: o.label, dot: o.dot, items: filtered.filter(it => bucketOf(it) === o.key).sort((a, b) => a.dueSort.localeCompare(b.dueSort)) })).filter(g => g.items.length);
+    }, [filtered]);
+    // ---- ACTIVITY ----
+    // item_events carries no project_id, so map item_id -> project from the open
+    // items we already hold (best-effort: blank for settled items until a
+    // follow-up adds project_id to item_events). See DEV_PLAN Step 4 deferrals.
+    const itemProjectById = React.useMemo(() => { const m = {}; items.forEach(it => { m[it.id] = it.projectId; }); return m; }, [items]);
+    const projForEvent = (a) => projById[itemProjectById[a.item_id]] || null;
+    const nameOfActor = (id) => { const u = id && usersById[id]; return u ? u.display_name : 'System'; };
+    const EVENT_VERB = { complete: 'completed', reopen: 'reopened', acknowledge: 'acknowledged', convert: 'converted', raised: 'raised', resolve: 'resolved', answer: 'answered', escalate: 'escalated', met: 'met', create: 'created', chase: 'chased', date_change: 'moved the date on', nudge: 'nudged', query: 'queried' };
+    // ---- render pieces ----
+    const card = (title, sub, body, extraStyle) => React.createElement("div", { style: Object.assign({ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' }, extraStyle || {}) },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, padding: '14px 20px', borderBottom: `1px solid ${C.line}` } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 15, color: C.ink0, fontFamily: FONT } }, title), sub ? React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, sub) : null),
+        body);
+    function overviewTab() {
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' } }, kpis.map((k, i) => React.createElement(CmdKpiCard, { key: i, label: k.label, count: k.count, sub: k.sub, subColor: k.subColor, icon: k.icon, onGo: k.go }))),
+            role === 'contributor' ? contribBody() : execBoards());
+    }
+    function contribBody() {
+        return card('Your work this week', mine.length + ' open', React.createElement("div", null,
+            mine.length === 0 ? React.createElement("div", { style: { padding: '18px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "Nothing open assigned to you — clear.")
+                : mine.slice().sort((a, b) => (b.overdue - a.overdue) || a.dueSort.localeCompare(b.dueSort)).map(it => rowFor(it, true))));
+    }
+    function rowFor(it, showButtons) {
+        const km = KIND_META[it.kind] || KIND_META.action;
+        const owner = it.ownerId ? usersById[it.ownerId] : null;
+        const canComplete = showButtons && it.kind === 'action' && it.ownerId === currentUser.id;
+        const canMet = showButtons && it.kind === 'date';
+        return React.createElement("div", { key: it.kind + it.id, onClick: () => onOpenItem(it.kind, it.id), style: { display: 'grid', gridTemplateColumns: '30px minmax(0,1fr) 160px 130px 96px 128px', alignItems: 'center', gap: 14, padding: '12px 20px 12px 17px', borderBottom: `1px solid ${C.line}`, borderLeft: `3px solid ${km.accent}`, background: C.white, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
+            React.createElement("span", { style: { width: 30, height: 30, borderRadius: 4, background: km.accent, color: C.white, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(km.icon, 15, 'currentColor', 2)),
+            React.createElement("div", { style: { minWidth: 0 } }, React.createElement("div", { style: { fontWeight: 600, fontSize: 13.5, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT } }, it.title), React.createElement("div", { style: { fontSize: 10.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 } }, (it.proj || '') + (it.prov ? ' · ' + it.prov : ''))),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 } }, owner ? React.createElement("span", { style: { fontSize: 12, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, owner.display_name) : React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, it.kind === 'date' ? 'Programme' : 'Unassigned')),
+            React.createElement("div", null, React.createElement(StateChip, { kind: it.kind, item: it.raw })),
+            React.createElement("div", { style: { textAlign: 'right' } }, it.raw.created_at ? React.createElement(AgeClock, { since: it.raw.created_at }) : null),
+            React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } },
+                canComplete ? React.createElement("button", { onClick: (e) => { e.stopPropagation(); onMarkActionComplete(it.raw); }, style: { padding: '6px 11px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: 'none', borderRadius: 3, background: C.carmine, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' } }, "Mark complete")
+                    : canMet ? React.createElement("button", { onClick: (e) => { e.stopPropagation(); onMarkDateMet(it.raw); }, style: { padding: '6px 11px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: 'none', borderRadius: 3, background: C.carmine, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' } }, "Mark met")
+                        : React.createElement("button", { onClick: (e) => { e.stopPropagation(); onOpenItem(it.kind, it.id); }, style: { padding: '6px 11px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, borderRadius: 3, background: C.white, color: C.text, cursor: 'pointer' } }, "Open")));
+    }
+    function execBoards() {
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 18, alignItems: 'start', marginBottom: 18 } },
+                React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 } }, healthBoard(), teamBoard()),
+                React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 18 } }, pipelineBoard(), meetingsBoard(), slippingBoard())),
+            accountabilityBoard());
+    }
+    function healthBoard() {
+        return card('Project health', 'open items weighed against stage · module completeness', React.createElement("div", null,
+            healthRows.length === 0 ? React.createElement("div", { style: { padding: '16px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No active projects.")
+                : healthRows.map(({ p, h }) => { const rag = HEALTH_RAG[h.band]; const st = STATUSES.find(x => x.value === p.status) || { short: p.status, bg: C.g100, fg: C.g500 }; return React.createElement("div", { key: p.id, onClick: () => onOpenProject(p.id), style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) 92px 96px minmax(0,1.3fr) 130px', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
+                    React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT } }, p.name),
+                    React.createElement("div", null, React.createElement("span", { style: { display: 'inline-block', fontSize: 9.5, fontWeight: 700, padding: '3px 8px', borderRadius: 3, background: st.bg, color: st.fg, textTransform: 'uppercase', letterSpacing: '0.06em' } }, st.short)),
+                    React.createElement("div", null, React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: rag.fg } }, React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: rag.fg } }), rag.label)),
+                    React.createElement("div", { style: { fontSize: 11, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, h.drivers),
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("div", { style: { flex: 1, height: 6, background: rag.bg, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { height: '100%', background: rag.fg, width: h.score + '%' } })), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: rag.fg, width: 30, textAlign: 'right' } }, h.score))); })));
+    }
+    function teamBoard() {
+        return card('Team performance', 'open workload by team — click to filter the register', React.createElement("div", null,
+            teamPerf.length === 0 ? React.createElement("div", { style: { padding: '16px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No open items by team.")
+                : teamPerf.map(t => React.createElement("div", { key: t.dept, onClick: () => goRegister({ scope: 'all', team: t.dept }), style: { display: 'grid', gridTemplateColumns: '120px minmax(0,1fr) 150px 120px', gap: 14, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
+                    React.createElement("div", null, React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.ink0 } }, t.label), React.createElement("div", { style: { fontSize: 10.5, color: C.g500 } }, t.people + (t.people === 1 ? ' person' : ' people'))),
+                    React.createElement("div", { style: { position: 'relative', height: 8, background: C.g100, borderRadius: 2, overflow: 'hidden' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, width: Math.round(100 * t.open / maxTeamOpen) + '%', background: C.prussian80 } }), React.createElement("div", { style: { position: 'absolute', top: 0, bottom: 0, left: 0, width: Math.round(100 * t.overdue / maxTeamOpen) + '%', background: C.carmine } })),
+                    React.createElement("div", { style: { fontSize: 12, color: C.text } }, React.createElement("span", { style: { fontWeight: 700 } }, t.open), " open", t.overdue ? React.createElement("span", { style: { color: C.carmine, fontWeight: 700 } }, ' · ' + t.overdue + ' overdue') : null),
+                    React.createElement("div", { style: { textAlign: 'right' } }, t.overdue >= 2 ? React.createElement("span", { style: { display: 'inline-block', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 7px', background: C.carmine, color: '#fff' } }, "Needs assistance") : null)))));
+    }
+    function pipelineBoard() {
+        return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: '16px 18px' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 15, color: C.ink0, fontFamily: FONT } }, "Pipeline"), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, "by count")),
+            React.createElement("div", { style: { display: 'flex', height: 14, borderRadius: 3, overflow: 'hidden', marginBottom: 12 } }, pipeline.map(p => React.createElement("div", { key: p.value, title: p.label + ': ' + p.count, style: { width: Math.round(100 * p.count / pipeTotal) + '%', background: p.bg } }))),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 7 } }, pipeline.map(p => React.createElement("div", { key: p.value, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 } }, React.createElement("span", { style: { width: 10, height: 10, borderRadius: 2, background: p.bg, border: `1px solid ${C.line}` } }), React.createElement("span", { style: { color: C.text, flex: 1 } }, p.label), React.createElement("span", { style: { fontWeight: 700, color: C.ink0 } }, p.count)))));
+    }
+    function meetingsBoard() {
+        return card('Meetings', 'cadence', React.createElement("div", null,
+            meetStats.length === 0 ? React.createElement("div", { style: { padding: '13px 18px', fontSize: 12, color: C.g500 } }, "No meetings yet.")
+                : meetStats.map((m, i) => React.createElement("div", { key: i, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 18px', borderBottom: `1px solid ${C.line}`, fontSize: 12 } }, React.createElement("span", { style: { fontWeight: 700, color: C.ink0, width: 76 } }, m.type), React.createElement("span", { style: { color: C.g500, flex: 1 } }, 'last ' + m.last), React.createElement("span", { style: { color: C.g500, fontWeight: 600 } }, m.count + ' held')))));
+    }
+    function slippingBoard() {
+        return card('Slipping', 'programme moves this week', React.createElement("div", null,
+            slips.length === 0 ? React.createElement("div", { style: { padding: '13px 18px', fontSize: 12, color: C.g500 } }, "No dates moved this week.")
+                : slips.slice(0, 6).map(s => { const p = projById[s.project_id]; const days = Math.round((new Date(s.new_date) - new Date(s.previous_date)) / 86400000); return React.createElement("div", { key: s.id, style: { padding: '12px 18px', borderBottom: `1px solid ${C.line}` } },
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 12.5, color: C.ink0 } }, s.subject_label || 'Key date'), React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 3, background: C.carmineSoft, color: C.carmine } }, '+' + days + 'd')),
+                    React.createElement("div", { style: { fontSize: 11.5, color: C.g500, marginTop: 2 } }, p ? p.name : '—'),
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12 } }, React.createElement("span", { style: { color: C.g500, textDecoration: 'line-through' } }, formatMeetingDate(s.previous_date)), React.createElement("span", { style: { color: C.carmine, fontWeight: 700 } }, '→ ' + formatMeetingDate(s.new_date)), React.createElement("span", { style: { color: C.g500, fontSize: 10.5 } }, 'by ' + nameOfActor(s.changed_by)))); })));
+    }
+    function accountabilityBoard() {
+        return React.createElement("div", { style: { marginTop: 18 } }, card('Accountability', 'open items by person, aged — click a person to filter the register', React.createElement("div", null,
+            acct.length === 0 ? React.createElement("div", { style: { padding: '16px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No open items assigned.")
+                : acct.map(r => React.createElement("div", { key: r.uid, onClick: () => goRegister({ scope: 'all', owner: r.uid }), style: { display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) 96px 110px 130px 20px', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
+                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement("span", { style: { width: 26, height: 26, borderRadius: '50%', background: C.carmineSoft, color: C.carmine, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 700 } }, r.u.initials || initialsFromName(r.u.display_name)), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.ink0 } }, r.u.display_name), React.createElement("div", { style: { fontSize: 10.5, color: C.g500 } }, teamLabel(r.u.department)))),
+                    React.createElement("div", { style: { fontSize: 13, color: C.text } }, React.createElement("span", { style: { fontWeight: 700 } }, r.open), " open"),
+                    React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: r.overdue ? C.carmine : C.g500 } }, r.overdue ? r.overdue + ' overdue' : '—'),
+                    React.createElement("div", { style: { fontSize: 12, color: C.g500 } }, r.oldest ? ('oldest ' + ageMeta(r.oldest).label.replace(' open', '')) : ''),
+                    React.createElement("div", { style: { color: C.g400, display: 'flex' } }, lucide('chevron-right', 15, 'currentColor', 2)))))));
+    }
+    // ---- REGISTER tab ----
+    function selectBox(value, onChange, options, activeWhenNotAll) {
+        const active = activeWhenNotAll && value !== 'all';
+        return React.createElement("select", { value: value, onChange: e => onChange(e.target.value), style: { padding: '8px 12px', fontSize: 12.5, fontFamily: FONT, border: `1px solid ${active ? C.carmine : C.line}`, borderRadius: 3, background: active ? C.carmineSoft : C.white, color: active ? C.carmine : C.text, fontWeight: active ? 700 : 500, cursor: 'pointer' } }, options.map(o => React.createElement("option", { key: o.value, value: o.value }, o.label)));
+    }
+    function registerTab() {
+        const scopeOpts = [{ value: 'all', label: 'All open' }, { value: 'week', label: 'Due this week' }, { value: 'overdue', label: 'Overdue' }, { value: 'attention', label: 'Needs attention' }];
+        const kindOpts = [{ value: 'all', label: 'All kinds' }, { value: 'action', label: 'Actions' }, { value: 'flag', label: 'Flags' }, { value: 'date', label: 'Key dates' }];
+        const teamOpts = [{ value: 'all', label: 'All teams' }].concat(teamOptions.map(d => ({ value: d, label: teamLabel(d) })));
+        const ownerOpts = [{ value: 'all', label: 'All owners' }].concat(ownerOptions.map(u => ({ value: u.id, label: u.display_name })));
+        const dirty = filters.scope !== 'all' || filters.kind !== 'all' || filters.team !== 'all' || filters.owner !== 'all';
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' } },
+                React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 5 } }, React.createElement("span", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: C.g500, textTransform: 'uppercase' } }, "Timescale"), selectBox(filters.scope, v => setFilters({ scope: v }), scopeOpts, true)),
+                React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 5 } }, React.createElement("span", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: C.g500, textTransform: 'uppercase' } }, "Kind"), selectBox(filters.kind, v => setFilters({ kind: v }), kindOpts, true)),
+                React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 5 } }, React.createElement("span", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: C.g500, textTransform: 'uppercase' } }, "Team"), selectBox(filters.team, v => setFilters({ team: v }), teamOpts, true)),
+                React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 5 } }, React.createElement("span", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: C.g500, textTransform: 'uppercase' } }, "Owner"), selectBox(filters.owner, v => setFilters({ owner: v }), ownerOpts, true)),
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 16, marginLeft: 'auto', paddingBottom: 9 } }, dirty ? React.createElement("button", { onClick: () => setFilters({ scope: 'all', kind: 'all', team: 'all', owner: 'all' }), style: { padding: '7px 12px', fontSize: 11.5, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, borderRadius: 3, background: C.white, color: C.g500, cursor: 'pointer' } }, "Clear all filters") : null, React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: C.text } }, filtered.length + (filtered.length === 1 ? ' item' : ' items')))),
+            React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } },
+                regGroups.length === 0 ? React.createElement("div", { style: { padding: '22px 20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No open items match these filters.")
+                    : regGroups.map(g => React.createElement("div", { key: g.label },
+                        React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: C.g50, borderBottom: `1px solid ${C.line}` } }, React.createElement("span", { style: { width: 7, height: 7, borderRadius: '50%', background: g.dot } }), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.ink0 } }, g.label), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, g.items.length)),
+                        g.items.map(it => registerRow(it))))));
+    }
+    function registerRow(it) {
+        const km = KIND_META[it.kind] || KIND_META.action;
+        const owner = it.ownerId ? usersById[it.ownerId] : null;
+        const isExp = expanded === (it.kind + it.id);
+        const trail = isExp ? activity.filter(ev => ev.item_type === it.kind && ev.item_id === it.id).slice(0, 8) : [];
+        return React.createElement("div", { key: it.kind + it.id },
+            React.createElement("div", { onClick: () => setExpanded(isExp ? null : (it.kind + it.id)), style: { display: 'grid', gridTemplateColumns: '30px minmax(0,1fr) 170px 130px 96px 128px', alignItems: 'center', gap: 14, padding: '12px 20px 12px 17px', borderBottom: `1px solid ${C.line}`, borderLeft: `3px solid ${km.accent}`, background: C.white, cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = C.g50, onMouseLeave: e => e.currentTarget.style.background = C.white },
+                React.createElement("span", { style: { width: 30, height: 30, borderRadius: 4, background: km.accent, color: C.white, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, lucide(km.icon, 15, 'currentColor', 2)),
+                React.createElement("div", { style: { minWidth: 0 } }, React.createElement("div", { style: { fontWeight: 600, fontSize: 13.5, color: C.ink0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT } }, it.title), React.createElement("div", { style: { fontSize: 10.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 } }, (it.proj || '') + (it.prov ? ' · ' + it.prov : ''))),
+                React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 } }, owner ? React.createElement("span", { style: { fontSize: 12, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, owner.display_name) : React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, it.kind === 'date' ? 'Programme' : 'Unassigned')),
+                React.createElement("div", null, React.createElement(StateChip, { kind: it.kind, item: it.raw })),
+                React.createElement("div", { style: { textAlign: 'right' } }, it.raw.created_at ? React.createElement(AgeClock, { since: it.raw.created_at }) : null),
+                React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, React.createElement("button", { onClick: (e) => { e.stopPropagation(); onOpenItem(it.kind, it.id); }, style: { padding: '6px 11px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, borderRadius: 3, background: C.white, color: C.text, cursor: 'pointer' } }, "Open"))),
+            isExp ? React.createElement("div", { style: { padding: '14px 20px 18px 61px', background: C.g50, borderBottom: `1px solid ${C.line}` } },
+                React.createElement("div", { style: { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.g400, marginBottom: 10 } }, "Item history · item_events"),
+                trail.length === 0 ? React.createElement("div", { style: { fontSize: 12, color: C.g500, fontStyle: 'italic' } }, "No recorded events yet.")
+                    : React.createElement("div", { style: { borderLeft: `2px solid ${C.carmineMid}`, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 10 } }, trail.map(ev => React.createElement("div", { key: ev.id, style: { fontSize: 12, lineHeight: 1.45 } }, React.createElement("span", { style: { fontSize: 10, color: C.g400, marginRight: 8 } }, fmtStamp(ev.created_at)), React.createElement("span", { style: { fontWeight: 700, color: C.ink0 } }, nameOfActor(ev.actor_id)), React.createElement("span", { style: { color: C.text } }, ' ' + (EVENT_VERB[ev.event_type] || ev.event_type) + (ev.body ? ' — ' + ev.body : '')))))) : null);
+    }
+    // ---- ACTIVITY tab ----
+    function activityTab() {
+        return React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, marginBottom: 14 } },
+                React.createElement("div", { style: { fontSize: 12.5, color: C.g500, lineHeight: 1.5, maxWidth: 640 } }, "One record, two lenses — the feed reads like news; the log is the same events as an auditable, exportable table."),
+                isSenior ? React.createElement("div", { style: { display: 'flex', border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, ['feed', 'log'].map(l => React.createElement("button", { key: l, onClick: () => setActLens(l), style: { padding: '7px 15px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: actLens === l ? C.prussian : C.white, color: actLens === l ? '#fff' : C.g500, textTransform: 'capitalize' } }, l))) : null),
+            (actLens === 'log' && isSenior) ? activityLog() : activityFeed());
+    }
+    function activityFeed() {
+        return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', maxWidth: 760 } },
+            activity.length === 0 ? React.createElement("div", { style: { padding: '20px', fontSize: 13, color: C.g500, fontStyle: 'italic' } }, "No activity recorded yet.")
+                : activity.slice(0, 60).map(a => { const p = projForEvent(a); const km = KIND_META[a.item_type] || KIND_META.action; return React.createElement("div", { key: a.id, style: { display: 'flex', gap: 11, padding: '13px 18px', borderBottom: `1px solid ${C.line}` } },
+                    React.createElement("div", { style: { width: 30, height: 30, borderRadius: 6, background: C.white, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: km.accent } }, lucide(km.icon, 15, 'currentColor', 2)),
+                    React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.45 } }, React.createElement("span", { style: { fontWeight: 700 } }, nameOfActor(a.actor_id)), React.createElement("span", null, ' ' + (EVENT_VERB[a.event_type] || a.event_type) + ' '), React.createElement("span", { style: { color: C.carmine, fontWeight: 600 } }, km.label.toLowerCase())), React.createElement("div", { style: { fontSize: 11, color: C.g500, marginTop: 4 } }, (p ? p.name : '') + (a.body ? ' · ' + a.body : ''))),
+                    React.createElement("div", { style: { fontSize: 10, color: C.g400, whiteSpace: 'nowrap', marginTop: 3 } }, fmtStamp(a.created_at))); }));
+    }
+    function activityLog() {
+        return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10 } }, React.createElement("span", { style: { fontWeight: 700, fontSize: 15, color: C.ink0, fontFamily: FONT } }, "Audit log"), React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, "every recorded event, attributed")),
+                React.createElement("div", { style: { display: 'flex', gap: 8 } }, React.createElement("button", { onClick: () => exportAudit('csv'), style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, cursor: 'pointer' } }, "Export CSV"), React.createElement("button", { onClick: () => exportAudit('print'), style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, cursor: 'pointer' } }, "Print / PDF"))),
+            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, padding: '9px 20px', background: C.g50, borderBottom: `1px solid ${C.line}`, fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.g500 } }, React.createElement("span", null, "When"), React.createElement("span", null, "Actor"), React.createElement("span", null, "Event"), React.createElement("span", null, "Detail"), React.createElement("span", null, "Project")),
+            activity.slice(0, 200).map(a => { const p = projForEvent(a); return React.createElement("div", { key: a.id, style: { display: 'grid', gridTemplateColumns: '110px 150px 130px minmax(0,1.6fr) minmax(0,1.1fr)', gap: 12, alignItems: 'center', padding: '10px 20px', borderBottom: `1px solid ${C.line}` } },
+                React.createElement("span", { style: { fontSize: 11, color: C.g500 } }, fmtStamp(a.created_at)),
+                React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: C.ink0 } }, nameOfActor(a.actor_id)),
+                React.createElement("span", null, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 7px', borderRadius: 3, background: C.g100, color: C.text } }, (a.item_type || '') + ' ' + (EVENT_VERB[a.event_type] || a.event_type))),
+                React.createElement("span", { style: { fontSize: 12, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, a.body || '—'),
+                React.createElement("span", { style: { fontSize: 11.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p ? p.name : '—')); }));
+    }
+    function exportAudit(mode) {
+        const rows = activity.slice(0, 500).map(a => ({ when: fmtStamp(a.created_at), actor: nameOfActor(a.actor_id), event: (a.item_type || '') + ' ' + (EVENT_VERB[a.event_type] || a.event_type), detail: a.body || '', project: (projForEvent(a) || {}).name || '' }));
+        if (mode === 'csv') {
+            const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+            const csv = ['When,Actor,Event,Detail,Project'].concat(rows.map(r => [r.when, r.actor, r.event, r.detail, r.project].map(esc).join(','))).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'audit-log.csv'; a.click(); URL.revokeObjectURL(url);
+        } else {
+            window.print();
+        }
+    }
+    // ---- shell ----
+    const tabs = [{ key: 'overview', label: 'Overview' }, { key: 'register', label: 'Open register' }, { key: 'activity', label: 'Activity' }];
+    return React.createElement("div", { style: { background: '#ECECEA', minHeight: 'calc(100vh - 64px)' } },
+        React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '22px 28px 0' } },
+            React.createElement("div", { style: { maxWidth: 1360, margin: '0 auto' } },
+                React.createElement("div", { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20 } },
+                    React.createElement("div", null, React.createElement("div", { style: { fontWeight: 700, fontSize: 22, color: C.ink0, fontFamily: FONT } }, "Dashboard"), React.createElement("div", { style: { fontSize: 13, color: C.g500, marginTop: 3 } }, "The portfolio at a glance — every number opens the register behind it.")),
+                    isSenior ? React.createElement("div", { style: { display: 'flex', border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, [{ k: 'exec', l: 'Exec view' }, { k: 'contributor', l: 'Contributor view' }].map(r => React.createElement("button", { key: r.k, onClick: () => setRoleView(r.k), style: { padding: '7px 13px', fontSize: 11.5, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: roleView === r.k ? C.prussian : C.white, color: roleView === r.k ? '#fff' : C.g500 } }, r.l))) : null),
+                React.createElement("div", { style: { display: 'flex', gap: 26, marginTop: 16 } }, tabs.map(t => React.createElement("button", { key: t.key, onClick: () => setTab(t.key), style: { padding: '0 0 12px', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? C.carmine : 'transparent'}`, color: tab === t.key ? C.ink0 : C.g500, fontSize: 13.5, fontWeight: tab === t.key ? 700 : 500, fontFamily: FONT, cursor: 'pointer' } }, t.label))))),
+        React.createElement("main", { style: { padding: '22px 28px 60px' } }, React.createElement("div", { style: { maxWidth: 1360, margin: '0 auto' } },
+            tab === 'overview' ? overviewTab() : (tab === 'register' ? registerTab() : activityTab()))));
+}
+
+// ============================================================
+// COMMAND DASHBOARD (Step 4) — service helpers. Team is a DERIVED dimension (no
+// schema change): an action's team is its owner's department, a flag's team is
+// its to_department, a key date has none. Health is the agreed stage-weighted
+// formula (DEV_PLAN Step 4 · workshop 2026-08-02) — build to those exact numbers.
+// ============================================================
+const STAGE_MULT = { lead: 0.3, pitching: 0.4, tender: 0.6, won: 0.8, contract: 1.0, 'on-site': 1.4 };
+// Team (department key) an item belongs to; kind is 'action'|'flag'|'date'.
+function teamOf(kind, item, usersById) {
+    if (!item) return null;
+    if (kind === 'flag') return item.to_department || null;
+    if (kind === 'action') { const u = (item.owner_user_id && usersById) ? usersById[item.owner_user_id] : null; return (u && u.department) || null; }
+    return null; // key dates have no discipline team
+}
+function teamLabel(dept) {
+    if (!dept) return 'Programme';
+    const t = (typeof MEETING_TYPES !== 'undefined') && MEETING_TYPES[dept];
+    return (t && t.short) || (dept.charAt(0).toUpperCase() + dept.slice(1));
+}
+// Project health — the agreed formula. `actions`/`flags` are this project's OPEN
+// sets; `dates` its key dates; `moduleFill` is 0..1 (avg fill of active modules)
+// or null when none are built (no penalty). Returns { score, band, drivers, … }.
+function projectHealth(project, actions, flags, dates, moduleFill) {
+    const today = todayISO();
+    let sev = 0, od = 0, oda = 0, oa = 0, fl = 0;
+    (actions || []).forEach(a => {
+        if (a.due_date && a.due_date < today) { sev += 2; oda++; }
+        else { sev += 0.5; oa++; }
+    });
+    (flags || []).forEach(() => { sev += 2; fl++; });
+    (dates || []).forEach(d => { if (!d.completed && d.target_date && d.target_date < today) { sev += 3; od++; } });
+    const mult = (STAGE_MULT[project.status] != null) ? STAGE_MULT[project.status] : 0.6;
+    const pressure = sev * mult;
+    const moduleFactor = (moduleFill == null) ? 1.0 : (0.6 + 0.4 * Math.max(0, Math.min(1, moduleFill)));
+    const score = Math.round(Math.max(0, 100 - pressure) * moduleFactor);
+    const band = score >= 70 ? 'green' : (score >= 40 ? 'amber' : 'red');
+    const drivers = [];
+    if (od) drivers.push(od + ' overdue date' + (od > 1 ? 's' : ''));
+    if (oda) drivers.push(oda + ' overdue action' + (oda > 1 ? 's' : ''));
+    if (fl) drivers.push(fl + ' open flag' + (fl > 1 ? 's' : ''));
+    if (moduleFill != null && moduleFill < 0.5) drivers.push('thin module data');
+    return { score, band, drivers: drivers.length ? drivers.join(' · ') : 'clear', mult, od, oda, fl, oa };
+}
+const HEALTH_RAG = { green: { fg: '#1E6B45', bg: '#E7F0EA', label: 'On track' }, amber: { fg: '#A5741C', bg: '#FEF3C7', label: 'Watch' }, red: { fg: '#8C002A', bg: '#F4E6EA', label: 'At risk' } };
 function Dashboard({ user, profile, onProfileUpdated }) {
     const [projects, setProjects] = useState([]);
     const [users, setUsers] = useState([]);
@@ -1630,9 +2009,12 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     // Full or Map and back keeps the order the user chose.
     const [projectSort, setProjectSort] = useState({ key: 'project_number', dir: 'asc' });
     // View state — controls top-level view: 'tracker' | 'meetings' | 'meeting-detail' | 'my-actions' | 'live-tracker' | 'project-dashboard'
-    const [currentView, setCurrentView] = useState('tracker');
+    const [currentView, setCurrentView] = useState('dashboard');
     const [currentMeetingId, setCurrentMeetingId] = useState(null);
     const [currentProjectId, setCurrentProjectId] = useState(null);
+    // Command dashboard (Step 4): which tab + the register's URL-backed filters.
+    const [dashTab, setDashTab] = useState('overview');
+    const [dashFilters, setDashFilters] = useState(null);
     // Save tracking — keyed by project id
     const [saveStatus, setSaveStatus] = useState({});
     const [notifications, setNotifications] = useState([]);
@@ -2058,33 +2440,55 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     //   #/meetings/<uuid>          → meeting-detail
     //   #/actions                  → my-actions
     //   #/tracker                  → live-tracker
+    const DASH_FILTER_KEYS = ['scope', 'kind', 'team', 'owner'];
     const parseHash = () => {
-        const h = (window.location.hash || '').replace(/^#\/?/, '');
-        const parts = h.split('/').filter(Boolean);
+        const raw = (window.location.hash || '').replace(/^#\/?/, '');
+        const qIdx = raw.indexOf('?');
+        const path = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+        const query = {};
+        if (qIdx >= 0) {
+            raw.slice(qIdx + 1).split('&').forEach(kv => { if (!kv) return; const eq = kv.indexOf('='); const k = decodeURIComponent(eq >= 0 ? kv.slice(0, eq) : kv); const v = eq >= 0 ? decodeURIComponent(kv.slice(eq + 1)) : ''; query[k] = v; });
+        }
+        const parts = path.split('/').filter(Boolean);
+        const dashFrom = () => { const f = {}; DASH_FILTER_KEYS.forEach(k => { if (query[k]) f[k] = query[k]; }); return Object.keys(f).length ? f : null; };
         if (parts.length === 0)
-            return { view: 'tracker', meetingId: null, projectId: null };
+            return { view: 'dashboard', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
         const [seg, id] = parts;
-        if (seg === 'projects' && id)
-            return { view: 'project-dashboard', meetingId: null, projectId: id };
-        if (seg === 'projects')
-            return { view: 'tracker', meetingId: null, projectId: null };
-        if (seg === 'meetings' && id)
-            return { view: 'meeting-detail', meetingId: id, projectId: null };
-        if (seg === 'meetings')
-            return { view: 'meetings', meetingId: null, projectId: null };
-        if (seg === 'actions')
-            return { view: 'my-actions', meetingId: null, projectId: null };
-        if (seg === 'tracker')
-            return { view: 'live-tracker', meetingId: null, projectId: null };
+        if (seg === 'dashboard')
+            return { view: 'dashboard', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
         if (seg === 'register')
-            return { view: 'register', meetingId: null, projectId: null };
+            return { view: 'dashboard', meetingId: null, projectId: null, dashTab: 'register', dashFilters: dashFrom() };
+        if (seg === 'activity')
+            return { view: 'dashboard', meetingId: null, projectId: null, dashTab: 'activity', dashFilters: null };
+        if (seg === 'projects' && id)
+            return { view: 'project-dashboard', meetingId: null, projectId: id, dashTab: 'overview', dashFilters: null };
+        if (seg === 'projects')
+            return { view: 'tracker', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
+        if (seg === 'meetings' && id)
+            return { view: 'meeting-detail', meetingId: id, projectId: null, dashTab: 'overview', dashFilters: null };
+        if (seg === 'meetings')
+            return { view: 'meetings', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
+        if (seg === 'actions')
+            return { view: 'my-actions', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
+        if (seg === 'tracker')
+            return { view: 'live-tracker', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
         if (seg === 'organisation')
-            return { view: 'organisation', meetingId: null, projectId: null };
-        return { view: 'tracker', meetingId: null, projectId: null };
+            return { view: 'organisation', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
+        return { view: 'dashboard', meetingId: null, projectId: null, dashTab: 'overview', dashFilters: null };
     };
-    const writeHash = (view, meetingId, projectId) => {
-        let h = '#/projects';
-        if (view === 'tracker')
+    const writeHash = (view, meetingId, projectId, tab, filters) => {
+        let h = '#/dashboard';
+        if (view === 'dashboard') {
+            if (tab === 'register') {
+                const qp = DASH_FILTER_KEYS.filter(k => filters && filters[k] && filters[k] !== 'all').map(k => `${k}=${encodeURIComponent(filters[k])}`);
+                h = '#/register' + (qp.length ? '?' + qp.join('&') : '');
+            }
+            else if (tab === 'activity')
+                h = '#/activity';
+            else
+                h = '#/dashboard';
+        }
+        else if (view === 'tracker')
             h = '#/projects';
         else if (view === 'project-dashboard' && projectId)
             h = `#/projects/${projectId}`;
@@ -2096,8 +2500,6 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             h = '#/actions';
         else if (view === 'live-tracker')
             h = '#/tracker';
-        else if (view === 'register')
-            h = '#/register';
         else if (view === 'organisation')
             h = '#/organisation';
         if (window.location.hash !== h)
@@ -2105,23 +2507,27 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     };
     // On mount: read hash → set state.
     useEffect(() => {
-        const { view, meetingId, projectId } = parseHash();
-        setCurrentView(view);
-        setCurrentMeetingId(meetingId);
-        setCurrentProjectId(projectId);
+        const s = parseHash();
+        setCurrentView(s.view);
+        setCurrentMeetingId(s.meetingId);
+        setCurrentProjectId(s.projectId);
+        setDashTab(s.dashTab);
+        setDashFilters(s.dashFilters);
         const onHash = () => {
             const next = parseHash();
             setCurrentView(next.view);
             setCurrentMeetingId(next.meetingId);
             setCurrentProjectId(next.projectId);
+            setDashTab(next.dashTab);
+            setDashFilters(next.dashFilters);
         };
         window.addEventListener('hashchange', onHash);
         return () => window.removeEventListener('hashchange', onHash);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
     // On state change: write hash → URL stays consistent.
     useEffect(() => {
-        writeHash(currentView, currentMeetingId, currentProjectId);
-    }, [currentView, currentMeetingId, currentProjectId]);
+        writeHash(currentView, currentMeetingId, currentProjectId, dashTab, dashFilters);
+    }, [currentView, currentMeetingId, currentProjectId, dashTab, dashFilters]);
     // Register the site-wide item-modal opener so any view can call openItem(kind, id).
     useEffect(() => {
         _openItemHandler = (payload) => setItemModal(payload);
@@ -2167,7 +2573,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     useEffect(() => { revalidateAll(30000); }, [currentView]); // eslint-disable-line react-hooks/exhaustive-deps
     const signOut = () => sb.auth.signOut();
     // The wordmark is the way back to the projects home from anywhere.
-    const goHome = () => { setCurrentProjectId(null); setCurrentMeetingId(null); setCurrentView('tracker'); };
+    const goHome = () => { setCurrentProjectId(null); setCurrentMeetingId(null); setDashTab('overview'); setDashFilters(null); setCurrentView('dashboard'); };
     // Computed values
     const filteredProjects = useMemo(() => {
         let list = projects;
@@ -2241,7 +2647,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { onClick: goHome, role: "button", tabIndex: 0, title: "Back to projects", onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } }, onMouseEnter: e => { e.currentTarget.style.opacity = '0.78'; }, onMouseLeave: e => { e.currentTarget.style.opacity = '1'; }, style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3, cursor: 'pointer', transition: 'opacity 160ms ease-out' } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Work", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Register", active: currentView === 'register', onClick: () => { setRegisterInitialTab('register'); setCurrentView('register'); } }), React.createElement(ViewTab, { label: "Organisation", active: currentView === 'organisation', onClick: () => setCurrentView('organisation') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setRegisterInitialTab('activity'); setCurrentView('register'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: openProjectActions, projectFlags: openProjectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, sort: projectSort, setSort: setProjectSort, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: openProjectActions, projectFlags: openProjectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: openProjectActions, projectFlags: openProjectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onBack: () => setCurrentView('tracker') })), currentView === 'organisation' && (React.createElement(OrganisationView, { key: currentView, currentUser: user, profile: profile, isSenior: isSenior, projects: projects })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: C.g50, color: C.text } }, React.createElement("header", { style: { background: C.carmine, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 64 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { onClick: goHome, role: "button", tabIndex: 0, title: "Back to projects", onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } }, onMouseEnter: e => { e.currentTarget.style.opacity = '0.78'; }, onMouseLeave: e => { e.currentTarget.style.opacity = '1'; }, style: { fontFamily: FONT, fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 3, cursor: 'pointer', transition: 'opacity 160ms ease-out' } }, React.createElement("img", { src: ARKE_LOGO_WHITE, alt: "arke", style: { height: 18, width: 'auto', display: 'block' } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, letterSpacing: '0.08em' } }, React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "["), React.createElement("span", null, "matrix"), React.createElement("span", { style: { color: C.onChrome, fontWeight: 400 } }, "]"))), React.createElement("nav", { style: { display: 'flex', gap: 8 } }, React.createElement(ViewTab, { label: "Dashboard", active: currentView === 'dashboard', onClick: goHome }), React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Work", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), React.createElement(ViewTab, { label: "Organisation", active: currentView === 'organisation', onClick: () => setCurrentView('organisation') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => setShowNotifications(v => !v), title: "Notifications", style: { position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, width: 38, height: 38, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, lucide('bell', 17, '#fff', 2), (() => { const u = notifications.filter(n => !n.read_at).length; return u > 0 ? React.createElement("span", { style: { position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: '#fff', color: C.carmine, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.carmine}`, fontFamily: FONT } }, u > 99 ? '99+' : u) : null; })()), showNotifications && React.createElement(NotificationsHub, { notifications: notifications, projects: projects, users: users, onMarkAllRead: markAllNotificationsRead, onOpenProject: openProjectFromNotif, onViewAudit: () => { setShowNotifications(false); setDashTab('activity'); setDashFilters(null); setCurrentView('dashboard'); }, onClose: () => setShowNotifications(false) }), React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '9px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', transition: 'all 160ms ease-out' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.onChrome, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.onChrome, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: '#fff', fontFamily: FONT } }, profile.display_name), React.createElement("span", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: FONT } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, onMouseEnter: e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = C.carmine; }, onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }, style: { padding: '9px 14px', border: '1px solid rgba(255,255,255,0.4)', background: 'transparent', color: 'rgba(255,255,255,0.85)', fontFamily: FONT, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', borderRadius: 2, cursor: 'pointer', transition: 'all 160ms ease-out' } }, "Sign out")))), currentView === 'dashboard' && (React.createElement(CommandDashboard, { key: 'dashboard', initialTab: dashTab, initialFilters: dashFilters, projects: projects, users: users, currentUser: user, isSenior: isSenior, meetings: meetings, openActions: openProjectActions, openFlags: openProjectFlags, keyDates: keyDates, onOpenProject: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onOpenMeeting: openMeeting, onOpenItem: openItem, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onTabChange: (t) => setDashTab(t), onFiltersChange: (f) => setDashFilters(f) })), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: openProjectActions, projectFlags: openProjectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, showUnsecured: showUnsecured, setShowUnsecured: setShowUnsecured, viewMode: projectViewMode, setViewMode: setProjectViewMode, sort: projectSort, setSort: setProjectSort, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: openProjectActions, projectFlags: openProjectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, updateProjectField: updateProjectField, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onProjectSave: updateProjectFields, onActionsChange: refreshProjectActions, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'register' && (React.createElement(RegisterActivityView, { key: currentView + registerInitialTab, initialTab: registerInitialTab, projects: projects, users: users, currentUser: user, isSenior: isSenior, projectActions: openProjectActions, projectFlags: openProjectFlags, keyDates: keyDates, notifications: notifications, onOpenProject: openProjectFromNotif, onMarkActionComplete: markActionComplete, onMarkDateMet: markKeyDateMet, onBack: () => setCurrentView('tracker') })), currentView === 'organisation' && (React.createElement(OrganisationView, { key: currentView, currentUser: user, profile: profile, isSenior: isSenior, projects: projects })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onProjectSave: updateProjectFields, onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } })), itemModal && (React.createElement(ItemModal, { key: itemModal.kind + itemModal.id, kind: itemModal.kind, id: itemModal.id, currentUser: user, profile: profile, users: users, projects: projects, isSenior: isSenior, onClose: () => setItemModal(null) }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
