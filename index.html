@@ -1434,23 +1434,6 @@ function regDaysUntil(dateStr) {
     const td = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     return Math.round((td - t0) / 86400000);
 }
-function regDueMeta(days) {
-    if (days === null)
-        return { label: 'No date set', pill: null, tone: 'upcoming', sub: 'No date set' };
-    if (days < 0)
-        return { label: 'Overdue', pill: 'OVERDUE', tone: 'overdue', sub: Math.abs(days) + ' day' + (Math.abs(days) === 1 ? '' : 's') + ' overdue' };
-    if (days === 0)
-        return { label: 'Due today', pill: 'DUE TODAY', tone: 'overdue', sub: 'Due today' };
-    if (days <= 7)
-        return { label: 'Due soon', pill: 'DUE SOON', tone: 'soon', sub: 'Due in ' + days + ' day' + (days === 1 ? '' : 's') };
-    const w = Math.round(days / 7);
-    return { label: 'Upcoming', pill: null, tone: 'upcoming', sub: 'Due in ' + w + ' week' + (w === 1 ? '' : 's') };
-}
-const REG_TONES = {
-    overdue: { bg: C.carmineSoft, fg: C.carmine },
-    soon: { bg: C.amberLight, fg: C.amber },
-    upcoming: { bg: C.g100, fg: C.g500 },
-};
 const REG_KIND_META = {
     action: { icon: 'check-square', label: 'Actions', bg: C.carmineSoft, fg: C.carmine },
     flag: { icon: 'flag', label: 'Flags', bg: C.carmineSoft, fg: C.carmine },
@@ -1533,8 +1516,6 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
         const km = REG_KIND_META[it.kind];
         const proj = pById[it.projectId];
         const owner = it.ownerId ? uById[it.ownerId] : null;
-        const due = it.kind === 'flag' ? { pill: null, tone: 'soon', sub: 'Raised ' + (it.age <= 0 ? 'today' : it.age + 'd ago') } : regDueMeta(it.days);
-        const tone = REG_TONES[due.tone] || REG_TONES.upcoming;
         const isMine = owner && currentUser && owner.id === currentUser.id;
         // right-hand action buttons per kind
         const btn = (label, primary, onClick) => React.createElement("button", { key: label, onClick: (e) => { e.stopPropagation(); onClick(); }, style: { padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: FONT, borderRadius: 3, cursor: 'pointer', whiteSpace: 'nowrap', border: primary ? 'none' : `1px solid ${C.line}`, background: primary ? C.carmine : C.white, color: primary ? '#fff' : C.text } }, label);
@@ -1567,9 +1548,9 @@ function RegisterActivityView({ initialTab, projects, users, currentUser, isSeni
                 : React.createElement(React.Fragment, null,
                     React.createElement("span", { style: { width: 24, height: 24, borderRadius: '50%', background: owner ? C.carmineSoft : C.g100, color: owner ? C.carmine : C.g500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 } }, owner ? (owner.initials || initialsFromName(owner.display_name)) : 'SYS'),
                     React.createElement("span", { style: { fontSize: 12.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, owner ? owner.display_name : 'System'))),
-            React.createElement("div", { style: { textAlign: 'right' } },
-                due.pill ? React.createElement("span", { style: { display: 'inline-block', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '3px 8px', borderRadius: 3, background: tone.bg, color: tone.fg } }, due.pill) : null,
-                React.createElement("div", { style: { fontSize: 11, color: due.tone === 'overdue' ? C.carmine : C.g500, marginTop: due.pill ? 4 : 0 } }, due.sub)),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 } },
+                React.createElement(StateChip, { kind: it.kind, item: it.raw }),
+                it.raw.created_at ? React.createElement(AgeClock, { since: it.raw.created_at }) : null),
             React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, buttons));
     };
     const scopeChip = (key, label) => React.createElement("button", { key: key, onClick: () => setScope(key), style: { padding: '7px 13px', fontSize: 12, fontWeight: 600, fontFamily: FONT, border: 'none', cursor: 'pointer', background: scope === key ? C.prussian : 'transparent', color: scope === key ? '#fff' : C.g500, borderRadius: 3 } }, label);
@@ -4077,9 +4058,7 @@ function MARailFlag({ flag, project, users }) {
 }
 // Rail date row — coloured by urgency. Opens the date modal.
 function MARailDate({ kd, project }) {
-    const od = kd.target_date && kd.target_date < todayISO();
-    const days = kd.target_date ? Math.round((new Date(kd.target_date + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / 86400000) : 0;
-    const col = od ? MA.carmine : (days <= 7 ? MA.amberText : MA.prussian);
+    const col = MA.prussian;
     const d = kd.target_date ? new Date(kd.target_date + 'T00:00:00') : null;
     return React.createElement("div", { onClick: () => openItem('date', kd.id), role: "button", tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItem('date', kd.id); } }, style: { display: 'flex', gap: 12, padding: '12px 0', borderTop: `1px solid ${MA.line}`, cursor: 'pointer', alignItems: 'center' } },
         React.createElement("div", { style: { width: 44, textAlign: 'center', flexShrink: 0 } },
@@ -4087,7 +4066,7 @@ function MARailDate({ kd, project }) {
             React.createElement("div", { style: { fontSize: 8.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: col, marginTop: 2 } }, d ? d.toLocaleString('en-GB', { month: 'short' }) : '')),
         React.createElement("div", { style: { minWidth: 0 } },
             React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: MA.ink } }, kd.event_name),
-            React.createElement("div", { style: { fontSize: 11, color: MA.muted, marginTop: 1 } }, project ? project.name + ' · ' : '', React.createElement("span", { style: { color: od ? MA.carmine : MA.muted, fontWeight: od ? 600 : 400 } }, od ? Math.abs(days) + ' days overdue' : (days === 0 ? 'today' : 'in ' + days + ' days')))));
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 } }, project ? React.createElement("span", { style: { fontSize: 11, color: MA.muted } }, project.name) : null, React.createElement(StateChip, { kind: 'date', item: kd }))));
 }
 function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting }) {
     const [actions, setActions] = React.useState([]);
