@@ -935,7 +935,27 @@ consumer of the Step 2.5 verbs/chips — never a seventh copy.**
 
 Deliberately **excludes** money/baseline-weighted health — that is Step 7, into slots this page carries.
 
-### ▶ Step 5 — Delay record: the views  *(medium · **Step 1 done** — now needs accrued history)*
+### ▶ Step 5 — Delay record: the views  *(structural half **BUILT 2026-08-02**; slip-analytics deferred for data)*
+
+> **BUILT — the structural / provenance half (data-independent, fills in as revisions accrue):**
+> - **`threadOf(kind, id)` (Move 5)** — service-layer resolver that walks an item's causal chain from
+>   the existing FKs: flag↔action (resolved from *both* `meeting_handoffs.resulting_action_id` and
+>   `actions.source_ref`, deduped to one edge — in the live data the edge is stored only on the flag, so
+>   the reverse lookup is what finds it), query→parent (`parent_type`/`parent_id`), and the date moves an
+>   item caused (`programme_revisions.cause_flag_id`/`cause_action_id`). Self-contained reads (`sbQuiet`).
+> - **`ProvenanceStrip` (B4)** — renders `threadOf` inline under the item-modal title: origin meeting ·
+>   linked items · impact (`→ {date} +Nd`, carmine); each item segment opens that item. This is the last
+>   piece of the Step 2.5 visual contract, now landed.
+> - **Per-project chronology export (PDF)** — `exportProjectChronology` loads a project's revisions with
+>   resolved context and opens a print-styled document (Changed / Subject / From→To / Δ / By / Meeting /
+>   Caused by / Reason). Button on the Programme History panel. The external payoff — a contemporaneous,
+>   attributed record.
+>
+> **Deferred (needs accrued history — only ~4 revisions across 1 project today):** the **internal
+> slip-analytics view** (which projects are moving, by how much, whose decisions moved them). The
+> machinery it needs (`programme_revisions`, `threadOf`, baselines) is all in place; build the view once
+> there's enough data to judge it. Agreed with Tom 2026-08-02.
+
 Once revisions have been accruing for a few weeks:
 1. **Internal** — project health stops being form-completeness and becomes *slip against baseline,
    attributed*: which projects are moving, by how much, and whose decisions moved them.
