@@ -1,0 +1,50 @@
+-- ============================================================================
+-- DEMO DATA SEED — 2026-08 (for the senior-exec presentation, 27 Aug)
+-- ============================================================================
+-- Applied via the Supabase MCP on 2026-08-02, in steps (not a single re-runnable
+-- migration — several steps use deterministic hashes over row ids). This file is
+-- the RECORD of what was done and how to reset it, per the working agreement.
+--
+-- NOTE ON "TEST vs LIVE": this whole instance is a demonstration environment.
+-- Real Arke go-live (DEV_PLAN Step 10) starts from a clean slate, so the demo
+-- rows are NOT tagged with an is_test flag — the entire dataset is the demo, and
+-- go-live replaces it wholesale rather than filtering it out.
+--
+-- WHAT WAS SEEDED (org c6e9cc3c-54d7-446a-895b-cf75ed0e93cd):
+--  1. PURGE — removed 3 test-residue rows: actions "blah blah blah" / "hello"
+--     and flag "testt", plus their item_events / action_assignees.
+--  2. MODULE CHECKLISTS — ~1,900 project_checklist_items across 21 projects at
+--     status-appropriate fill (on-site 62% → pitching 12%), with a realistic
+--     status mix incl. ~350 "na" (Not applicable) and ~170 attention rows
+--     (further/blocked). Two independent hashes: one for row inclusion, one for
+--     the status — reusing a single hash collapses the distribution (learned the
+--     hard way; see the status re-UPDATE step).
+--  3. ACTIONS — 24 hand-written fit-out actions (open/overdue/due-week/completed)
+--     spread across owners + a "troubled job" pile of 14 overdue actions on
+--     Halcyon / Voltaic / Southbank to spread project-health across the RAG range.
+--  4. FLAGS — 14 flags: open / acknowledged (with notes) / converted; the 3
+--     converted flags linked to a resulting action (flag→action provenance).
+--  5. QUERIES — 5 queries with query_messages exchanges (open, resolved, one
+--     escalated), on real parent actions.
+--  6. BASELINES + SLIPPAGE — baselined 5 delivery projects + their key dates;
+--     drifted ~1/3 of dates (baseline earlier than target) and recorded matching
+--     programme_revisions (reasons + some cause_flag links) so the Slipping board
+--     (8 this week), chronology export and provenance impact all populate. Also
+--     added 2 slipped milestones on Halcyon to tip it into "at risk".
+--     Revisions were INSERTED directly (not via key-date UPDATE) to avoid the
+--     trg_key_date_revision trigger double-recording.
+--  7. ITEM_EVENTS — synthesised raised/complete/acknowledge/convert/resolve events
+--     for every seeded item (NOT EXISTS-guarded) so the Activity feed/log and the
+--     register row-history are alive (~76 events in the last 10 days).
+--
+-- VERIFIED 2026-08-02: health 1 red / 1 amber / 12 green; 54 open actions
+--  (34 overdue); 13 open flags; 3 converted-with-provenance; 4 open queries;
+--  8 slips this week; all 14 people carry open items; 0 junk rows remaining.
+--
+-- TO RESET before real go-live: truncate the transactional tables
+--  (project_checklist_items, actions, meeting_handoffs, queries, query_messages,
+--   programme_revisions, item_events) and clear the baseline_* columns on
+--  projects / project_key_dates. Keep app_users, projects, module_templates,
+--  module_template_items, meetings as the standing scaffold (or reset those too
+--  for a fully clean go-live).
+-- ============================================================================

@@ -5888,6 +5888,191 @@ function ProjectDirectory({ projectId, currentUser }) {
                         React.createElement("button", { onClick: () => remove(c.id), title: "Remove", style: { width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 2, cursor: 'pointer', color: C.g300, padding: 0 }, onMouseEnter: e => e.currentTarget.style.color = C.carmine, onMouseLeave: e => e.currentTarget.style.color = C.g300 }, lucide('x', 15, 'currentColor', 2))))));
     }));
 }
+// ============================================================
+// PROGRAMME IMPORT (Step 17) — client-side extraction of key dates from an
+// uploaded Excel (.xlsx/.xls/.csv) or PDF programme, or pasted rows. No backend
+// and no API key: SheetJS / pdf.js are pulled from the same unpkg CDN the app
+// already uses, and a paste fallback needs no library at all. Everything lands
+// in a preview the user confirms before anything is written.
+// ============================================================
+const XLSX_SRC = 'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js';
+const PDFJS_SRC = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js';
+const PDFJS_WORKER = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
+const _scriptCache = {};
+function loadScriptOnce(src) {
+    if (_scriptCache[src]) return _scriptCache[src];
+    _scriptCache[src] = new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = src; s.async = true;
+        s.onload = () => res(true);
+        s.onerror = () => rej(new Error('Could not load ' + src));
+        document.head.appendChild(s);
+    });
+    return _scriptCache[src];
+}
+const _MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function _iso(y, m, d) {
+    y = parseInt(y, 10); m = parseInt(m, 10); d = parseInt(d, 10);
+    if (!y || !m || !d || m > 12 || d > 31) return null;
+    return String(y).padStart(4, '0') + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+// Loose UK-centric date parser → ISO yyyy-mm-dd, or null.
+function parseDateLoose(v) {
+    if (v == null) return null;
+    if (v instanceof Date && !isNaN(v.getTime())) return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
+    const s = String(v).trim();
+    if (s.length < 6) return null;
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return _iso(m[1], m[2], m[3]);
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return _iso(y, m[2], m[1]); }
+    m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-]([A-Za-z]{3,})[\s\-,]*(\d{2,4})$/);
+    if (m) { const mo = _MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo) { let y = m[3]; if (y.length === 2) y = '20' + y; return _iso(y, mo, m[1]); } }
+    m = s.match(/^([A-Za-z]{3,})[\s\-](\d{4})$/);
+    if (m) { const mo = _MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) return _iso(m[2], mo, '1'); }
+    return null;
+}
+const _HEADER_WORDS = ['task', 'activity', 'description', 'milestone', 'event', 'stage', 'phase', 'date', 'start', 'finish', 'end', 'duration', 'week', 'no', 'id', 'ref', 'notes', 'complete', 'status', 'owner'];
+// From rows (arrays of cell values) → candidate { include, event_name, target_date }.
+// Takes the latest date on a row as the deadline, and the longest word-bearing
+// cell as the label. Skips header rows and rows without a date + a real label.
+function rowsToCandidates(rows) {
+    const out = [];
+    (rows || []).forEach(row => {
+        if (!Array.isArray(row)) return;
+        let label = '';
+        const dates = [];
+        row.forEach(cell => {
+            const d = parseDateLoose(cell);
+            if (d) { dates.push(d); return; }
+            const t = String(cell == null ? '' : cell).trim();
+            if (t.length > label.length && /[A-Za-z]/.test(t) && !/^\d+$/.test(t) && !/^[\d\/\-.]+$/.test(t)) label = t;
+        });
+        if (!dates.length || !label || label.length < 3) return;
+        if (_HEADER_WORDS.indexOf(label.toLowerCase().replace(/[^a-z]/g, '')) !== -1) return;
+        dates.sort();
+        out.push({ include: true, event_name: label.slice(0, 120), target_date: dates[dates.length - 1] });
+    });
+    // de-dupe identical event+date
+    const seen = {};
+    return out.filter(c => { const k = c.event_name + '|' + c.target_date; if (seen[k]) return false; seen[k] = 1; return true; });
+}
+function textToCandidates(text) {
+    const rows = String(text || '').split(/\r?\n/).filter(l => l.trim()).map(line => line.split(/\t|,|\s{2,}|\s+\|\s+/).map(c => c.trim()));
+    return rowsToCandidates(rows);
+}
+async function parseXlsxFile(file) {
+    await loadScriptOnce(XLSX_SRC);
+    const XLSX = window.XLSX;
+    if (!XLSX) throw new Error('Spreadsheet reader failed to load.');
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    let rows = [];
+    wb.SheetNames.forEach(name => { rows = rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' })); });
+    return rowsToCandidates(rows);
+}
+async function parsePdfFile(file) {
+    await loadScriptOnce(PDFJS_SRC);
+    const pdfjsLib = window.pdfjsLib;
+    if (!pdfjsLib) throw new Error('PDF reader failed to load.');
+    try { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; } catch (e) { /* set once */ }
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const rows = [];
+    for (let pn = 1; pn <= pdf.numPages; pn++) {
+        const page = await pdf.getPage(pn);
+        const tc = await page.getTextContent();
+        const lines = {};
+        tc.items.forEach(it => { const y = Math.round(it.transform[5]); (lines[y] = lines[y] || []).push({ x: it.transform[4], s: it.str }); });
+        Object.keys(lines).map(Number).sort((a, b) => b - a).forEach(y => {
+            rows.push(lines[y].sort((a, b) => a.x - b.x).map(c => c.s));
+        });
+    }
+    return rowsToCandidates(rows);
+}
+async function extractCandidates(file) {
+    const name = (file.name || '').toLowerCase();
+    if (name.endsWith('.pdf')) return parsePdfFile(file);
+    if (name.endsWith('.csv') || name.endsWith('.txt')) return textToCandidates(await file.text());
+    return parseXlsxFile(file);
+}
+function ProgrammeImportModal({ job, project, currentUser, onClose, onDone }) {
+    const [stage, setStage] = React.useState('loading'); // loading | preview | error | saving
+    const [rows, setRows] = React.useState([]);
+    const [err, setErr] = React.useState('');
+    const [baseline, setBaseline] = React.useState(true);
+    const [pasteMode, setPasteMode] = React.useState(false);
+    const [pasteText, setPasteText] = React.useState('');
+    React.useEffect(() => {
+        let live = true;
+        if (job && job.file) {
+            setStage('loading');
+            extractCandidates(job.file).then(c => { if (!live) return; if (!c.length) { setErr('No dates could be read from “' + job.file.name + '”. Try pasting the rows instead.'); setStage('error'); } else { setRows(c); setStage('preview'); } })
+                .catch(e => { if (live) { setErr((e && e.message) || 'Could not read that file.'); setStage('error'); } });
+        } else { setStage('preview'); setPasteMode(true); }
+        return () => { live = false; };
+    }, [job]);
+    const runPaste = () => {
+        const c = textToCandidates(pasteText);
+        if (!c.length) { setErr('No dates found in the pasted text — expected rows like “Practical completion  12/09/2026”.'); return; }
+        setErr(''); setRows(c); setPasteMode(false); setStage('preview');
+    };
+    const setRow = (i, patch) => setRows(prev => prev.map((r, j) => j === i ? Object.assign({}, r, patch) : r));
+    const chosen = rows.filter(r => r.include && r.event_name.trim() && r.target_date);
+    const doImport = async () => {
+        setStage('saving');
+        try {
+            const now = new Date().toISOString();
+            const payload = chosen.map(r => Object.assign({
+                project_id: project.id, event_name: r.event_name.trim(), target_date: r.target_date,
+                completed: false, created_by: currentUser.id, created_in_meeting_type: job ? job.kind : 'Imported'
+            }, baseline ? { baseline_date: r.target_date, baseline_set_at: now, baseline_set_by: currentUser.id } : {}));
+            const { error } = await sb.from('project_key_dates').insert(payload);
+            if (error) throw error;
+            if (baseline && !project.programme_baselined_at) {
+                await sb.from('projects').update({ programme_baselined_at: now, programme_baselined_by: currentUser.id }).eq('id', project.id);
+            }
+            onDone(chosen.length);
+        } catch (e) { setErr((e && e.message) || 'Could not save the dates.'); setStage('preview'); }
+    };
+    const wrap = (body) => React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(10,10,10,0.42)', zIndex: 320, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '48px 20px', overflow: 'auto' } },
+        React.createElement("div", { onClick: e => e.stopPropagation(), style: { width: '100%', maxWidth: 720, background: '#fff', borderTop: `3px solid ${C.prussian}`, borderRadius: 2, boxShadow: '0 24px 60px rgba(10,10,10,0.35)', fontFamily: FONT } },
+            React.createElement("div", { style: { padding: '18px 24px', borderBottom: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
+                React.createElement("div", null, React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink0 } }, "Import programme dates"), React.createElement("div", { style: { fontSize: 11.5, color: C.g500, marginTop: 2 } }, project.name + (job && job.file ? ' · ' + job.file.name : ' · pasted rows'))),
+                React.createElement("button", { onClick: onClose, style: { background: 'none', border: 'none', cursor: 'pointer', color: C.g500 } }, lucide('x', 18, 'currentColor', 2))),
+            body));
+    if (stage === 'loading')
+        return wrap(React.createElement("div", { style: { padding: 50, textAlign: 'center', color: C.g500, fontSize: 13 } }, "Reading the programme…"));
+    if (stage === 'error' && !pasteMode)
+        return wrap(React.createElement("div", { style: { padding: 26 } },
+            React.createElement("div", { style: { fontSize: 13, color: C.carmine, marginBottom: 16 } }, err),
+            React.createElement("button", { onClick: () => { setPasteMode(true); setStage('preview'); setErr(''); }, style: btnPrimary() }, "Paste the rows instead")));
+    if (pasteMode)
+        return wrap(React.createElement("div", { style: { padding: 24 } },
+            React.createElement("div", { style: { fontSize: 12.5, color: C.g700, marginBottom: 10, lineHeight: 1.5 } }, "Copy the programme rows from Excel or a PDF and paste them here — one date per row (e.g. ", React.createElement("em", null, "Practical completion  12/09/2026"), ")."),
+            err ? React.createElement("div", { style: { fontSize: 12, color: C.carmine, marginBottom: 8 } }, err) : null,
+            React.createElement("textarea", { value: pasteText, onChange: e => setPasteText(e.target.value), rows: 8, placeholder: "Start on site\t04/08/2026\nFirst fix complete\t22/09/2026\nPractical completion\t20/11/2026", style: { width: '100%', boxSizing: 'border-box', fontFamily: 'monospace', fontSize: 12.5, padding: 12, border: `1px solid ${C.line}`, borderRadius: 3, resize: 'vertical' } }),
+            React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 } },
+                React.createElement("button", { onClick: onClose, style: btnSecondary() }, "Cancel"),
+                React.createElement("button", { onClick: runPaste, disabled: !pasteText.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { opacity: pasteText.trim() ? 1 : 0.5 }) }, "Read dates"))));
+    // preview
+    return wrap(React.createElement("div", { style: { padding: '18px 24px 22px' } },
+        React.createElement("div", { style: { fontSize: 12.5, color: C.g700, marginBottom: 12 } }, "Found ", React.createElement("strong", null, rows.length), " date", rows.length === 1 ? '' : 's', ". Untick anything that isn’t a key date, tidy the names, then import."),
+        err ? React.createElement("div", { style: { fontSize: 12, color: C.carmine, marginBottom: 10 } }, err) : null,
+        React.createElement("div", { style: { maxHeight: 340, overflow: 'auto', border: `1px solid ${C.line}`, borderRadius: 3 } },
+            rows.map((r, i) => React.createElement("div", { key: i, style: { display: 'grid', gridTemplateColumns: '26px 1fr 130px', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: i < rows.length - 1 ? `1px solid ${C.line}` : 'none', background: r.include ? '#fff' : C.g50 } },
+                React.createElement("input", { type: 'checkbox', checked: r.include, onChange: e => setRow(i, { include: e.target.checked }) }),
+                React.createElement("input", { value: r.event_name, onChange: e => setRow(i, { event_name: e.target.value }), style: { border: `1px solid ${C.line}`, borderRadius: 2, padding: '6px 8px', fontSize: 12.5, fontFamily: FONT, opacity: r.include ? 1 : 0.5 } }),
+                React.createElement("input", { type: 'date', value: r.target_date, onChange: e => setRow(i, { target_date: e.target.value }), style: { border: `1px solid ${C.line}`, borderRadius: 2, padding: '6px 8px', fontSize: 12.5, fontFamily: FONT, opacity: r.include ? 1 : 0.5 } })))),
+        React.createElement("label", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 12.5, color: C.g700, cursor: 'pointer' } },
+            React.createElement("input", { type: 'checkbox', checked: baseline, onChange: e => setBaseline(e.target.checked) }),
+            "Set these as the agreed baseline (recommended for a new programme — future slips measure against them)."),
+        React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 } },
+            React.createElement("button", { onClick: () => { setPasteMode(true); setErr(''); }, style: { background: 'none', border: 'none', color: C.prussian, fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: 'pointer', textDecoration: 'underline' } }, "Paste different rows"),
+            React.createElement("div", { style: { display: 'flex', gap: 8 } },
+                React.createElement("button", { onClick: onClose, style: btnSecondary() }, "Cancel"),
+                React.createElement("button", { onClick: doImport, disabled: !chosen.length || stage === 'saving', style: Object.assign(Object.assign({}, btnPrimary()), { opacity: (chosen.length && stage !== 'saving') ? 1 : 0.5 }) }, stage === 'saving' ? 'Importing…' : ('Import ' + chosen.length + ' date' + (chosen.length === 1 ? '' : 's')))))));
+}
+
 function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onSaveTeam, onProjectSave, onActionsChange, onKeyDatesChange, onBack }) {
     const project = (projects || []).find(p => p.id === projectId);
     const [activeTab, setActiveTab] = React.useState('overview');
@@ -5954,6 +6139,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const [saving, setSaving] = React.useState(null);
     const [kdOpen, setKdOpen] = React.useState(false);
     const [importMsg, setImportMsg] = React.useState('');
+    const [importJob, setImportJob] = React.useState(null); // { file, kind } — Step 17 programme import
     const [area, setArea] = React.useState(null);
     const [showDone, setShowDone] = React.useState(false);
     const [showDoneFlags, setShowDoneFlags] = React.useState(false);
@@ -6022,9 +6208,8 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const importProgramme = (e, kind) => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
-        setImportMsg(kind + ' programme “' + f.name + '” queued — automatic date conversion (Claude) is not yet connected.');
+        setImportJob({ file: f, kind: kind });
         e.target.value = '';
-        // TODO: convertArkeProgrammeToKeyDates(f, kind, project, sb).then(onKeyDatesChange)
     };
     // ----- small presentational helpers ---------------------------------------
     const sectionHead = (text, right) => React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `2px solid ${C.carmine}`, paddingBottom: 10, marginBottom: 20 } }, React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 13, letterSpacing: '0.14em', color: C.carmine } }, text), right || null);
@@ -6156,11 +6341,12 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         React.createElement(ProgrammeTimeline, { project: project, keyDates: myKeyDates, editable: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange }),
         React.createElement("div", { style: { marginTop: 22, paddingTop: 20, borderTop: `1px solid ${C.line}` } },
             React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' } },
-                React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "IMPORT PROGRAMME"), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 3 } }, "Upload an Excel programme — key dates register automatically (Claude conversion — coming soon).")),
+                React.createElement("div", null, React.createElement("div", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "IMPORT PROGRAMME"), React.createElement("div", { style: { fontSize: 12, color: C.g500, marginTop: 3 } }, "Upload an Excel or PDF programme — dates are read out for you to check, then registered as key dates.")),
                 isSenior && React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
-                    React.createElement("label", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, border: `1.5px solid ${C.prussian}`, color: C.prussian, background: '#fff', borderRadius: 2, padding: '10px 16px', fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.03em', cursor: 'pointer' } }, lucide('upload', 15, 'currentColor', 2), "Pre-construction (.xlsx)", React.createElement("input", { type: "file", accept: ".xlsx,.xls", onChange: e => importProgramme(e, 'Pre-construction'), style: { display: 'none' } })),
-                    React.createElement("label", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, border: `1.5px solid ${C.carmine}`, color: C.carmine, background: '#fff', borderRadius: 2, padding: '10px 16px', fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.03em', cursor: 'pointer' } }, lucide('upload', 15, 'currentColor', 2), "Construction (.xlsx)", React.createElement("input", { type: "file", accept: ".xlsx,.xls", onChange: e => importProgramme(e, 'Construction'), style: { display: 'none' } })))),
-            importMsg && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, background: C.prussian10, border: `1px solid ${C.prussian}`, borderRadius: 2, padding: '9px 12px', fontSize: 13, color: C.prussian } }, importMsg)),
+                    React.createElement("label", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, border: `1.5px solid ${C.prussian}`, color: C.prussian, background: '#fff', borderRadius: 2, padding: '10px 16px', fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.03em', cursor: 'pointer' } }, lucide('upload', 15, 'currentColor', 2), "Pre-construction (.xlsx / .pdf)", React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv,.pdf", onChange: e => importProgramme(e, 'Pre-construction'), style: { display: 'none' } })),
+                    React.createElement("label", { style: { display: 'inline-flex', alignItems: 'center', gap: 8, border: `1.5px solid ${C.carmine}`, color: C.carmine, background: '#fff', borderRadius: 2, padding: '10px 16px', fontFamily: FONT, fontWeight: 600, fontSize: 13, letterSpacing: '0.03em', cursor: 'pointer' } }, lucide('upload', 15, 'currentColor', 2), "Construction (.xlsx / .pdf)", React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv,.pdf", onChange: e => importProgramme(e, 'Construction'), style: { display: 'none' } })))),
+            importJob && React.createElement(ProgrammeImportModal, { job: importJob, project: project, currentUser: currentUser, onClose: () => setImportJob(null), onDone: (n) => { setImportJob(null); setImportMsg(n + ' key date' + (n === 1 ? '' : 's') + ' imported into the programme.'); if (onKeyDatesChange) onKeyDatesChange(); } }),
+            importMsg && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, background: C.successBg, border: `1px solid ${C.success}`, borderRadius: 2, padding: '9px 12px', fontSize: 13, color: C.success } }, lucide('check', 15, C.success, 2.5), importMsg)),
         React.createElement("div", { style: { marginTop: 24, borderTop: `1px solid ${C.line}`, paddingTop: 20 } },
             React.createElement("div", { onClick: () => setKdOpen(v => !v), style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' } },
                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', color: C.carmine, transform: kdOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform 240ms ${EASE}` } }, lucide('chevron-down', 16, 'currentColor', 2.4)), React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "KEY DATES"), React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, manageCount, " on timeline")),
@@ -6171,8 +6357,19 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         React.createElement(ProgrammeHistory, { project: project, keyDates: myKeyDates, users: users })));
     // ----- MODULES tab ---------------------------------------------------------
     const builtCount = MODULE_DEFS.filter(d => moduleTemplates.some(t => t.module_key === d.key)).length;
+    // Step 16 — project data-completeness, first-class: avg fill across built
+    // modules + a nudge on thin data. This is the same signal that feeds health.
+    const builtProgs = MODULE_DEFS.map(d => moduleProgress[d.key]).filter(Boolean);
+    const avgFed = builtProgs.length ? Math.round(builtProgs.reduce((s, p) => s + (p.pct || 0), 0) / builtProgs.length) : 0;
+    const thinCount = builtProgs.filter(p => (p.pct || 0) < 40).length;
+    const fedColor = avgFed >= 70 ? C.success : (avgFed >= 40 ? C.warn : C.carmine);
     const modulesCard = card(React.createElement(React.Fragment, null,
-        sectionHead('MODULES', React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, builtCount, " of ", MODULE_DEFS.length, " built")),
+        sectionHead('MODULES', React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 12 } },
+            React.createElement("span", { style: { fontSize: 12, color: C.g500 } }, builtCount, " of ", MODULE_DEFS.length, " built"),
+            builtProgs.length ? React.createElement("span", { title: "Average of how far the built modules have been filled in. Thin data drags the project's health score.", style: { display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'help' } },
+                React.createElement("span", { style: { width: 88, height: 6, background: C.g100, borderRadius: 3, overflow: 'hidden' } }, React.createElement("span", { style: { display: 'block', height: 6, width: avgFed + '%', background: fedColor } })),
+                React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: fedColor } }, avgFed + '% fed')) : null)),
+        thinCount > 0 ? React.createElement("div", { style: { fontSize: 12, color: C.g700, background: C.amberLight, border: '1px solid #EAD08A', borderRadius: 3, padding: '9px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 } }, lucide('alert-triangle', 14, C.warn, 2), React.createElement("span", null, thinCount + (thinCount === 1 ? ' module is' : ' modules are') + " thin on data — filling them in sharpens this project’s health score and what shows on the dashboard.")) : null,
         React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 } }, MODULE_DEFS.map(def => {
             const tpl = moduleTemplates.find(t => t.module_key === def.key);
             const prog = moduleProgress[def.key];

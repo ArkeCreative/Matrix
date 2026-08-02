@@ -1159,8 +1159,13 @@ together:
 > ✅ **P0.1 number legibility done** (2026-08-02) — `ExplainPopover` on the health score (full working +
 > RAG bands), KPI-card "?" explanations, "Needs assistance" trigger tooltip, project stat-card tooltips;
 > and fixed a mislabelled "Overdue dates" stat (was counting overdue actions).
-> ⏳ **P0.2 data hygiene** still to do — needs a migration (`is_test`) + admin bulk-clear + purging live
-> junk (touches live data; confirm what's safe to delete with Tom first).
+> ✅ **P0.2 data hygiene + demo dataset done** (2026-08-02) — purged the 3 test-residue rows, then (at
+> Tom's request) seeded a rich cross-section for the **27 Aug exec presentation**: ~1,900 module
+> checklist answers across 21 projects (incl. N/A + attention rows), 38 more actions, 14 flags
+> (open/ack/converted with provenance), queries with exchanges, baselines + slippage (8 slips this week),
+> and item_events for a live feed. Health now spreads **1 red / 1 amber / 12 green**. The `is_test` flag +
+> admin bulk-clear are **moot** — the whole instance is the demo; real go-live (Step 10) starts clean.
+> Seed recorded in `db/migrations/demo_seed_2026-08.sql`.
 - **P0.1 "explain this number."** Add a hover/click breakdown that decomposes each composite metric into
   its inputs. *Health is already half-done* — `projectHealth` returns `drivers`; surface it (and the
   score arithmetic: `100 − pressure` × `moduleFactor`) in a popover on the health score, and do the same
@@ -1174,13 +1179,31 @@ together:
   wrappers (markActionComplete, markKeyDateMet, deleteMeetingById, reopen, …). Also unblocks automated
   testing (Step 14).
 
-### ▶ Step 16 — Project data-completeness, first-class  *(small–medium · builds on the Step 4 module-fill aggregate)*
+### ▶ Step 16 — Project data-completeness, first-class  *(core **BUILT 2026-08-02**)*
+
+> **BUILT (core):** the project dashboard's MODULES section now shows a **completeness bar + "N% fed"**
+> (avg fill across built modules, RAG-coloured) beside "N of 14 built", and an amber **thin-data nudge**
+> ("N modules are thin on data — filling them in sharpens this project's health score…"). Same signal
+> that feeds health, now visible and actionable per project. Remaining (later): portfolio-level
+> completeness column + a "fully-loaded project" reference.
+
 "Thin module data" already feeds health (Step 4 tweak). Promote it to a visible driver of behaviour: a
 per-project completeness bar ("8 of 14 modules built · N% fed"), owner-facing prompts to populate, and a
 reference picture of a fully-loaded project. Pulls the culture toward the completeness the app already
 rewards. Overlaps the Step 12 projects-home work.
 
-### ▶ Step 17 — Programme Excel import  *(medium · finishes the P1.3 loop with Step 1/5)*
+### ▶ Step 17 — Programme Excel + PDF import  *(**BUILT 2026-08-02**)*
+
+> **BUILT.** The IMPORT PROGRAMME upload now works for **Excel (.xlsx/.xls/.csv) and PDF**, plus a
+> **paste** fallback. Architecture note: dropped the "Claude conversion" idea — no backend or API key.
+> Instead it parses client-side (SheetJS + pdf.js pulled from the same unpkg CDN the app already uses;
+> paste needs no library), extracts candidate `{event_name, target_date}` rows with a UK-centric date
+> parser (`ProgrammeImportModal` + helpers before `ProjectDashboardView`), and shows a **preview the user
+> checks/edits** before anything is written. On confirm it inserts `project_key_dates` and can **baseline**
+> them in one step (so Step 5 slippage measures against them). The pure parsers are node-unit-tested;
+> the paste path is the guaranteed fallback if a CDN lib ever fails to load. Later polish: smarter
+> start-vs-finish column detection (today it takes the latest date on a row as the deadline).
+
 Complete the "(Claude conversion — coming soon)" importer: parse an uploaded programme spreadsheet →
 auto-register `project_key_dates` (+ baseline them), so the slippage story (dashboard "Slipping" board +
 the Step 5 chronology export) has real dates to track. This is the missing input side of the delay-record
