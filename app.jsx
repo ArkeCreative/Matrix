@@ -401,6 +401,65 @@ function ProvenanceStrip(props) {
     parts.forEach((p, i) => { if (i) rendered.push(React.createElement("span", { key: 'sep' + i, style: { color: C.g300, margin: '0 7px' } }, '·')); rendered.push(p); });
     return React.createElement("div", { style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', fontSize: 11, fontFamily: FONT, lineHeight: 1.6 } }, rendered);
 }
+// Per-project chronology export (Step 5) — the contemporaneous delay record.
+// A print of the same provenance object threadOf reads: every programme move,
+// from → to, by whom, in which meeting, against which flag/action, with the
+// note. Opens a self-contained print document (→ PDF via the browser). This is
+// the external payoff — the attributed, timestamped record a delay/EOT argument
+// turns on, produced as a byproduct of running the meetings.
+async function exportProjectChronology(project, usersById) {
+    const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmt = (d) => d ? formatMeetingDate(String(d).slice(0, 10)) : '—';
+    try {
+        const { data: revs } = await sbQuiet.from('programme_revisions').select('*').eq('project_id', project.id).order('changed_at', { ascending: true });
+        const list = revs || [];
+        const ids = (arr, k) => [...new Set(arr.map(r => r[k]).filter(Boolean))];
+        const [mRes, fRes, aRes] = await Promise.all([
+            ids(list, 'meeting_id').length ? sbQuiet.from('meetings').select('id, meeting_type, meeting_date').in('id', ids(list, 'meeting_id')) : Promise.resolve({ data: [] }),
+            ids(list, 'cause_flag_id').length ? sbQuiet.from('meeting_handoffs').select('id, note').in('id', ids(list, 'cause_flag_id')) : Promise.resolve({ data: [] }),
+            ids(list, 'cause_action_id').length ? sbQuiet.from('actions').select('id, description').in('id', ids(list, 'cause_action_id')) : Promise.resolve({ data: [] }),
+        ]);
+        const mById = {}; (mRes.data || []).forEach(m => { mById[m.id] = m; });
+        const fById = {}; (fRes.data || []).forEach(f => { fById[f.id] = f; });
+        const aById = {}; (aRes.data || []).forEach(a => { aById[a.id] = a; });
+        const rowsHtml = list.map(r => {
+            const days = (r.previous_date && r.new_date) ? Math.round((new Date(r.new_date) - new Date(r.previous_date)) / 86400000) : null;
+            const deltaTxt = days == null ? '—' : (days > 0 ? '+' + days + 'd' : days + 'd');
+            const by = (usersById && usersById[r.changed_by]) ? usersById[r.changed_by].display_name : 'System';
+            const m = r.meeting_id && mById[r.meeting_id];
+            const meetingTxt = m ? (((typeof MEETING_TYPES !== 'undefined' && MEETING_TYPES[m.meeting_type] && MEETING_TYPES[m.meeting_type].short) || 'Meeting') + ' · ' + fmt(m.meeting_date)) : '—';
+            const cause = r.cause_flag_id && fById[r.cause_flag_id] ? ('Flag: ' + fById[r.cause_flag_id].note) : (r.cause_action_id && aById[r.cause_action_id] ? ('Action: ' + aById[r.cause_action_id].description) : '—');
+            return `<tr><td class="nowrap">${esc(fmt(r.changed_at))}</td><td>${esc(r.subject_label || '—')}</td><td class="nowrap">${esc(fmt(r.previous_date))} <span class="arr">&rarr;</span> <strong>${esc(fmt(r.new_date))}</strong></td><td class="nowrap delta ${days > 0 ? 'slip' : ''}">${esc(deltaTxt)}</td><td>${esc(by)}</td><td>${esc(meetingTxt)}</td><td>${esc(cause)}</td><td>${esc(r.reason || '')}</td></tr>`;
+        }).join('');
+        const baselined = project.programme_baselined_at ? fmt(project.programme_baselined_at) : 'not baselined';
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>Programme change record — ${esc(project.name || 'Project')}</title>
+<style>
+*{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;margin:0;padding:40px;font-size:12px}
+.hd{border-bottom:3px solid #8C002A;padding-bottom:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-end}
+.brand{font-weight:300;letter-spacing:.13em;font-size:16px;color:#8C002A}.brand b{font-weight:600}
+.doc{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#767676;font-weight:700}
+h1{font-size:20px;margin:14px 0 2px}.meta{color:#6B7270;font-size:11px;margin-bottom:18px}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{text-align:left;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#767676;border-bottom:1px solid #D6D6D6;padding:8px 8px}
+td{padding:9px 8px;border-bottom:1px solid #ececec;vertical-align:top;line-height:1.4}
+.nowrap{white-space:nowrap}.arr{color:#8C002A}.delta{font-weight:700;color:#6B7270}.delta.slip{color:#8C002A}
+.empty{padding:30px;text-align:center;color:#767676;font-style:italic}
+.foot{margin-top:24px;font-size:10px;color:#9BA3A0;border-top:1px solid #ececec;padding-top:12px;line-height:1.5}
+@media print{body{padding:16px}}
+</style></head><body>
+<div class="hd"><div class="brand">arke <b>[matrix]</b></div><div class="doc">Programme change record</div></div>
+<h1>${esc(project.name || 'Untitled project')}${project.project_number ? ' · #' + esc(project.project_number) : ''}</h1>
+<div class="meta">Baseline: ${esc(baselined)} · ${list.length} recorded change${list.length === 1 ? '' : 's'} · generated ${esc(fmt(new Date().toISOString()))}</div>
+${list.length ? `<table><thead><tr><th>Changed</th><th>Subject</th><th>From &rarr; To</th><th>&Delta;</th><th>By</th><th>Meeting</th><th>Caused by</th><th>Reason</th></tr></thead><tbody>${rowsHtml}</tbody></table>` : '<div class="empty">No programme changes recorded yet. Moves recorded from now on will appear here.</div>'}
+<div class="foot">This record is generated from the live programme revision log. Each entry is timestamped and attributed at the moment the change was made — a contemporaneous record, not a reconstruction.</div>
+</body></html>`;
+        const w = window.open('', '_blank');
+        if (!w) { alert('Please allow pop-ups to export the chronology.'); return; }
+        w.document.write(html); w.document.close(); w.focus();
+        setTimeout(() => { try { w.print(); } catch (_) { } }, 350);
+    }
+    catch (e) { alert('Could not build the chronology: ' + (e && e.message ? e.message : e)); }
+}
 // ============================================================
 // LIFECYCLE VERBS (Step 2.5, Move 2) — the service layer. --VERBS-BEGIN--
 // One exported verb per transition. EVERY surface calls these; no surface writes
@@ -8060,7 +8119,9 @@ function ProgrammeHistory({ project, keyDates, users, defaultOpen }) {
                 React.createElement("span", { style: { fontFamily: FONT, fontWeight: 700, fontSize: 12, letterSpacing: '0.14em', color: C.ink0 } }, "PROGRAMME HISTORY"),
                 React.createElement("span", { style: { fontSize: 12, color: drifted.length > 0 ? C.carmine : C.g500, fontWeight: drifted.length > 0 ? 600 : 400 } }, headline),
                 !project.programme_baselined_at && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', border: `1.5px solid ${C.g300}`, color: C.g500, fontFamily: FONT, fontWeight: 600, fontSize: 9.5, letterSpacing: '0.12em', padding: '2px 7px', borderRadius: 9999 } }, "NO BASELINE")),
-            React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3, whiteSpace: 'nowrap' } }, open ? 'Collapse' : 'Expand history')),
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 14 } },
+                React.createElement("button", { onClick: (e) => { e.stopPropagation(); exportProjectChronology(project, (users || []).reduce((m, u) => { m[u.id] = u; return m; }, {})); }, title: "Open a printable programme change record (→ PDF)", style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', border: `1px solid ${C.line}`, background: C.white, color: C.text, borderRadius: 3, fontSize: 11.5, fontWeight: 600, fontFamily: FONT, cursor: 'pointer' } }, lucide('upload', 12, 'currentColor', 2), "Export PDF"),
+                React.createElement("span", { style: { fontFamily: FONT, fontWeight: 600, fontSize: 12, letterSpacing: '0.04em', color: C.carmine, textDecoration: 'underline', textUnderlineOffset: 3, whiteSpace: 'nowrap' } }, open ? 'Collapse' : 'Expand history'))),
         open && body);
 }
 // ============================================================
